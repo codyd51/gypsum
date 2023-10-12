@@ -16,6 +16,11 @@ class InputFileInfo:
     format: InputFileType
     sdr_sample_rate: float
 
+    @property
+    def samples_in_prn_period(self) -> int:
+        """The PRN period is 1ms, and is retransmitted by GPS satellites continuously"""
+        return int(self.sdr_sample_rate // 1000)
+
 
 # TODO(PT): In the future, this can be extended to provide an input representing a live radio
 # This can also be extended to include live recordings from my radio
@@ -26,26 +31,54 @@ INPUT_SOURCES = [
         format=InputFileType.Raw,
         sdr_sample_rate=4e6,
     ),
+    InputFileInfo(
+        path=Path(__file__).parents[1] / "vendored_signals" / "baseband_1575420000Hz_16-12-07_07-10-2023.wav",
+        format=InputFileType.Wav,
+        sdr_sample_rate=2.4e6,
+    ),
+    InputFileInfo(
+        path=Path(__file__).parents[1] / "vendored_signals" / "phillip.wav",
+        format=InputFileType.Wav,
+        sdr_sample_rate=2.4e6,
+    ),
+    InputFileInfo(
+        path=Path(__file__).parents[1] / "vendored_signals" / "baseband_1575136000Hz_22-52-15_10-10-2023_Int16_BiasT_TunerAGC_IQCorrection_100PPMCorrection.wav",
+        format=InputFileType.Wav,
+        sdr_sample_rate=2.4e6,
+    ),
+    InputFileInfo(
+        path=Path(__file__).parents[1] / "vendored_signals" / "baseband_1575420000Hz_23-21-28_10-10-2023_2048mhz_sample_rate.wav",
+        format=InputFileType.Wav,
+        sdr_sample_rate=2.048e6,
+    ),
+    InputFileInfo(
+        path=Path(__file__).parents[1] / "vendored_signals" / "output_at_seven_wives",
+        format=InputFileType.Raw,
+        # 2 * C/A PRN chip rate * 1k PRN repetitions per second
+        sdr_sample_rate=2*1023*1000,
+    ),
 ]
 
 
 def get_samples_from_radio_input_source(input_info: InputFileInfo) -> np.ndarray:
+    samples_per_prn = input_info.samples_in_prn_period
+
     if input_info.format == InputFileType.Wav:
         byte_length = np.fromfile(input_info.path.as_posix(), dtype=np.int32, count=1, offset=44)[0]
         print(byte_length)
         data = np.fromfile(input_info.path.as_posix(), dtype=np.int16, count=byte_length//2, offset=48)
         if len(data) % 2 != 0:
             data = data[:-1]
+
+        data = data[:samples_per_prn*4]
+
     elif input_info.format == InputFileType.Raw:
-        sample_rate = input_info.sdr_sample_rate
-        # Samples per PRN repeat (PRNs are transmitted by GPS satellites every 1ms)
-        samples_per_prn = int(sample_rate // 1000)
         offset = 0
         # For now, just read two PRN transmissions worth of data
         prn_repeats_count = 2
         count = prn_repeats_count * samples_per_prn
 
-        data = np.fromfile(input_info.path.as_posix(), dtype=np.int16, count=int(offset+count)*2, offset=44)
+        data = np.fromfile(input_info.path.as_posix(), dtype=np.int16, count=int(offset+count)*2)
         # Quantise to 2 bits I and 2 bits Q per sample
         data = np.clip(np.floor_divide(data, 150), -2, 1) + 0.5
         # Convert to complex numpy array
