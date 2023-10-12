@@ -55,7 +55,9 @@ def _generate_ca_code_rolled_by(delay_ms: int) -> np.ndarray:
     # Another way of understanding this which may also be correct: the GPS documentation vs. software libraries simply
     # describe the shift register in different orders from each other.
     #
-    # (Terms 1 and X^n can be omitted as they're implicit)
+    # (Terms 1 and X^n can be omitted as they're implicit.
+    # X^n can be omitted because it'll be evaluated as 2^(x-x), which is zero anyway.)
+    #
     # G1 = X^10 + X^3 + 1
     g1 = max_len_seq(seq_bit_count, taps=[seq_bit_count - 3])[0]
     # G2 = X^10 + X^9 + X^8 + X^6 + X^3 + X^2 + 1
@@ -72,7 +74,7 @@ def _generate_ca_code_rolled_by(delay_ms: int) -> np.ndarray:
     )
 
 
-def generate_replica_prn_signals(sample_rate: int) -> dict[GpsSatelliteId, GpsReplicaPrnSignal]:
+def generate_replica_prn_signals() -> dict[GpsSatelliteId, GpsReplicaPrnSignal]:
     # Ref: https://www.gps.gov/technical/icwg/IS-GPS-200L.pdf
     # Table 3-Ia. Code Phase Assignments
     # "The G2i sequence is a G2 sequence selectively delayed by pre-assigned number of chips, thereby
@@ -106,7 +108,7 @@ def generate_replica_prn_signals(sample_rate: int) -> dict[GpsSatelliteId, GpsRe
         GpsSatelliteId(21): ChipDelayMs(473),
         GpsSatelliteId(22): ChipDelayMs(474),
         GpsSatelliteId(23): ChipDelayMs(509),
-        GpsSatelliteId(24): ChipDelayMs(512),
+        GpsSatelliteId(24): ChipDelayMs(24),
         GpsSatelliteId(25): ChipDelayMs(513),
         GpsSatelliteId(26): ChipDelayMs(514),
         GpsSatelliteId(27): ChipDelayMs(515),
@@ -116,27 +118,22 @@ def generate_replica_prn_signals(sample_rate: int) -> dict[GpsSatelliteId, GpsRe
         GpsSatelliteId(31): ChipDelayMs(861),
         GpsSatelliteId(32): ChipDelayMs(862),
     }
-    satellite_id_to_replica_prn = {}
-    for sat_name, prn_chip_delay_ms in satellite_id_to_delay_by_chip_count.items():
 
-        # Generate the pure PRN signal
-        prn_signal = _generate_ca_code_rolled_by(prn_chip_delay_ms.delay_ms)
-
-        # We're going to be searching for this marker in a real/analog signal that we digitally sample at
-        # a discrete rate.
-        # Therefore, we need to 'sample' the PRN signal we've just created, so we know what it *should* look like in the
-        # real measured signal.
-        #
-        # Firstly, the domain of our generated signal is currently [0 to 1], centered at 0.5.
-        # The data that comes in via our antenna will instead vary from [-1 to 1], centered at 0.
-        # Translate our generated signal so that it's centered at 0 instead of ...
-        translated_prn_signal = prn_signal - 0.5
-        # And scale it so that the domain goes from [-1 to 1] instead of [-0.5 to 0.5].
-        # Note our signal has exactly 1023 data points (which is the correct/exact length of the G2 code)
-        scaled_prn_signal = translated_prn_signal * 2
-        # Finally, sample our generated signal so that we can see the sort of thing to look for in the data on the wire
-        sampled_signal = resample(scaled_prn_signal, sample_rate // 1000)
-
-        # All done, save the replica signal
-        satellite_id_to_replica_prn[sat_name] = GpsReplicaPrnSignal(sampled_signal)
-    return satellite_id_to_replica_prn
+    # Generate each pure PRN signal.
+    # Then, translate and scale each signal to match the representation used in BPSK.
+    # In particular, the domain of the generated signals start out at [0 to 1].
+    # Antenna data will instead vary from [-1 to 1].
+    # Note each signal has exactly 1023 data points (which is the correct/exact length of the G2 code).
+    return {
+        sat_id: (
+            GpsReplicaPrnSignal(
+                np.array(
+                    [
+                        -1 if chip == 0 else 1
+                        for chip in _generate_ca_code_rolled_by(prn_chip_delay_ms.delay_ms)
+                    ]
+                )
+            )
+        )
+        for sat_id, prn_chip_delay_ms in satellite_id_to_delay_by_chip_count.items()
+    }
