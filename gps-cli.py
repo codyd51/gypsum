@@ -16,11 +16,6 @@ from gps.radio_input import INPUT_SOURCES, get_samples_from_radio_input_source
 _GPS_L1_FREQUENCY = 1575.42e6
 
 
-def chunks(li: np.ndarray, chunk_size: int) -> Iterator[Any]:
-    for i in range(0, len(li), chunk_size):
-        yield li[i:i + chunk_size]
-
-
 @dataclass
 class GpsSatellite:
     satellite_id: GpsSatelliteId

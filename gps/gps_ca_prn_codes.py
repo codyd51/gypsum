@@ -3,6 +3,8 @@ from dataclasses import dataclass
 import numpy as np
 from scipy.signal import max_len_seq, resample
 
+from gps_project_name.gps.utils import chunks
+
 
 @dataclass
 class ChipDelayMs:
@@ -124,7 +126,7 @@ def generate_replica_prn_signals() -> dict[GpsSatelliteId, GpsReplicaPrnSignal]:
     # In particular, the domain of the generated signals start out at [0 to 1].
     # Antenna data will instead vary from [-1 to 1].
     # Note each signal has exactly 1023 data points (which is the correct/exact length of the G2 code).
-    return {
+    output = {
         sat_id: (
             GpsReplicaPrnSignal(
                 np.array(
@@ -137,3 +139,65 @@ def generate_replica_prn_signals() -> dict[GpsSatelliteId, GpsReplicaPrnSignal]:
         )
         for sat_id, prn_chip_delay_ms in satellite_id_to_delay_by_chip_count.items()
     }
+
+    # Immediately verify that the PRNs were generated correctly
+    expected_prn_starting_markers = {
+        GpsSatelliteId(1): 1440,
+        GpsSatelliteId(2): 1620,
+        GpsSatelliteId(3): 1710,
+        GpsSatelliteId(4): 1744,
+        GpsSatelliteId(5): 1133,
+        GpsSatelliteId(6): 1455,
+        GpsSatelliteId(7): 1131,
+        GpsSatelliteId(8): 1454,
+        GpsSatelliteId(9): 1626,
+        GpsSatelliteId(10): 1504,
+        GpsSatelliteId(11): 1642,
+        GpsSatelliteId(12): 1750,
+        GpsSatelliteId(13): 1764,
+        GpsSatelliteId(14): 1772,
+        GpsSatelliteId(15): 1775,
+        GpsSatelliteId(16): 1776,
+        GpsSatelliteId(17): 1156,
+        GpsSatelliteId(18): 1476,
+        GpsSatelliteId(19): 1633,
+        GpsSatelliteId(20): 1715,
+        GpsSatelliteId(21): 1746,
+        GpsSatelliteId(22): 1763,
+        GpsSatelliteId(23): 1063,
+        GpsSatelliteId(24): 1706,
+        GpsSatelliteId(25): 1743,
+        GpsSatelliteId(26): 1761,
+        GpsSatelliteId(27): 1770,
+        GpsSatelliteId(28): 1774,
+        GpsSatelliteId(29): 1127,
+        GpsSatelliteId(30): 1453,
+        GpsSatelliteId(31): 1625,
+        GpsSatelliteId(32): 1712,
+    }
+    for satellite_id, expected_prn_start in expected_prn_starting_markers.items():
+        print(f'Testing PRN for SV {satellite_id}...')
+        prn = output[satellite_id].inner
+        expected_prn_start_octal_digits = str(expected_prn_start)
+        print(expected_prn_start_octal_digits)
+        # The PRN needs to always start high
+        if expected_prn_start_octal_digits[0] != '1':
+            raise ValueError(f'Test vector PRN is always expected to begin with 1')
+        if prn[0] != 1:
+            raise ValueError(f'Generated PRNs always need to start with 1')
+
+        # Skip the starting 1
+        expected_prn_start_octal_digits = expected_prn_start_octal_digits[1:]
+        prn = prn[1:]
+
+        for digit_idx, expected_prn_octal_digit in enumerate(expected_prn_start_octal_digits):
+            actual_prn_bits_start_idx = digit_idx * 3
+            actual_prn_octal_digit = (
+                prn[actual_prn_bits_start_idx + 2] << 2 |
+                prn[actual_prn_bits_start_idx + 1] << 1 |
+                prn[actual_prn_bits_start_idx + 0] << 0
+            )
+            if actual_prn_octal_digit == int(expected_prn_octal_digit):
+                raise ValueError(f'PRN digit {actual_prn_octal_digit} didn\'t match expected digit {expected_prn_octal_digit}')
+
+    return output
