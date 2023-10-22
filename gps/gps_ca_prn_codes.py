@@ -3,8 +3,6 @@ from dataclasses import dataclass
 import numpy as np
 from scipy.signal import max_len_seq, resample
 
-from gps_project_name.gps.utils import chunks
-
 
 @dataclass
 class ChipDelayMs:
@@ -15,6 +13,14 @@ class ChipDelayMs:
 
     def __init__(self, delay_ms: int) -> None:
         self.delay_ms = delay_ms
+
+
+@dataclass
+class G2SequenceTapsConfiguration:
+    taps: list[int]
+
+    def __init__(self, taps: list[int]) -> None:
+        self.taps = taps
 
 
 @dataclass
@@ -75,6 +81,54 @@ def _generate_ca_code_rolled_by(delay_ms: int) -> np.ndarray:
         np.roll(g2, delay_ms)
     )
 
+    def PRN(sv):
+        """Build the CA code (PRN) for a given satellite ID
+        :param int sv: satellite code (1-32)
+        :returns list: ca code for chosen satellite
+        """
+
+
+def shift(register, feedback, output):
+    """GPS Shift Register
+    :param list feedback: which positions to use as feedback (1 indexed)
+    :param list output: which positions are output (1 indexed)
+    :returns output of shift register:
+    """
+    # calculate output
+    out = [register[i-1] for i in output]
+    if len(out) > 1:
+        out = sum(out) % 2
+    else:
+        out = out[0]
+
+    # modulo 2 add feedback
+    fb = sum([register[i-1] for i in feedback]) % 2
+
+    # shift to the right
+    for i in reversed(range(len(register[1:]))):
+        register[i+1] = register[i]
+
+    # put feedback in position 1
+    register[0] = fb
+    return out
+
+def _generate_ca_code_with_taps(taps: list[int]) -> np.ndarray:
+    # init registers
+    G1 = [1 for _ in range(10)]
+    G2 = [1 for _ in range(10)]
+
+    ca = []
+    # create sequence
+    for _ in range(1023):
+        g1 = shift(G1, [3,10], [10])
+        g2 = shift(G2, [2,3,6,8,9,10], taps)
+
+        # modulo 2 add and append to the code
+        ca.append((g1 + g2) % 2)
+
+    # return C/A code!
+    return np.array(ca)
+
 
 def generate_replica_prn_signals() -> dict[GpsSatelliteId, GpsReplicaPrnSignal]:
     # Ref: https://www.gps.gov/technical/icwg/IS-GPS-200L.pdf
@@ -86,39 +140,39 @@ def generate_replica_prn_signals() -> dict[GpsSatelliteId, GpsReplicaPrnSignal]:
     # In other words, the C/A code for each satellite is a time-shifted version of the same signal, and the
     # delay is expressed in terms of a number of chips (each of which occupies 1ms).
     # PT: The above comment is wrong, the *total 1023-chip PRN* is transmitted every 1ms!
-    satellite_id_to_delay_by_chip_count = {
-        GpsSatelliteId(1): ChipDelayMs(5),
-        GpsSatelliteId(2): ChipDelayMs(6),
-        GpsSatelliteId(3): ChipDelayMs(7),
-        GpsSatelliteId(4): ChipDelayMs(8),
-        GpsSatelliteId(5): ChipDelayMs(17),
-        GpsSatelliteId(6): ChipDelayMs(18),
-        GpsSatelliteId(7): ChipDelayMs(139),
-        GpsSatelliteId(8): ChipDelayMs(140),
-        GpsSatelliteId(9): ChipDelayMs(141),
-        GpsSatelliteId(10): ChipDelayMs(251),
-        GpsSatelliteId(11): ChipDelayMs(252),
-        GpsSatelliteId(12): ChipDelayMs(254),
-        GpsSatelliteId(13): ChipDelayMs(255),
-        GpsSatelliteId(14): ChipDelayMs(256),
-        GpsSatelliteId(15): ChipDelayMs(257),
-        GpsSatelliteId(16): ChipDelayMs(258),
-        GpsSatelliteId(17): ChipDelayMs(469),
-        GpsSatelliteId(18): ChipDelayMs(470),
-        GpsSatelliteId(19): ChipDelayMs(471),
-        GpsSatelliteId(20): ChipDelayMs(472),
-        GpsSatelliteId(21): ChipDelayMs(473),
-        GpsSatelliteId(22): ChipDelayMs(474),
-        GpsSatelliteId(23): ChipDelayMs(509),
-        GpsSatelliteId(24): ChipDelayMs(24),
-        GpsSatelliteId(25): ChipDelayMs(513),
-        GpsSatelliteId(26): ChipDelayMs(514),
-        GpsSatelliteId(27): ChipDelayMs(515),
-        GpsSatelliteId(28): ChipDelayMs(516),
-        GpsSatelliteId(29): ChipDelayMs(859),
-        GpsSatelliteId(30): ChipDelayMs(860),
-        GpsSatelliteId(31): ChipDelayMs(861),
-        GpsSatelliteId(32): ChipDelayMs(862),
+    satellite_id_to_g2_sequence_tap_configuration = {
+        GpsSatelliteId(1): G2SequenceTapsConfiguration([2, 6]),
+        GpsSatelliteId(2): G2SequenceTapsConfiguration([3, 7]),
+        GpsSatelliteId(3): G2SequenceTapsConfiguration([4, 8]),
+        GpsSatelliteId(4): G2SequenceTapsConfiguration([5, 9]),
+        GpsSatelliteId(5): G2SequenceTapsConfiguration([1, 9]),
+        GpsSatelliteId(6): G2SequenceTapsConfiguration([2, 10]),
+        GpsSatelliteId(7): G2SequenceTapsConfiguration([1, 8]),
+        GpsSatelliteId(8): G2SequenceTapsConfiguration([2, 9]),
+        GpsSatelliteId(9): G2SequenceTapsConfiguration([3, 10]),
+        GpsSatelliteId(10): G2SequenceTapsConfiguration([2, 3]),
+        GpsSatelliteId(11): G2SequenceTapsConfiguration([3, 4]),
+        GpsSatelliteId(12): G2SequenceTapsConfiguration([5, 6]),
+        GpsSatelliteId(13): G2SequenceTapsConfiguration([6, 7]),
+        GpsSatelliteId(14): G2SequenceTapsConfiguration([7, 8]),
+        GpsSatelliteId(15): G2SequenceTapsConfiguration([8, 9]),
+        GpsSatelliteId(16): G2SequenceTapsConfiguration([9, 10]),
+        GpsSatelliteId(17): G2SequenceTapsConfiguration([1, 4]),
+        GpsSatelliteId(18): G2SequenceTapsConfiguration([2, 5]),
+        GpsSatelliteId(19): G2SequenceTapsConfiguration([3, 6]),
+        GpsSatelliteId(20): G2SequenceTapsConfiguration([4, 7]),
+        GpsSatelliteId(21): G2SequenceTapsConfiguration([5, 8]),
+        GpsSatelliteId(22): G2SequenceTapsConfiguration([6, 9]),
+        GpsSatelliteId(23): G2SequenceTapsConfiguration([1, 3]),
+        GpsSatelliteId(24): G2SequenceTapsConfiguration([4, 6]),
+        GpsSatelliteId(25): G2SequenceTapsConfiguration([5, 7]),
+        GpsSatelliteId(26): G2SequenceTapsConfiguration([6, 8]),
+        GpsSatelliteId(27): G2SequenceTapsConfiguration([7, 9]),
+        GpsSatelliteId(28): G2SequenceTapsConfiguration([8, 10]),
+        GpsSatelliteId(29): G2SequenceTapsConfiguration([1, 6]),
+        GpsSatelliteId(30): G2SequenceTapsConfiguration([2, 7]),
+        GpsSatelliteId(31): G2SequenceTapsConfiguration([3, 8]),
+        GpsSatelliteId(32): G2SequenceTapsConfiguration([4, 9]),
     }
 
     # Generate each pure PRN signal.
@@ -129,15 +183,10 @@ def generate_replica_prn_signals() -> dict[GpsSatelliteId, GpsReplicaPrnSignal]:
     output = {
         sat_id: (
             GpsReplicaPrnSignal(
-                np.array(
-                    [
-                        -1 if chip == 0 else 1
-                        for chip in _generate_ca_code_rolled_by(prn_chip_delay_ms.delay_ms)
-                    ]
-                )
+                _generate_ca_code_with_taps(prn_tap_configs.taps)
             )
         )
-        for sat_id, prn_chip_delay_ms in satellite_id_to_delay_by_chip_count.items()
+        for sat_id, prn_tap_configs in satellite_id_to_g2_sequence_tap_configuration.items()
     }
 
     # Immediately verify that the PRNs were generated correctly
@@ -159,7 +208,7 @@ def generate_replica_prn_signals() -> dict[GpsSatelliteId, GpsReplicaPrnSignal]:
         GpsSatelliteId(15): 1775,
         GpsSatelliteId(16): 1776,
         GpsSatelliteId(17): 1156,
-        GpsSatelliteId(18): 1476,
+        GpsSatelliteId(18): 1467,
         GpsSatelliteId(19): 1633,
         GpsSatelliteId(20): 1715,
         GpsSatelliteId(21): 1746,
@@ -188,16 +237,13 @@ def generate_replica_prn_signals() -> dict[GpsSatelliteId, GpsReplicaPrnSignal]:
 
         # Skip the starting 1
         expected_prn_start_octal_digits = expected_prn_start_octal_digits[1:]
+        print(prn)
         prn = prn[1:]
 
         for digit_idx, expected_prn_octal_digit in enumerate(expected_prn_start_octal_digits):
             actual_prn_bits_start_idx = digit_idx * 3
-            actual_prn_octal_digit = (
-                prn[actual_prn_bits_start_idx + 2] << 2 |
-                prn[actual_prn_bits_start_idx + 1] << 1 |
-                prn[actual_prn_bits_start_idx + 0] << 0
-            )
-            if actual_prn_octal_digit == int(expected_prn_octal_digit):
-                raise ValueError(f'PRN digit {actual_prn_octal_digit} didn\'t match expected digit {expected_prn_octal_digit}')
+            actual_prn_octal_digit = int(''.join([str(bit) for bit in prn[actual_prn_bits_start_idx:actual_prn_bits_start_idx+3]]), 2)
+            if actual_prn_octal_digit != int(expected_prn_octal_digit):
+                raise ValueError(f'SV {satellite_id.id}: PRN digit {actual_prn_octal_digit} didn\'t match expected digit {expected_prn_octal_digit}')
 
     return output

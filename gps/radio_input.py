@@ -8,6 +8,7 @@ import numpy as np
 class InputFileType(Enum):
     Raw = auto()
     Wav = auto()
+    GnuRadioRecording = auto()
 
 
 @dataclass
@@ -53,14 +54,14 @@ INPUT_SOURCES = [
     ),
     InputFileInfo(
         path=Path(__file__).parents[1] / "vendored_signals" / "output_at_seven_wives",
-        format=InputFileType.Raw,
+        format=InputFileType.GnuRadioRecording,
         # 2 * C/A PRN chip rate * 1k PRN repetitions per second
         sdr_sample_rate=2*1023*1000,
     ),
 ]
 
 
-def get_samples_from_radio_input_source(input_info: InputFileInfo) -> np.ndarray:
+def get_samples_from_radio_input_source(input_info: InputFileInfo, sample_count: int) -> np.ndarray:
     samples_per_prn = input_info.samples_in_prn_period
 
     if input_info.format == InputFileType.Wav:
@@ -84,6 +85,14 @@ def get_samples_from_radio_input_source(input_info: InputFileInfo) -> np.ndarray
         # Convert to complex numpy array
         data = np.reshape(data, (data.shape[0]//2, 2))
         data = data[offset:, 0] + 1j * data[offset:, 1]
+
+    elif input_info.format == InputFileType.GnuRadioRecording:
+        # For now, read 1 second worth of data / 2 PRN transmissions (2 seconds?!)
+        # Multiplied by 2 as IQ samples are interleaved
+        data = np.fromfile(input_info.path.as_posix(), dtype=np.float32, count=4*1023*1000)
+        print(data)
+        #data = data.astype(complex)
+        data = (data[0::2] + (1j * data[1::2]))
     else:
         raise ValueError(f'Unrecognized format')
 
