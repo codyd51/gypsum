@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from typing import Any
 
 import numpy as np
 from scipy.signal import max_len_seq, resample
@@ -33,6 +34,13 @@ class GpsSatelliteId:
 
     def __hash__(self) -> int:
         return hash(self.id)
+
+    def __eq__(self, other: Any) -> bool:
+        if not isinstance(other, type(self)):
+            return False
+        # <class '                 gps.gps_ca_prn_codes.GpsSatelliteId'>
+        # <class 'gps_project_name.gps.gps_ca_prn_codes.GpsSatelliteId'>
+        return self.id == other.id
 
 
 @dataclass

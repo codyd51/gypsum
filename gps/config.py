@@ -5,3 +5,9 @@
 # but at the cost of increased computation.
 # I chose 32 because it makes correlations really clear and strong when plotting the data.
 PRN_CORRELATION_CYCLE_COUNT = 32
+
+PRN_CORRELATION_MAGNITUDE_THRESHOLD = PRN_CORRELATION_CYCLE_COUNT * 2
+
+DOPPLER_SHIFT_FREQUENCY_LOWER_BOUND = -6000
+DOPPLER_SHIFT_FREQUENCY_UPPER_BOUND = 6000
+DOPPLER_SHIFT_SEARCH_INTERVAL = 500

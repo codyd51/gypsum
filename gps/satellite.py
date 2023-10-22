@@ -4,8 +4,11 @@ from functools import lru_cache
 
 import numpy as np
 
-from gps_project_name.gps.config import PRN_CORRELATION_CYCLE_COUNT
-from gps_project_name.gps.gps_ca_prn_codes import GpsSatelliteId, GpsReplicaPrnSignal
+from gps.config import PRN_CORRELATION_CYCLE_COUNT
+from gps.gps_ca_prn_codes import GpsSatelliteId, GpsReplicaPrnSignal
+
+
+ALL_SATELLITE_IDS = [GpsSatelliteId(i + 1) for i in range(32)]
 
 
 @dataclass
@@ -34,5 +37,3 @@ class GpsSatellite:
         # Convert to complex with a zero imaginary part
         prn_as_complex = [x+0j for x in prn_with_adjusted_domain]
         return prn_as_complex
-
-

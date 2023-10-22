@@ -87,11 +87,13 @@ def get_samples_from_radio_input_source(input_info: InputFileInfo, sample_count:
         data = data[offset:, 0] + 1j * data[offset:, 1]
 
     elif input_info.format == InputFileType.GnuRadioRecording:
-        # For now, read 1 second worth of data / 2 PRN transmissions (2 seconds?!)
-        # Multiplied by 2 as IQ samples are interleaved
-        data = np.fromfile(input_info.path.as_posix(), dtype=np.float32, count=4*1023*1000)
-        print(data)
-        #data = data.astype(complex)
+        # For now, read 1 second of data / 1000 repetitions of the PRN:
+        # 1023 chips per PRN
+        # Multiplied by 2 for Nyquist sample rate
+        # Multiplied by 1000 as the PRN is retransmitted 1000 times per second
+        # Multiplied by 2 as the file stores 1 word for the I component, and 1 word for the Q component
+        data = np.fromfile(input_info.path.as_posix(), dtype=np.float32, count=2*1023*1000*2)
+        # Recombine the inline IQ samples into complex numbers
         data = (data[0::2] + (1j * data[1::2]))
     else:
         raise ValueError(f'Unrecognized format')
