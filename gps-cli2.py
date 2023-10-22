@@ -5,7 +5,7 @@ from gps.gps_ca_prn_codes import generate_replica_prn_signals, GpsSatelliteId
 from gps.radio_input import INPUT_SOURCES, get_samples_from_radio_input_source
 from gps_project_name.gps.config import PRN_CORRELATION_CYCLE_COUNT
 from gps_project_name.gps.satellite import GpsSatellite
-from gps_project_name.gps.utils import chunks
+from gps_project_name.gps.utils import chunks, round_to_previous_multiple_of
 
 # PT: The SDR must be set to this center frequency
 _GPS_L1_FREQUENCY = 1575.42e6
@@ -53,10 +53,14 @@ def main():
     if len(doppler_cosine) != len(sdr_data):
         raise ValueError(f'Expected the generated carrier frequency and read SDR data to be the same length')
 
-    signal_multiplied_with_doppler_shifted_carrier = doppler_cosine * sdr_data
-
     vector_size = int(PRN_CORRELATION_CYCLE_COUNT * sample_rate / 1000)
     print(f'Vector size: {vector_size}')
+
+    # Multiply the input signal with our Doppler-shifted cosine wave, to align the input signal with our reference PRN
+    # In other words, this multiplication aligns our received data to baseband (if the Doppler shift is correct).
+    signal_multiplied_with_doppler_shifted_carrier = doppler_cosine * sdr_data
+    # Throw away extra signal data that doesn't fit in a modulo of our window size
+    signal_multiplied_with_doppler_shifted_carrier = signal_multiplied_with_doppler_shifted_carrier[:round_to_previous_multiple_of(len(signal_multiplied_with_doppler_shifted_carrier), vector_size)]
 
     while True:
         for i, signal_chunk in enumerate(

@@ -5,9 +5,7 @@ from functools import lru_cache
 import numpy as np
 
 from gps_project_name.gps.config import PRN_CORRELATION_CYCLE_COUNT
-from gps_project_name.gps.constants import PRN_REPETITIONS_PER_SECOND
 from gps_project_name.gps.gps_ca_prn_codes import GpsSatelliteId, GpsReplicaPrnSignal
-from gps_project_name.gps.utils import chunks
 
 
 @dataclass
