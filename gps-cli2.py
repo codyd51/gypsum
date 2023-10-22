@@ -36,7 +36,7 @@ def main():
     sample_rate = input_source.sdr_sample_rate
     # Generate PRN signals for each satellite
     satellites_to_replica_prn_signals = generate_replica_prn_signals()
-    prn24 = satellites_to_replica_prn_signals[GpsSatelliteId(id=1)].inner
+    prn24 = satellites_to_replica_prn_signals[GpsSatelliteId(id=24)].inner
 
     # Repeat each chip data point twice
     # This is because we'll be sampling at Nyquist frequency (2 * signal frequency, which is 1023 data points)
@@ -80,12 +80,11 @@ def main():
 
             print(f'{vector_size} chunk #{i}...')
 
-            window = scipy.signal.windows.boxcar(len(prn_chunk))
             fft_of_complex_prn = np.fft.fft(prn_chunk)
             fft_of_doppler_shifted_signal = np.fft.fft(signal_chunk)
 
             mult = fft_of_complex_prn * np.conjugate(fft_of_doppler_shifted_signal)
-            mult_ifft = np.fft.ifft(mult*window)
+            mult_ifft = np.fft.ifft(mult)
             scaled_ifft = mult_ifft * ((1/vector_size)*vector_size)
             correlation = np.absolute(scaled_ifft)
 
