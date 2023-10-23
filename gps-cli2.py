@@ -7,8 +7,8 @@ from tqdm import tqdm
 from gps.gps_ca_prn_codes import generate_replica_prn_signals, GpsSatelliteId
 from gps.radio_input import INPUT_SOURCES, get_samples_from_radio_input_source
 from gps.config import PRN_CORRELATION_CYCLE_COUNT, DOPPLER_SHIFT_FREQUENCY_LOWER_BOUND, \
-    DOPPLER_SHIFT_FREQUENCY_UPPER_BOUND, DOPPLER_SHIFT_SEARCH_INTERVAL
-from gps.constants import SAMPLES_PER_SECOND
+    DOPPLER_SHIFT_FREQUENCY_UPPER_BOUND, DOPPLER_SHIFT_SEARCH_INTERVAL, PRN_CORRELATION_MAGNITUDE_THRESHOLD
+from gps.constants import SAMPLES_PER_SECOND, SAMPLES_PER_PRN_TRANSMISSION, PRN_REPETITIONS_PER_SECOND, PRN_CHIP_COUNT
 from gps.satellite import GpsSatellite, ALL_SATELLITE_IDS
 from gps.utils import chunks, round_to_previous_multiple_of
 
@@ -38,6 +38,8 @@ def generate_cosine_with_frequency(time_domain: np.ndarray, frequency: int) -> l
 class DetectedSatelliteInfo:
     satellite_id: GpsSatelliteId
     doppler_frequency_shift: int
+    time_offset: float
+    chip_offset: float
 
 
 class GpsSatelliteDetector:
@@ -52,7 +54,6 @@ class GpsSatelliteDetector:
             for satellite_id, code in satellites_to_replica_prn_signals.items()
         }
 
-
         #self.doppler_wave_generator_memoizer = numpy_memoizer(generate_cosine_with_frequency)
         #self.doppler_wave_generator_memoizer = Memoized(generate_cosine_with_frequency)
 
@@ -62,7 +63,7 @@ class GpsSatelliteDetector:
         end_time = 1
         time_domain = np.arange(start_time, end_time, 1/(float(SAMPLES_PER_SECOND)))
         # We're going to read PRN_CORRELATION_CYCLE_COUNT repetitions of the PRN
-        correlation_bucket_sample_count = int(PRN_CORRELATION_CYCLE_COUNT * SAMPLES_PER_SECOND / 1000)
+        correlation_bucket_sample_count = int(PRN_CORRELATION_CYCLE_COUNT * SAMPLES_PER_PRN_TRANSMISSION)
         print(f'Correlation bucket sample count: {correlation_bucket_sample_count}')
         time_domain_for_correlation_bucket = time_domain[:correlation_bucket_sample_count]
 
@@ -102,7 +103,7 @@ class GpsSatelliteDetector:
                     detected_satellites_by_id[satellite_id] = detected_satellite
 
             # Check whether we've detected enough satellites to carry out a position fix
-            if len(detected_satellites_by_id) >= 400:
+            if len(detected_satellites_by_id) >= 4:
                 print(f"We've detected enough satellites to carry out a position fix!")
                 break
             else:
@@ -150,19 +151,36 @@ class GpsSatelliteDetector:
             # Correlation across time
             #plt.plot(correlation)
             #print(correlation)
-
-            max_correlation_peak_time_offset = np.argmax(correlation)
-            max_correlation_magnitude = correlation[max_correlation_peak_time_offset]
-            #print(f'Max correlation is at time offset {max_correlation_peak_time_offset}.')
-            #print(f'The correlation magnitude is {max_correlation_magnitude}.')
-
-            #time_offsets.append(max_correlation_peak_time_offset)
+            indexes_of_peaks_above_prn_correlation_threshold = list(sorted(np.argwhere(correlation >= PRN_CORRELATION_MAGNITUDE_THRESHOLD)))
             # TODO(PT): Instead of immediately returning, we should hold out to find the best correlation across the search space
-            if max_correlation_magnitude > 70:
-                print(f'*** Identified satellite {satellite_id} at doppler-shift {doppler_shift}, correlation magnitude of {max_correlation_magnitude} at {max_correlation_peak_time_offset}')
+            if len(indexes_of_peaks_above_prn_correlation_threshold):
+                # We're matching against many PRN cycles to increase our correlation strength.
+                # We now want to figure out the time slide (and therefore distance) for the transmitter.
+                # Therefore, we only care about the distance to the first correlation peak (i.e. the phase offset)
+                sample_offset_where_we_started_receiving_prn = indexes_of_peaks_above_prn_correlation_threshold[0]
+                #  Divide by Nyquist frequency
+                chip_index_where_we_started_receiving_prn = sample_offset_where_we_started_receiving_prn / 2
+                # Convert to time
+                time_per_prn_chip = ((1 / PRN_REPETITIONS_PER_SECOND) / PRN_CHIP_COUNT)
+                chip_offset_from_satellite = PRN_CHIP_COUNT - chip_index_where_we_started_receiving_prn
+                # TODO(PT): Maybe the sign varies depending on whether the Doppler shift is positive or negative?
+                time_offset = chip_offset_from_satellite * time_per_prn_chip
+                print(f'We are {chip_offset_from_satellite} chips ahead of satellite {satellite_id}. This represents a time delay of {time_offset}')
+                print(f'*** Identified satellite {satellite_id} at doppler shift {doppler_shift}, correlation magnitude of {correlation[sample_offset_where_we_started_receiving_prn]} at {sample_offset_where_we_started_receiving_prn}, time offset of {time_offset}, chip offset of {chip_offset_from_satellite}')
+                #plt.plot(correlation)
+                #plt.show()
+
+                # PT: It seems as though we don't yet have enough information to determine
+                # whether the satellite's clock is ahead of or behind our own (which makes sense).
+                # All we can say for now is that the received PRN is out of phase with our PRN
+                # by some number of chips/some time delay (which we can choose to be either positive or negative).
+                # It seems like the next step now is to use the delay to decode the navigation message, and figure
+                # out later our time differential.
                 return DetectedSatelliteInfo(
                     satellite_id=satellite_id,
                     doppler_frequency_shift=doppler_shift,
+                    time_offset=time_offset,
+                    chip_offset=chip_offset_from_satellite,
                 )
 
         # Failed to find a PRN correlation peak strong enough to count as a detection
