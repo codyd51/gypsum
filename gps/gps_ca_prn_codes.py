@@ -38,8 +38,6 @@ class GpsSatelliteId:
     def __eq__(self, other: Any) -> bool:
         if not isinstance(other, type(self)):
             return False
-        # <class '                 gps.gps_ca_prn_codes.GpsSatelliteId'>
-        # <class 'gps_project_name.gps.gps_ca_prn_codes.GpsSatelliteId'>
         return self.id == other.id
 
 
@@ -89,12 +87,6 @@ def _generate_ca_code_rolled_by(delay_ms: int) -> np.ndarray:
         np.roll(g2, delay_ms)
     )
 
-    def PRN(sv):
-        """Build the CA code (PRN) for a given satellite ID
-        :param int sv: satellite code (1-32)
-        :returns list: ca code for chosen satellite
-        """
-
 
 def shift(register, feedback, output):
     """GPS Shift Register
@@ -119,6 +111,7 @@ def shift(register, feedback, output):
     # put feedback in position 1
     register[0] = fb
     return out
+
 
 def _generate_ca_code_with_taps(taps: list[int]) -> np.ndarray:
     # init registers
@@ -245,7 +238,6 @@ def generate_replica_prn_signals() -> dict[GpsSatelliteId, GpsReplicaPrnSignal]:
 
         # Skip the starting 1
         expected_prn_start_octal_digits = expected_prn_start_octal_digits[1:]
-        #print(prn)
         prn = prn[1:]
 
         for digit_idx, expected_prn_octal_digit in enumerate(expected_prn_start_octal_digits):

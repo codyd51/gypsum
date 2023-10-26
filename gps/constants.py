@@ -9,6 +9,9 @@ SAMPLES_PER_PRN_TRANSMISSION = 2 * PRN_CHIP_COUNT
 
 # Assumes Nyquist sample rate
 SAMPLES_PER_SECOND = SAMPLES_PER_PRN_TRANSMISSION * PRN_REPETITIONS_PER_SECOND
+#SAMPLES_PER_SECOND = 2400*1000
+
+SAMPLES_PER_PRN_TRANSMISSION =SAMPLES_PER_SECOND // 1000
 
 # Center frequency that GPS signals are emitted at.
 # PT: The SDR must be set to this center frequency

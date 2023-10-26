@@ -4,7 +4,7 @@ from pathlib import Path
 
 import numpy as np
 
-from gps_project_name.gps.constants import PRN_CHIP_COUNT, PRN_REPETITIONS_PER_SECOND
+from gps_project_name.gps.constants import PRN_CHIP_COUNT, PRN_REPETITIONS_PER_SECOND, SAMPLES_PER_SECOND
 
 
 class InputFileType(Enum):
@@ -60,6 +60,35 @@ INPUT_SOURCES = [
         # 2 * C/A PRN chip rate * 1k PRN repetitions per second
         sdr_sample_rate=2*1023*1000,
     ),
+    InputFileInfo(
+        # Satellites that should be up now (distances taken a few minutes after recording):
+        # 2  (Mag 16.9, dist 23,759km)
+        # 3  (Mag 13.1, dist 20,377km)
+        # 6  (Mag 11.7, dist 23,088km)
+        # 9  (Mag 13.1, dist 23,036km)
+        # 12 (Mag 12.0, dist 24,807km)
+        # 17 (Mag 12.2, dist 21,848km)
+        # 19 (Mag 11.8, dist 21,378km)
+        # 21 (Mag 17.8, dist 24,931km)
+        # 31 (Mag 15.0, dist 23,214km)
+        #path=Path(__file__).parents[1] / "vendored_signals" / "test_output_in_office_gnu_radio",
+
+        # 15:21pm
+        # 5
+        # 13
+        # 14    # *** Identified satellite GpsSatelliteId(id=14) at doppler shift -2500, correlation magnitude of 8.334292029948841e-08 at 405, time offset of 0.0008020527859237536, chip offset of 820.5
+        # 15
+        # 18    # *** Identified satellite GpsSatelliteId(id=18) at doppler shift -1000, correlation magnitude of 9.180577185072234e-08 at 401, time offset of 0.0008040078201368523, chip offset of 822.5
+        # 20    # *** Identified satellite GpsSatelliteId(id=20) at doppler shift -3500, correlation magnitude of 5.6041227612533935e-08 at 1571, time offset of 0.0002321603128054741, chip offset of 237.5
+        # 23
+        # 24    # *** Identified satellite GpsSatelliteId(id=24) at doppler shift -5500, correlation magnitude of 5.057564040211816e-08 at 1281, time offset of 0.00037390029325513196, chip offset of 382.5
+        # 30
+        path=Path(__file__).parents[1] / "vendored_signals" / "test_output_in_office_gnu_radio",
+        format=InputFileType.GnuRadioRecording,
+        # 2 * C/A PRN chip rate * 1k PRN repetitions per second
+        sdr_sample_rate=2*1023*1000,
+        #sdr_sample_rate=2400*1000,
+    ),
 ]
 
 
@@ -94,14 +123,16 @@ def get_samples_from_radio_input_source(input_info: InputFileInfo, sample_count:
         # Multiplied by 2 for Nyquist sample rate
         # Multiplied by 1000 as the PRN is retransmitted 1000 times per second
         # Multiplied by 2 as the file stores 1 word for the I component, and 1 word for the Q component
-        seconds_count = 10
+        seconds_count = 30
         words_per_iq_sample = 2
         nyquist_multiple = 2
         data = np.fromfile(
             input_info.path.as_posix(),
             dtype=np.float32,
             count=(
-                words_per_iq_sample * PRN_CHIP_COUNT * PRN_REPETITIONS_PER_SECOND * nyquist_multiple * seconds_count
+                words_per_iq_sample * SAMPLES_PER_SECOND * seconds_count
+                #words_per_iq_sample * PRN_CHIP_COUNT * PRN_REPETITIONS_PER_SECOND * nyquist_multiple * seconds_count
+                #words_per_iq_sample * 2400*1000 * seconds_count
             )
         )
         # Recombine the inline IQ samples into complex numbers

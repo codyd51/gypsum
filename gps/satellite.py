@@ -22,9 +22,20 @@ class GpsSatellite:
     @lru_cache(maxsize=PRN_CORRELATION_CYCLE_COUNT)
     def fft_of_prn_of_length(self, vector_size: int) -> np.ndarray:
         print(f'Calculating {self.satellite_id} PRN FFT of length {vector_size}...')
-        needed_repetitions_to_match_vector_size = math.ceil(vector_size / len(self.prn_as_complex))
-        prn_of_correct_length = np.tile(self.prn_as_complex, needed_repetitions_to_match_vector_size)[:vector_size]
-        return np.fft.fft(prn_of_correct_length)
+
+        if True:
+            zero_padding_size = vector_size - len(self.prn_as_complex)
+            # Append zeros to the PRN to match the desired vector_size
+            prn_padded = np.concatenate((self.prn_as_complex, np.zeros(zero_padding_size)))
+            #return np.fft.fft(prn_padded) / vector_size
+            return np.fft.fft(prn_padded)
+        else:
+            if vector_size % 1023:
+                raise ValueError("Expected an exact multiple of the PRN size")
+            needed_repetitions_to_match_vector_size = math.ceil(vector_size / len(self.prn_as_complex))
+            prn_of_correct_length = np.tile(self.prn_as_complex, needed_repetitions_to_match_vector_size)[:vector_size]
+            return np.fft.fft(prn_of_correct_length)
+
 
     @property
     @lru_cache
@@ -35,5 +46,5 @@ class GpsSatellite:
         # Adjust domain from [0 - 1] to [-1, 1] to match the IQ samples we'll receive
         prn_with_adjusted_domain = np.array([-1 if chip == 0 else 1 for chip in prn_with_repeated_data_points])
         # Convert to complex with a zero imaginary part
-        prn_as_complex = [x+0j for x in prn_with_adjusted_domain]
+        prn_as_complex = prn_with_adjusted_domain.astype(complex)
         return prn_as_complex
