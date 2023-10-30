@@ -123,17 +123,15 @@ def get_samples_from_radio_input_source(input_info: InputFileInfo, sample_count:
         # Multiplied by 2 for Nyquist sample rate
         # Multiplied by 1000 as the PRN is retransmitted 1000 times per second
         # Multiplied by 2 as the file stores 1 word for the I component, and 1 word for the Q component
-        seconds_count = 30
+        seconds_count = 120
         words_per_iq_sample = 2
         nyquist_multiple = 2
         data = np.fromfile(
             input_info.path.as_posix(),
             dtype=np.float32,
-            count=(
-                words_per_iq_sample * SAMPLES_PER_SECOND * seconds_count
-                #words_per_iq_sample * PRN_CHIP_COUNT * PRN_REPETITIONS_PER_SECOND * nyquist_multiple * seconds_count
-                #words_per_iq_sample * 2400*1000 * seconds_count
-            )
+            #count=(
+            #    words_per_iq_sample * SAMPLES_PER_SECOND * seconds_count
+            #)
         )
         # Recombine the inline IQ samples into complex numbers
         data = (data[0::2] + (1j * data[1::2]))
