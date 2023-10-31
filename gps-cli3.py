@@ -1,3 +1,4 @@
+from collections import defaultdict
 from typing import Tuple
 
 from matplotlib.widgets import Slider
@@ -111,13 +112,28 @@ _DopplerShiftEstimation = float
 _PrnCodePhase = float
 
 
+class ResampledPrnProvider:
+    def __init__(self, satellites: dict[GpsSatelliteId, GpsSatellite]):
+        self.satellites = satellites
+        self.sv_id_to_resampled_prn_cache = defaultdict(dict)
+
+    def get_resampled_prn(self, sv_id: GpsSatelliteId, sample_count: int) -> np.ndarray:
+        if sample_count not in self.sv_id_to_resampled_prn_cache[sv_id]:
+            # print(f'Computing SV {sv_id.id} PRN with {sample_count} samples...')
+            prn = self.satellites[sv_id].prn_as_complex
+            resampled_prn = resample_poly(prn, sample_count, len(prn))
+            resampled_prn = np.array([complex(1, 0) if x.real >= 0.5 else complex(-1, 0) for x in resampled_prn][:sample_count])
+            self.sv_id_to_resampled_prn_cache[sv_id][sample_count] = resampled_prn
+        return self.sv_id_to_resampled_prn_cache[sv_id][sample_count]
+
+
 def compute_best_doppler_shift_estimation(
     center: float,
     spread: float,
     antenna_data: Samples,
-    prn: np.ndarray,
+    sv_id: GpsSatelliteId,
+    prn_provider: ResampledPrnProvider,
 ) -> Tuple[_CorrelationStrength, _DopplerShiftEstimation, _PrnCodePhase] | None:
-    print(f'compute_best_doppler center={center:.2f} spread={spread:.2f}')
     integration_period_ms = 20
     prn_chip_rate = 1.023e6
     doppler_shift_to_integrated_coherent_correlation = {}
@@ -126,17 +142,11 @@ def compute_best_doppler_shift_estimation(
         int(center + spread),
         int(spread / 10),
     ):
-        #print(f'Trying Doppler shift {doppler_shift}')
         # Calculate the PRN length, accounting for this Doppler shift
         shifted_prn_chip_rate = prn_chip_rate + doppler_shift
         prn_resampling_ratio = shifted_prn_chip_rate / prn_chip_rate
         shifted_prn_sample_count = int(SAMPLES_PER_PRN_TRANSMISSION * prn_resampling_ratio)
-        #resampled_prn = resample(prn, shifted_prn_sample_count)
-        print(f'shifted chip rate {shifted_prn_chip_rate} samp count {shifted_prn_sample_count}')
-        resampled_prn = resample_poly(prn, int(shifted_prn_chip_rate), int(prn_chip_rate))
-        #resampled_prn = np.copy(prn)
-        resampled_prn = np.array([complex(1, 0) if x.real >= 0.5 else complex(-1, 0) for x in resampled_prn][:shifted_prn_sample_count])
-        #print(f'Resampled PRN sample count: {shifted_prn_sample_count}')
+        resampled_prn = prn_provider.get_resampled_prn(sv_id, shifted_prn_sample_count)
 
         samples_in_window = integration_period_ms * shifted_prn_sample_count
         antenna_data_snippet = antenna_data.data[:samples_in_window]
@@ -147,50 +157,55 @@ def compute_best_doppler_shift_estimation(
         coherent_integration_result = np.zeros(shifted_prn_sample_count, dtype=complex)
         for i, chunk_that_may_contain_one_prn in enumerate(chunks(doppler_shifted_antenna_data_snippet, shifted_prn_sample_count)):
             correlation_result = frequency_domain_correlation(chunk_that_may_contain_one_prn, resampled_prn)
-            coherent_integration_result += correlation_result
-        doppler_shift_to_integrated_coherent_correlation[doppler_shift] = np.abs(coherent_integration_result)
+            coherent_integration_result += np.abs(correlation_result)
+        doppler_shift_to_integrated_coherent_correlation[doppler_shift] = coherent_integration_result
 
     # Find the best integration result
     best_doppler_shift = max(doppler_shift_to_integrated_coherent_correlation, key=lambda key: np.max(doppler_shift_to_integrated_coherent_correlation[key]))
     best_integrated_coherent_correlation = doppler_shift_to_integrated_coherent_correlation[best_doppler_shift]
     correlation_strength = np.max(best_integrated_coherent_correlation)
-    return correlation_strength, best_doppler_shift, 0
+    # The sample-count offset where the best correlation occurs is the phase shift of the PRN
+    prn_phase_shift = int(np.argmax(best_integrated_coherent_correlation))
+    return correlation_strength, best_doppler_shift, prn_phase_shift
 
 
 def test_acquire():
     satellites_by_id, antenna_data = get_satellites_info_and_antenna_samples()
-    detected_satellites_by_id = []
+    prn_provider = ResampledPrnProvider(satellites_by_id)
+    detected_satellites_by_id = {}
     for sv_id in ALL_SATELLITE_IDS:
         satellite_info = satellites_by_id[sv_id]
-        prn = np.array(satellite_info.prn_as_complex)
+        #prn = np.array(satellite_info.prn_as_complex)
 
         # Detection
         doppler_frequency_estimation_spread = 5000
         # This must be 10 as the search factor divides the spread by 10
         doppler_estimation = 0
         correlation_strength = 0
+        prn_phase_estimation = 0
         while doppler_frequency_estimation_spread >= 10:
-            maybe_tup = compute_best_doppler_shift_estimation(doppler_estimation, doppler_frequency_estimation_spread, antenna_data, prn)
+            maybe_tup = compute_best_doppler_shift_estimation(doppler_estimation, doppler_frequency_estimation_spread, antenna_data, sv_id, prn_provider)
             if not maybe_tup:
                 # No acquisition
                 print(f'Lost acquisiton?!')
                 break
-            new_correlation_strength, doppler_estimation, prn_phase_estimation = maybe_tup
+            new_correlation_strength, new_doppler_estimation, new_prn_phase_estimation = maybe_tup
             doppler_frequency_estimation_spread /= 2
-            print(f'SV({sv_id}) Doppler {doppler_estimation:.2f} Corr {correlation_strength:.2f}')
+            if new_correlation_strength > correlation_strength:
+                doppler_estimation = new_doppler_estimation
+                prn_phase_estimation = new_prn_phase_estimation
+                correlation_strength = new_correlation_strength
+                print(f'SV({sv_id}) Doppler {doppler_estimation:.2f} Corr {correlation_strength:.2f}')
 
-        if correlation_strength > 21.0:
+        print(f'Best correlation for SV({sv_id}) at Doppler {doppler_estimation:.2f} corr {correlation_strength:.2f}')
+        if correlation_strength > 35.0:
             # Detection, Doppler frequency over threshold
-            print(f'Detected sat at Doppler {doppler_estimation:.2f} corr {correlation_strength:.2f}')
-            #return best_doppler_shift, 0
-        #return None
-        #detected_satellites_by_id[sv_id] = (doppler_shift, 0)
+            print(f'Detected SV({sv_id}) at Doppler {doppler_estimation:.2f} phase(samp) {prn_phase_estimation:.2f} corr {correlation_strength:.2f}')
+            detected_satellites_by_id[sv_id] = (doppler_estimation, prn_phase_estimation)
 
     return detected_satellites_by_id
     #print(f'Best Doppler shift for SV {sv_id.id}: {best_doppler_shift}, Max {np.max(best_integrated_coherent_correlation)}')
     #snr = estimate_SNR(best_integrated_coherent_correlation)
-
-
 
 
 def main():
