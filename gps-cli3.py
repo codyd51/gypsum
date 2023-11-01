@@ -58,7 +58,7 @@ _CorrelationStrength = float
 
 _DopplerShiftHz = float
 _CarrierWavePhaseInRadians = float
-_PrnCodePhaseInSamples = float
+_PrnCodePhaseInSamples = int
 
 
 class ResampledPrnProvider:
@@ -73,6 +73,10 @@ class ResampledPrnProvider:
             resampled_prn = np.array([complex(1, 0) if x.real >= 0.5 else complex(-1, 0) for x in resampled_prn][:sample_count])
             self.sv_id_to_resampled_prn_cache[sv_id][sample_count] = resampled_prn
         return self.sv_id_to_resampled_prn_cache[sv_id][sample_count]
+
+
+def contains(subseq, inseq):
+    return any(inseq[pos:pos + len(subseq)] == subseq for pos in range(0, len(inseq) - len(subseq) + 1))
 
 
 @dataclass
@@ -108,10 +112,12 @@ def integrate_correlation_with_doppler_shifted_prn(
     prn_chip_rate = 1.023e6
 
     # Calculate the PRN length, accounting for this Doppler shift
-    shifted_prn_chip_rate = prn_chip_rate + doppler_shift
-    prn_resampling_ratio = shifted_prn_chip_rate / prn_chip_rate
-    shifted_prn_sample_count = int(SAMPLES_PER_PRN_TRANSMISSION * prn_resampling_ratio)
-    resampled_prn = prn_provider.get_resampled_prn(sv_id, shifted_prn_sample_count)
+    #shifted_prn_chip_rate = prn_chip_rate + doppler_shift
+    #prn_resampling_ratio = shifted_prn_chip_rate / prn_chip_rate
+    #shifted_prn_sample_count = int(SAMPLES_PER_PRN_TRANSMISSION * prn_resampling_ratio)
+    #resampled_prn = prn_provider.get_resampled_prn(sv_id, shifted_prn_sample_count)
+    shifted_prn_sample_count = 2046
+    resampled_prn = prn_provider.satellites[sv_id].prn_as_complex
 
     samples_in_window = integration_period_ms * shifted_prn_sample_count
     antenna_data_snippet = antenna_data.data[:samples_in_window]
@@ -174,9 +180,11 @@ def compute_best_doppler_shift_estimation(
     )
 
 
-def test_acquire():
-    satellites_by_id, antenna_data = get_satellites_info_and_antenna_samples()
-    prn_provider = ResampledPrnProvider(satellites_by_id)
+def test_acquire(
+    satellites_by_id: dict[GpsSatelliteId, GpsSatellite],
+    antenna_data: Samples,
+    prn_provider: ResampledPrnProvider,
+) -> dict[GpsSatellite, DetectedSatelliteInfo]:
     detected_satellites_by_id = {}
     for sv_id in ALL_SATELLITE_IDS:
         # Detection
@@ -234,7 +242,7 @@ def test_acquire():
             print(f'\tDoppler {best_doppler_shift:.2f}')
             print(f'\tCarrier phase {carrier_wave_phase_shift}')
             print(f'\tPRN phase {prn_phase_shift:.2f}')
-            detected_satellites_by_id[sv_id] = DetectedSatelliteInfo(
+            detected_satellites_by_id[satellites_by_id[sv_id]] = DetectedSatelliteInfo(
                 satellite_id=sv_id,
                 doppler_shift=best_doppler_shift,
                 carrier_wave_phase_shift=carrier_wave_phase_shift,
@@ -249,6 +257,342 @@ def test_acquire():
     # SV(GpsSatelliteId(id=30)) at Doppler 0.00 phase(samp) 708.00 corr 40.09+0.00j
     # Detected sats with non-coherent integration:
     # SV(GpsSatelliteId(id=5)) at Doppler -369.00 corr 24.26
+
+
+def main_new():
+    satellites_by_id, antenna_data = get_satellites_info_and_antenna_samples()
+    prn_provider = ResampledPrnProvider(satellites_by_id)
+
+    if False:
+        detected_satellites = test_acquire(
+            satellites_by_id,
+            antenna_data,
+            prn_provider
+        )
+
+        sat_25 = satellites_by_id[GpsSatelliteId(id=25)]
+        detected_satellite = detected_satellites[sat_25]
+    else:
+        detected_satellite = DetectedSatelliteInfo(
+            satellite_id=GpsSatelliteId(id=32),
+            doppler_shift=2323.00,
+            carrier_wave_phase_shift=-0.7562601181399523,
+            #prn_phase_shift=1064,
+            prn_phase_shift=982,
+        )
+
+    prn_chip_rate = 1.023e6
+
+    # Tracking loop
+    sv_id = detected_satellite.satellite_id
+    doppler_shift = detected_satellite.doppler_shift
+    carrier_wave_phase = detected_satellite.carrier_wave_phase_shift
+    prn_code_phase = detected_satellite.prn_phase_shift
+    sample_index = 0
+
+    accumulated_phase_error = 0.0
+    # Also called 'alpha'
+    #loop_gain_phase = 0.0005
+    # Also called 'beta'
+    #loop_gain_freq = 0.0001
+    #loop_gain_phase = 0.000001
+    #loop_gain_freq = 0.000001
+
+    # PT: These look really good!
+    #loop_gain_phase = 0.00001
+    #loop_gain_freq = 0.001
+    loop_gain_phase = 0.1
+    loop_gain_freq = 0.00005
+    # 0.001 is worse than 0.01
+
+    # Doppler shift 104.25
+    # Carrier phase -1.29141417
+    # Doppler shift 107.75
+    # Carrier phase -1.29077189
+    # Doppler shift 149.83
+    # Carrier phase -1.29062340
+
+    correlations = []
+    correlation_signs = []
+    reals = []
+    imags = []
+    carrier_wave_phase_errors = []
+    carrier_wave_phases = []
+    doppler_shifts = []
+    while True:
+        # Calculate the PRN length, accounting for this Doppler shift
+        #shifted_prn_chip_rate = prn_chip_rate + doppler_shift
+        #prn_resampling_ratio = shifted_prn_chip_rate / prn_chip_rate
+        #shifted_prn_sample_count = int(SAMPLES_PER_PRN_TRANSMISSION * prn_resampling_ratio)
+        #shifted_prn_sample_count = int(SAMPLES_PER_PRN_TRANSMISSION * (1 + (1. / doppler_shift)))
+        #return R_c * (1 + delta_f / f_c)
+        #resampled_prn = prn_provider.get_resampled_prn(sv_id, shifted_prn_sample_count)
+        shifted_prn_sample_count = 2046
+        resampled_prn = prn_provider.satellites[sv_id].prn_as_complex
+
+        samples_in_window = shifted_prn_sample_count
+        antenna_data_snippet = antenna_data.data[sample_index:sample_index + samples_in_window]
+        sample_index += samples_in_window
+        time_domain = (np.arange(shifted_prn_sample_count) / SAMPLES_PER_SECOND) + (sample_index / SAMPLES_PER_SECOND)
+        doppler_shift_carrier = np.exp(-1j * (2 * np.pi * doppler_shift * time_domain + carrier_wave_phase))
+        doppler_shifted_antenna_data_snippet = antenna_data_snippet * doppler_shift_carrier
+
+        # 2 samples per chip, so 1 sample offset is half a chip
+        early_prn = np.roll(resampled_prn, -prn_code_phase - 1)
+        prompt_prn = np.roll(resampled_prn, -prn_code_phase)
+        late_prn = np.roll(resampled_prn, -prn_code_phase + 1)
+        early_correlation = frequency_domain_correlation(doppler_shifted_antenna_data_snippet, early_prn)
+        prompt_correlation = frequency_domain_correlation(doppler_shifted_antenna_data_snippet, prompt_prn)
+        late_correlation = frequency_domain_correlation(doppler_shifted_antenna_data_snippet, late_prn)
+        early_peak = np.max(np.abs(early_correlation))
+        prompt_peak = np.max(np.abs(prompt_correlation))
+        late_peak = np.max(np.abs(late_correlation))
+        prompt_peak_offset = np.argmax(np.abs(prompt_correlation))
+
+        # Try to detect and ignore low-quality samples
+        if prompt_peak < 8:
+            print(f'Skipping bad sample with a low peak of {prompt_peak}')
+            correlations.append(np.zeros(shifted_prn_sample_count))
+            correlation_signs.append(0)
+            #plt.plot(np.abs(prompt_correlation))
+            #plt.title("Bad sample")
+            #plt.show()
+            continue
+            # Need to add an empty correlation array/empty bit to keep all our numbers on track
+
+        #print(f'peak offset {prompt_peak_offset}')
+        if False:
+            if prompt_peak_offset > 2 * 3:
+                print(f'adjusting coarse PRN phase offset, offset {prompt_peak_offset}')
+                prn_code_phase += np.argmax(np.abs(prompt_correlation))
+                plt.plot(early_correlation, label="early")
+                plt.plot(prompt_correlation, label="prompt")
+                plt.plot(late_correlation, label="late")
+                plt.legend()
+                plt.show()
+
+        did_shift = False
+        if early_peak > max(prompt_peak, late_peak):
+            #print(f'select early peak')
+            prn_code_phase += 1
+            did_shift = True
+
+        elif late_peak > max(prompt_peak, early_peak):
+            #print(f'select late peak')
+            prn_code_phase -= 1
+            did_shift = True
+
+        if not did_shift:
+            early_peak_offset = np.argmax(np.abs(early_correlation))
+            prompt_peak_offset = np.argmax(np.abs(prompt_correlation))
+            late_peak_offset = np.argmax(np.abs(late_correlation))
+            if early_peak_offset < min(prompt_peak_offset, late_peak_offset):
+                print(f'shifting due to early peak')
+                prn_code_phase += 1
+                did_shift = True
+            elif late_peak_offset < min(prompt_peak_offset, early_peak_offset):
+                print(f'shifting due to late peak {prn_code_phase}')
+                prn_code_phase -= 1
+                did_shift = True
+
+        #if prompt_peak_offset > 1950:
+        #    #print(f'fix for shifting')
+        #    prn_code_phase += 1
+        if prompt_peak_offset >= shifted_prn_sample_count:
+            print(f'rollback')
+            prompt_peak_offset = 0
+
+        prn_code_phase %= 2046
+
+        coherent_prompt_peak = np.max(prompt_correlation)
+        carrier_wave_phase_error = np.angle(coherent_prompt_peak)
+        doppler_shift += loop_gain_freq * carrier_wave_phase_error
+        carrier_wave_phase += loop_gain_phase * carrier_wave_phase_error
+        carrier_wave_phase %= (2. * np.pi)
+
+        doppler_shifts.append(doppler_shift)
+        carrier_wave_phase_errors.append(carrier_wave_phase_error)
+        carrier_wave_phases.append(carrier_wave_phase)
+
+        if False:
+            plt.plot(np.abs(early_correlation), label="early")
+            plt.plot(np.abs(prompt_correlation), label="prompt")
+            plt.plot(np.abs(late_correlation), label="late")
+            plt.legend()
+            plt.show()
+
+        #if not (prompt_peak > max(early_peak, late_peak)):
+        #    raise ValueError(f'Consistency error: expected prompt peak to be biggest {prompt_peak} {early_peak} {late_peak}')
+        pass
+
+        #for i, sample in enumerate(doppler_shifted_antenna_data_snippet):
+        #    sample_without_prn = sample * prompt_prn[i]
+        if False:
+            for i, sample in enumerate(antenna_data_snippet):
+                doppler_shift_carrier = np.exp(-1j * (2 * np.pi * doppler_shift * time_domain[i] + carrier_wave_phase))
+                corrected_sample = sample * doppler_shift_carrier
+                sample_without_prn = corrected_sample * prompt_prn[i]
+
+                #sample_without_prn = sample * prompt_prn[i]
+                #doppler_shift_carrier = np.exp(-1j * (2 * np.pi * doppler_shift * time_domain[i] + carrier_wave_phase))
+                #sample_without_prn = sample_without_prn * doppler_shift_carrier
+                #sample_without_prn = complex(
+                #    sample_without_prn.real * doppler_shift_carrier[i].real,
+                #    sample_without_prn.imag * doppler_shift_carrier[i].imag,
+                #)
+                #phase_error = np.real(sample_without_prn) * np.imag(sample_without_prn)
+                #phase_error = sample_without_prn.real * sample_without_prn.imag
+                phase_error = -np.sign(sample_without_prn.real) * sample_without_prn.imag
+                #phase_error = np.imag(sample_without_prn) * np.real(sample_without_prn) - np.real(sample_without_prn) * np.imag(sample_without_prn)
+                #print(f'phase error {phase_error}')
+
+                instantaneous_phase_correction = loop_gain_phase * phase_error
+                carrier_wave_phase += instantaneous_phase_correction
+                carrier_wave_phase %= (2 * np.pi)
+
+                accumulated_phase_error += phase_error
+                frequency_correction = loop_gain_freq * accumulated_phase_error
+                doppler_shift += frequency_correction
+
+                #lpf_output = 0.9 * lpf_output + 0.1 * error_signal
+                #costas_phase_error += loop_gain * (lpf_output - costas_phase_error)
+
+                #carrier_wave_phase += loop_bandwidth * costas_phase_error
+                #carrier_wave_phase += loop_bandwidth * costas_phase_error
+
+                #accumulated_error += phase_error
+                #frequency_error = loop_gain_freq * accumulated_error
+
+        if False and len(correlations) > 2000:
+            i = (doppler_shifted_antenna_data_snippet).real
+            q = (doppler_shifted_antenna_data_snippet).imag
+            plt.plot(i, label="I")
+            plt.plot(q, label="Q")
+            plt.legend()
+            plt.show()
+        print(f'Doppler shift {doppler_shift:.2f}')
+        print(f'Carrier phase {carrier_wave_phase:.8f}')
+        print(f'Code phase {prn_code_phase}')
+
+        #snippet_without_prn = doppler_shifted_antenna_data_snippet * rolled_prn
+        #phase_error = np.imag(snippet_without_prn)
+
+        #coherent_correlation_with_prn = frequency_domain_correlation(
+        #    doppler_shifted_antenna_data_snippet,
+        #    prompt_prn
+        #)
+        #correlations.append(coherent_correlation_with_prn)
+        #correlation_magnitudes.append(np.sign(np.max(coherent_correlation_with_prn)))
+        correlations.append(prompt_correlation)
+        #plt.plot(np.abs(prompt_correlation))
+        #plt.show()
+        correlation_signs.append(int(np.sign(prompt_correlation[prompt_peak_offset])))
+
+        if False:
+            coherent_prompt_peak = np.max(prompt_correlation)
+            if np.real(coherent_prompt_peak) > 0:
+                phase_error = np.arctan2(np.imag(coherent_prompt_peak), np.real(coherent_prompt_peak))
+            else:
+                phase_error = np.arctan2(-np.imag(coherent_prompt_peak), -np.real(coherent_prompt_peak))
+            print(f'got phase error {phase_error}')
+        #doppler_shift = doppler_shift + (0.1 * phase_error) + (3.5 * (phase_error - carrier_wave_phase))
+        #s.carrier_f = s.carrier_f + pll_k1*e + pll_k2*(e-e1)
+        #carrier_wave_phase = np.angle(np.max(prompt_correlation))
+        #carrier_wave_phase = phase_error
+
+        sig = doppler_shifted_antenna_data_snippet * prompt_prn
+        imags.append(sig.imag)
+        reals.append(sig.real)
+
+        #plt.plot(np.abs(coherent_correlation_with_prn))
+        #plt.title(f"Correlation at {sample_index}")
+        #plt.show()
+
+        if len(correlations) > 5000:
+            break
+
+    all_imags = np.concatenate(imags)
+    all_reals = np.concatenate(reals)
+    #plt.scatter(np.arange(len(all_imags)), np.concatenate(imags), label="imags")
+    #plt.scatter(np.arange(len(all_reals)), np.concatenate(reals), label="reals")
+    #plt.legend()
+    #plt.show()
+
+    all = np.concatenate(correlations)
+    plt.figure(figsize=(17,4))
+    plt.plot(all)
+    plt.title(f'α={loop_gain_phase} β={loop_gain_freq}')
+    plt.tight_layout()
+    plt.show()
+
+    plt.plot(doppler_shifts)
+    plt.title(f'Doppler shift')
+    plt.show()
+    plt.plot(carrier_wave_phases)
+    plt.title(f'Carrier wave phase')
+    plt.show()
+    plt.plot(carrier_wave_phase_errors)
+    plt.title(f'Carrier wave phase error')
+    plt.show()
+
+    plt.plot(correlation_signs)
+    plt.show()
+
+    confidence_scores = []
+    for roll in range(0, 20):
+        print(f'Try roll {roll}')
+        phase_shifted_bits = correlation_signs[roll:]
+
+        confidences = []
+        for twenty_pseudosymbols in chunks(phase_shifted_bits, 20):
+            #print(twenty_pseudosymbols)
+            integrated_value = sum(twenty_pseudosymbols)
+            confidences.append(abs(integrated_value))
+        # Compute an overall confidence score for this offset
+        confidence_scores.append(np.mean(confidences))
+
+    print(f'Confidence scores: {confidence_scores}')
+    best_offset = np.argmax(confidence_scores)
+    print(f"Best Offset: {best_offset} ({confidence_scores[best_offset]})")
+
+    bit_phase = best_offset
+    phase_shifted_bits = correlation_signs[bit_phase:]
+    bits = []
+    for twenty_pseudosymbols in chunks(phase_shifted_bits, 20):
+        integrated_value = sum(twenty_pseudosymbols)
+        bit_value = np.sign(integrated_value)
+        bits.append(bit_value)
+
+    digital_bits = [1 if b == 1.0 else 0 for b in bits]
+    inverted_bits = [0 if b == 1.0 else 1 for b in bits]
+    print(f'Bit count: {len(digital_bits)}')
+    #print(f'Orig:          {bits}')
+    print(f'Bits:          {digital_bits}')
+    print(f'Inverted bits: {inverted_bits}')
+
+    preamble = [1, 0, 0, 0, 1, 0, 1, 1]
+    print(f'Preamble {preamble} found in bits? {contains(preamble, digital_bits)}')
+    print(f'Preamble {preamble} found in inverted bits? {contains(preamble, inverted_bits)}')
+
+    def get_matches(l, sub):
+        return [l[pos:pos + len(sub)] == sub for pos in range(0, len(l) - len(sub) + 1)]
+
+    preamble_starts_in_digital_bits = (
+        [x[0] for x in (np.argwhere(np.array(get_matches(digital_bits, preamble)) == True))])
+    print(f'Preamble starts in bits:          {preamble_starts_in_digital_bits}')
+    from itertools import pairwise
+    for (i, j) in pairwise(preamble_starts_in_digital_bits):
+        diff = j - i
+        print(f'\tDiff from {j} to {i}: {diff}')
+    #plt.plot([1 if x in preamble_starts_in_digital_bits else 0 for x in range(len(digital_bits))],
+    #         label="Preambles in upright bits")
+
+    preamble_starts_in_inverted_bits = (
+        [x[0] for x in (np.argwhere(np.array(get_matches(inverted_bits, preamble)) == True))])
+    print(f'Preamble starts in inverted bits: {preamble_starts_in_inverted_bits}')
+    for (i, j) in pairwise(preamble_starts_in_inverted_bits):
+        diff = j - i
+        print(f'\tDiff from {j} to {i}: {diff}')
 
 
 def main():
@@ -346,5 +690,6 @@ def main():
 
 
 if __name__ == '__main__':
-    test_acquire()
+    main_new()
+    #test_acquire()
     #main()
