@@ -83,11 +83,24 @@ INPUT_SOURCES = [
         # 23
         # 24    # *** Identified satellite GpsSatelliteId(id=24) at doppler shift -5500, correlation magnitude of 5.057564040211816e-08 at 1281, time offset of 0.00037390029325513196, chip offset of 382.5
         # 30
-        path=Path(__file__).parents[1] / "vendored_signals" / "test_output_in_office_gnu_radio",
+
+        # Oct 31, 6:43pm
+        # 3
+        # 6
+        # 11?
+        # 12
+        # 19
+        # 24
+        # 25
+        # 28?
+        # 29
+        # 31
+        # 32
+        #path=Path(__file__).parents[1] / "vendored_signals" / "halloween",
+        path=Path(__file__).parents[1] / "vendored_signals" / "halloween",
         format=InputFileType.GnuRadioRecording,
         # 2 * C/A PRN chip rate * 1k PRN repetitions per second
         sdr_sample_rate=2*1023*1000,
-        #sdr_sample_rate=2400*1000,
     ),
 ]
 
