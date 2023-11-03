@@ -23,18 +23,11 @@ class GpsSatellite:
     def fft_of_prn_of_length(self, vector_size: int) -> np.ndarray:
         print(f'Calculating {self.satellite_id} PRN FFT of length {vector_size}...')
 
-        if True:
-            zero_padding_size = vector_size - len(self.prn_as_complex)
-            # Append zeros to the PRN to match the desired vector_size
-            prn_padded = np.concatenate((self.prn_as_complex, np.zeros(zero_padding_size)))
-            #return np.fft.fft(prn_padded) / vector_size
-            return np.fft.fft(prn_padded)
-        else:
-            if vector_size % 1023:
-                raise ValueError("Expected an exact multiple of the PRN size")
-            needed_repetitions_to_match_vector_size = math.ceil(vector_size / len(self.prn_as_complex))
-            prn_of_correct_length = np.tile(self.prn_as_complex, needed_repetitions_to_match_vector_size)[:vector_size]
-            return np.fft.fft(prn_of_correct_length)
+        zero_padding_size = vector_size - len(self.prn_as_complex)
+        # Append zeros to the PRN to match the desired vector_size
+        prn_padded = np.concatenate((self.prn_as_complex, np.zeros(zero_padding_size)))
+        #return np.fft.fft(prn_padded) / vector_size
+        return np.fft.fft(prn_padded)
 
 
     @property

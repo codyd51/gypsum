@@ -96,8 +96,13 @@ INPUT_SOURCES = [
         # 29
         # 31
         # 32
-        #path=Path(__file__).parents[1] / "vendored_signals" / "halloween",
         path=Path(__file__).parents[1] / "vendored_signals" / "halloween",
+        format=InputFileType.GnuRadioRecording,
+        # 2 * C/A PRN chip rate * 1k PRN repetitions per second
+        sdr_sample_rate=2*1023*1000,
+    ),
+    InputFileInfo(
+        path=Path("/Volumes/Seagate Backup/GPS/GNURadio Recordings/nov_3_time_18_48_roof"),
         format=InputFileType.GnuRadioRecording,
         # 2 * C/A PRN chip rate * 1k PRN repetitions per second
         sdr_sample_rate=2*1023*1000,

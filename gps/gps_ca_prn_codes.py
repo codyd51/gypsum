@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
-from scipy.signal import max_len_seq, resample
+from scipy.signal import max_len_seq
 
 
 @dataclass
@@ -226,10 +226,8 @@ def generate_replica_prn_signals() -> dict[GpsSatelliteId, GpsReplicaPrnSignal]:
         GpsSatelliteId(32): 1712,
     }
     for satellite_id, expected_prn_start in expected_prn_starting_markers.items():
-        #print(f'Testing PRN for SV {satellite_id}...')
         prn = output[satellite_id].inner
         expected_prn_start_octal_digits = str(expected_prn_start)
-        #print(expected_prn_start_octal_digits)
         # The PRN needs to always start high
         if expected_prn_start_octal_digits[0] != '1':
             raise ValueError(f'Test vector PRN is always expected to begin with 1')
