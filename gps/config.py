@@ -1,11 +1,5 @@
-
-# PT: This controls how many times we'll 'stack' the PRN signal on top of the received signal, while searching for the
-# PRN in the spectrum.
-# Increasing this value will cause the PRN to be identified within the signal more strongly/with higher accuracy,
-# but at the cost of increased computation.
-# I chose 32 because it makes correlations really clear and strong when plotting the data.
-# Also called the integration period?
-PRN_CORRELATION_CYCLE_COUNT = 64
+# Controls how many milliseconds of antenna data we'll integrate when searching for satellite PRNs.
+ACQUISITION_INTEGRATION_PERIOD_MS = 32
 
 # PT: Chosen through manually inspecting correlation graphs
 PRN_CORRELATION_MAGNITUDE_THRESHOLD = 80
