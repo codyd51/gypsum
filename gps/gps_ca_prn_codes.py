@@ -1,8 +1,12 @@
+import logging
 from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
 from scipy.signal import max_len_seq
+
+
+_logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -132,6 +136,7 @@ def _generate_ca_code_with_taps(taps: list[int]) -> np.ndarray:
 
 
 def generate_replica_prn_signals() -> dict[GpsSatelliteId, GpsReplicaPrnSignal]:
+    _logger.info(f'Generating replica PRN signals for satellites 1 through 32...')
     # Ref: https://www.gps.gov/technical/icwg/IS-GPS-200L.pdf
     # Table 3-Ia. Code Phase Assignments
     # "The G2i sequence is a G2 sequence selectively delayed by pre-assigned number of chips, thereby
@@ -191,6 +196,7 @@ def generate_replica_prn_signals() -> dict[GpsSatelliteId, GpsReplicaPrnSignal]:
     }
 
     # Immediately verify that the PRNs were generated correctly
+    _logger.info(f'Validating watermarks of generated PRNs...')
     expected_prn_starting_markers = {
         GpsSatelliteId(1): 1440,
         GpsSatelliteId(2): 1620,
@@ -244,4 +250,5 @@ def generate_replica_prn_signals() -> dict[GpsSatelliteId, GpsReplicaPrnSignal]:
             if actual_prn_octal_digit != int(expected_prn_octal_digit):
                 raise ValueError(f'SV {satellite_id.id}: PRN digit {actual_prn_octal_digit} didn\'t match expected digit {expected_prn_octal_digit}')
 
+    _logger.info(f'Finished generating and validating {len(output)} replica PRNs.')
     return output
