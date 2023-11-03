@@ -134,6 +134,8 @@ def get_samples_from_radio_input_source(input_info: InputFileInfo, sample_count:
         data = np.fromfile(
             input_info.path.as_posix(),
             dtype=np.float32,
+            # We have interleaved IQ samples, so the actual number of bytes to read will be the sample count * 2
+            count=sample_count * 2,
         )
         # Recombine the inline IQ samples into complex numbers
         data = (data[0::2] + (1j * data[1::2]))
