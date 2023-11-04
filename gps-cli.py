@@ -1,7 +1,7 @@
 import collections
 import logging
 from collections import defaultdict
-from copy import copy, deepcopy
+from copy import deepcopy
 from enum import Enum, auto
 from typing import Tuple
 
@@ -17,8 +17,13 @@ from gps.radio_input import INPUT_SOURCES
 from gps.constants import SAMPLES_PER_SECOND, SAMPLES_PER_PRN_TRANSMISSION, MINIMUM_TRACKED_SATELLITES_FOR_POSITION_FIX
 from gps.satellite import GpsSatellite, ALL_SATELLITE_IDS
 from gps.utils import chunks
-from gps_project_name.gps.antenna_sample_provider import AntennaSampleProvider, AntennaSampleProviderBackedByFile
-from gps_project_name.gps.config import ACQUISITION_INTEGRATION_PERIOD_MS
+from gps.antenna_sample_provider import AntennaSampleProvider, AntennaSampleProviderBackedByFile
+from gps.config import ACQUISITION_INTEGRATION_PERIOD_MS
+
+
+_AntennaSamplesSpanningOneMs = np.ndarray
+_AntennaSamplesSpanningAcquisitionIntegrationPeriodMs = np.ndarray
+
 
 _logger = logging.getLogger(__name__)
 
@@ -81,11 +86,12 @@ class BestNonCoherentCorrelationProfile:
 
 
 @dataclass
-class DetectedSatelliteInfo:
+class SatelliteAcquisitionAttemptResult:
     satellite_id: GpsSatelliteId
     doppler_shift: _DopplerShiftHz
     carrier_wave_phase_shift: _CarrierWavePhaseInRadians
     prn_phase_shift: _PrnCodePhaseInSamples
+    correlation_strength: float
 
 
 class IntegrationType(Enum):
@@ -104,20 +110,14 @@ class IntegrationType(Enum):
 
 def integrate_correlation_with_doppler_shifted_prn(
     integration_type: IntegrationType,
-    antenna_data: np.ndarray,
-    sv_id: GpsSatelliteId,
+    antenna_data: _AntennaSamplesSpanningAcquisitionIntegrationPeriodMs,
     doppler_shift: _DopplerShiftHz,
-    prn_provider: ResampledPrnProvider,
+    prn_as_complex: np.ndarray,
 ) -> _CorrelationProfile:
-    # Calculate the PRN length, accounting for this Doppler shift
-    resampled_prn = prn_provider.satellites[sv_id].prn_as_complex
-
-    integration_period_ms = 20
-    samples_in_window = integration_period_ms * SAMPLES_PER_PRN_TRANSMISSION
-    antenna_data_snippet = antenna_data.data[:samples_in_window]
-    integration_time_domain = np.arange(integration_period_ms * SAMPLES_PER_PRN_TRANSMISSION) / SAMPLES_PER_SECOND
+    sample_count = len(antenna_data)
+    integration_time_domain = np.arange(sample_count) / SAMPLES_PER_SECOND
     doppler_shift_carrier = np.exp(-1j * 2 * np.pi * doppler_shift * integration_time_domain)
-    doppler_shifted_antenna_data_snippet = antenna_data_snippet * doppler_shift_carrier
+    doppler_shifted_antenna_data_snippet = antenna_data * doppler_shift_carrier
 
     correlation_data_type = {
         IntegrationType.Coherent: complex,
@@ -125,7 +125,7 @@ def integrate_correlation_with_doppler_shifted_prn(
     }[integration_type]
     coherent_integration_result = np.zeros(SAMPLES_PER_PRN_TRANSMISSION, dtype=correlation_data_type)
     for i, chunk_that_may_contain_one_prn in enumerate(chunks(doppler_shifted_antenna_data_snippet, SAMPLES_PER_PRN_TRANSMISSION)):
-        correlation_result = frequency_domain_correlation(chunk_that_may_contain_one_prn, resampled_prn)
+        correlation_result = frequency_domain_correlation(chunk_that_may_contain_one_prn, prn_as_complex)
 
         if integration_type == IntegrationType.Coherent:
             coherent_integration_result += correlation_result
@@ -135,78 +135,6 @@ def integrate_correlation_with_doppler_shifted_prn(
             raise ValueError('Unexpected integration type')
 
     return coherent_integration_result
-
-
-def test_acquire(
-    satellites_by_id: dict[GpsSatelliteId, GpsSatellite],
-    antenna_data: AntennaSampleProvider,
-    prn_provider: ResampledPrnProvider,
-) -> dict[GpsSatellite, DetectedSatelliteInfo]:
-    detected_satellites_by_id = {}
-    for sv_id in ALL_SATELLITE_IDS:
-        # Detection
-        doppler_frequency_estimation_spread = 5000
-        # This must be 10 as the search factor divides the spread by 10
-        best_non_coherent_correlation_profile_across_all_search_space = None
-        doppler_estimation = 0
-        while doppler_frequency_estimation_spread >= 10:
-            best_non_coherent_correlation_profile_in_this_search_space = compute_best_doppler_shift_estimation(
-                doppler_estimation,
-                doppler_frequency_estimation_spread,
-                antenna_data,
-                sv_id,
-                prn_provider,
-            )
-            doppler_frequency_estimation_spread /= 2
-            if (
-                # Base case
-                not best_non_coherent_correlation_profile_across_all_search_space
-                # Found a better candidate
-                or best_non_coherent_correlation_profile_in_this_search_space.correlation_strength > best_non_coherent_correlation_profile_across_all_search_space.correlation_strength
-            ):
-                best_non_coherent_correlation_profile_across_all_search_space = best_non_coherent_correlation_profile_in_this_search_space
-                doppler_estimation = best_non_coherent_correlation_profile_across_all_search_space.doppler_shift
-                print(
-                    f'Found a better candidate Doppler for SV({sv_id}): '
-                    f'(Found in [{doppler_estimation - doppler_frequency_estimation_spread:.2f} | '
-                    f'{doppler_estimation:.2f} | {doppler_estimation + doppler_frequency_estimation_spread:.2f}], '
-                    f'Strength: '
-                    f'{best_non_coherent_correlation_profile_across_all_search_space.correlation_strength:.2f}'
-                )
-
-        print(f'Best correlation for SV({sv_id}) at Doppler {doppler_estimation:.2f} corr {best_non_coherent_correlation_profile_across_all_search_space.correlation_strength:.2f}')
-        if best_non_coherent_correlation_profile_across_all_search_space.correlation_strength > 37.0:
-            # Detection, Doppler frequency over threshold
-            print('Non-coherent correlation strength was above threshold, continuing to coherent integration...')
-            # Now, compute the coherent correlation so that we can determine (an estimate) of the phase of the carrier wave
-            best_doppler_shift = best_non_coherent_correlation_profile_across_all_search_space.doppler_shift
-            coherent_correlation_profile = integrate_correlation_with_doppler_shifted_prn(
-                IntegrationType.Coherent,
-                antenna_data,
-                sv_id,
-                best_doppler_shift,
-                prn_provider,
-            )
-
-            # Rely on the correlation peak index that comes from non-coherent integration, since it'll be stronger and
-            # therefore has less chance of being overridden by noise. Coherent integration may have selected a noise
-            # peak.
-            sample_offset_of_correlation_peak = best_non_coherent_correlation_profile_across_all_search_space.sample_offset_of_correlation_peak
-            carrier_wave_phase_shift = np.angle(coherent_correlation_profile[sample_offset_of_correlation_peak])
-            # The sample offset where the best correlation occurs gives us (an estimate) of the phase shift of the PRN
-            prn_phase_shift = sample_offset_of_correlation_peak
-            print(f'Detected SV({sv_id}):')
-            print(f'\tDoppler {best_doppler_shift:.2f}')
-            print(f'\tCarrier phase {carrier_wave_phase_shift}')
-            print(f'\tPRN phase {prn_phase_shift:.2f}')
-            detected_satellites_by_id[satellites_by_id[sv_id]] = DetectedSatelliteInfo(
-                satellite_id=sv_id,
-                doppler_shift=best_doppler_shift,
-                carrier_wave_phase_shift=carrier_wave_phase_shift,
-                prn_phase_shift=prn_phase_shift,
-            )
-
-    return detected_satellites_by_id
 
 
 def main_old():
@@ -557,9 +485,6 @@ def main_decode_bits():
         # Gonna be 200
 
 
-_AntennaSamplesSpanningOneMs = np.ndarray
-
-
 class GpsReceiver:
     def __init__(self, antenna_samples_provider: AntennaSampleProvider) -> None:
         self.antenna_samples_provider = antenna_samples_provider
@@ -576,7 +501,6 @@ class GpsReceiver:
 
         self.acquired_satellites = []
         self.satellite_ids_eligible_for_acquisition = deepcopy(ALL_SATELLITE_IDS)
-        self.satellite_ids_eligible_for_acquisition[0].id = 123
 
         # Used during acquisition to integrate correlation over a longer period than a millisecond.
         self.rolling_samples_buffer = collections.deque(maxlen=ACQUISITION_INTEGRATION_PERIOD_MS)
@@ -594,26 +518,106 @@ class GpsReceiver:
                 f'Will perform acquisition search because we\'re only '
                 f'tracking {len(self.acquired_satellites)} satellites'
             )
-            self._perform_acquisition(samples)
+            self._perform_acquisition()
 
-    def _perform_acquisition(
-        self,
-        samples: _AntennaSamplesSpanningOneMs,
-    ) -> None:
+    def _perform_acquisition(self) -> None:
         # To improve signal-to-noise ratio during acquisition, we integrate antenna data over 20ms.
         # Therefore, we keep a rolling buffer of the last few samples.
         # If this buffer isn't primed yet, we can't do any work yet.
         if len(self.rolling_samples_buffer) < ACQUISITION_INTEGRATION_PERIOD_MS:
             _logger.info(f'Skipping acquisition attempt because the history buffer isn\'t primed yet.')
             return
-        _logger.info(f'Attempting acquisition')
-        raise ValueError()
+
+        _logger.info(
+            f'Performing acquisition search over {len(self.satellite_ids_eligible_for_acquisition)} satellites.'
+        )
+
+        samples_for_integration_period = np.concatenate(self.rolling_samples_buffer)
+        for satellite_id in self.satellite_ids_eligible_for_acquisition:
+            result = self._attempt_acquisition_for_satellite_id(
+                satellite_id,
+                samples_for_integration_period,
+            )
+            # TODO(PT): How to decide whether the correlation strength is strong enough?
+            if result.correlation_strength > 70.0:
+                _logger.info(f'Correlation strength above threshold, successfully detected satellite {satellite_id}!')
+
+    def _attempt_acquisition_for_satellite_id(
+        self,
+        satellite_id: GpsSatelliteId,
+        samples_for_integration_period: _AntennaSamplesSpanningAcquisitionIntegrationPeriodMs,
+    ) -> SatelliteAcquisitionAttemptResult:
+        _logger.info(f'Attempting acquisition of {satellite_id}...')
+        print(f'Samples length {len(samples_for_integration_period)}')
+        best_non_coherent_correlation_profile_across_all_search_space = None
+        center_doppler_shift_estimation = 0
+        doppler_frequency_estimation_spread = 7000
+        # This must be 10 as the search factor divides the spread by 10
+        while doppler_frequency_estimation_spread >= 10:
+            best_non_coherent_correlation_profile_in_this_search_space = self.compute_best_doppler_shift_estimation(
+                center_doppler_shift_estimation,
+                doppler_frequency_estimation_spread,
+                samples_for_integration_period,
+                satellite_id,
+            )
+            doppler_frequency_estimation_spread /= 2
+
+            if (
+                # Base case
+                not best_non_coherent_correlation_profile_across_all_search_space
+                # Found a better candidate
+                or best_non_coherent_correlation_profile_in_this_search_space.correlation_strength > best_non_coherent_correlation_profile_across_all_search_space.correlation_strength
+            ):
+                best_non_coherent_correlation_profile_across_all_search_space = best_non_coherent_correlation_profile_in_this_search_space
+                doppler_estimation = best_non_coherent_correlation_profile_across_all_search_space.doppler_shift
+                _logger.info(
+                    f'Found a better candidate Doppler for SV({satellite_id}): '
+                    f'(Found in [{doppler_estimation - doppler_frequency_estimation_spread:.2f} | '
+                    f'{doppler_estimation:.2f} | {doppler_estimation + doppler_frequency_estimation_spread:.2f}], '
+                    f'Strength: '
+                    f'{best_non_coherent_correlation_profile_across_all_search_space.correlation_strength:.2f}'
+                )
+
+        _logger.info(f'Best correlation for SV({satellite_id}) at Doppler {center_doppler_shift_estimation:.2f} corr {best_non_coherent_correlation_profile_across_all_search_space.correlation_strength:.2f}')
+
+        best_doppler_shift = best_non_coherent_correlation_profile_across_all_search_space.doppler_shift
+        plt.plot(best_non_coherent_correlation_profile_across_all_search_space.non_coherent_correlation_profile)
+        plt.title(f'SV {satellite_id.id} doppler {best_doppler_shift}')
+        plt.show()
+        # Now, compute the coherent correlation so that we can determine (an estimate) of the phase of the carrier wave
+        coherent_correlation_profile = integrate_correlation_with_doppler_shifted_prn(
+            IntegrationType.Coherent,
+            samples_for_integration_period,
+            best_doppler_shift,
+            self.satellites_by_id[satellite_id].prn_as_complex,
+        )
+
+        # Rely on the correlation peak index that comes from non-coherent integration, since it'll be stronger and
+        # therefore has less chance of being overridden by noise. Coherent integration may have selected a noise
+        # peak.
+        sample_offset_of_correlation_peak = best_non_coherent_correlation_profile_across_all_search_space.sample_offset_of_correlation_peak
+        carrier_wave_phase_shift = np.angle(coherent_correlation_profile[sample_offset_of_correlation_peak])
+        # The sample offset where the best correlation occurs gives us (an estimate) of the phase shift of the PRN
+        prn_phase_shift = sample_offset_of_correlation_peak
+        correlation_strength = best_non_coherent_correlation_profile_across_all_search_space.correlation_strength
+        _logger.info(f'Acquisition attempt result for SV({satellite_id}):')
+        _logger.info(f'\tCorrelation strength {correlation_strength:.2f}')
+        _logger.info(f'\tDoppler {best_doppler_shift:.2f}')
+        _logger.info(f'\tCarrier phase {carrier_wave_phase_shift}')
+        _logger.info(f'\tPRN phase {prn_phase_shift:.2f}')
+        return SatelliteAcquisitionAttemptResult(
+            satellite_id=satellite_id,
+            doppler_shift=best_doppler_shift,
+            carrier_wave_phase_shift=carrier_wave_phase_shift,
+            prn_phase_shift=prn_phase_shift,
+            correlation_strength=correlation_strength,
+        )
 
     def compute_best_doppler_shift_estimation(
         self,
         center_doppler_shift: float,
         doppler_shift_spread: float,
-        antenna_data: np.ndarray,
+        antenna_data: _AntennaSamplesSpanningAcquisitionIntegrationPeriodMs,
         satellite_id: GpsSatelliteId,
     ) -> BestNonCoherentCorrelationProfile:
         doppler_shift_to_correlation_profile = {}
@@ -627,8 +631,8 @@ class GpsReceiver:
                 # This will give us the strongest SNR possible to detect peaks.
                 IntegrationType.NonCoherent,
                 antenna_data,
-                satellite_id,
                 doppler_shift,
+                self.satellites_by_id[satellite_id].prn_as_complex,
             )
             doppler_shift_to_correlation_profile[doppler_shift] = correlation_profile
 
@@ -643,80 +647,6 @@ class GpsReceiver:
             sample_offset_of_correlation_peak=int(sample_offset_of_correlation_peak),
             correlation_strength=correlation_strength,
         )
-
-
-
-    def _perform_acquisition_search(self, samples: np.ndarray) -> None:
-        _logger.info(
-            f'Performing acquisition search over {len(self.satellite_ids_eligible_for_acquisition)} satellites.'
-        )
-        detected_satellites_by_id = {}
-
-        for sv_id in self.satellite_ids_eligible_for_acquisition:
-            _logger.info(f'Attempting acquisition of {sv_id}...')
-            doppler_frequency_estimation_spread = 5000
-            best_non_coherent_correlation_profile_across_all_search_space = None
-            doppler_estimation = 0
-            # This must be 10 as the search factor divides the spread by 10
-            while doppler_frequency_estimation_spread >= 10:
-                best_non_coherent_correlation_profile_in_this_search_space = compute_best_doppler_shift_estimation(
-                    doppler_estimation,
-                    doppler_frequency_estimation_spread,
-                    samples,
-                    sv_id,
-                    prn_provider,
-                )
-                doppler_frequency_estimation_spread /= 2
-                if (
-                        # Base case
-                        not best_non_coherent_correlation_profile_across_all_search_space
-                        # Found a better candidate
-                        or best_non_coherent_correlation_profile_in_this_search_space.correlation_strength > best_non_coherent_correlation_profile_across_all_search_space.correlation_strength
-                ):
-                    best_non_coherent_correlation_profile_across_all_search_space = best_non_coherent_correlation_profile_in_this_search_space
-                    doppler_estimation = best_non_coherent_correlation_profile_across_all_search_space.doppler_shift
-                    print(
-                        f'Found a better candidate Doppler for SV({sv_id}): '
-                        f'(Found in [{doppler_estimation - doppler_frequency_estimation_spread:.2f} | '
-                        f'{doppler_estimation:.2f} | {doppler_estimation + doppler_frequency_estimation_spread:.2f}], '
-                        f'Strength: '
-                        f'{best_non_coherent_correlation_profile_across_all_search_space.correlation_strength:.2f}'
-                    )
-
-            print(f'Best correlation for SV({sv_id}) at Doppler {doppler_estimation:.2f} corr {best_non_coherent_correlation_profile_across_all_search_space.correlation_strength:.2f}')
-            if best_non_coherent_correlation_profile_across_all_search_space.correlation_strength > 37.0:
-                # Detection, Doppler frequency over threshold
-                print('Non-coherent correlation strength was above threshold, continuing to coherent integration...')
-                # Now, compute the coherent correlation so that we can determine (an estimate) of the phase of the carrier wave
-                best_doppler_shift = best_non_coherent_correlation_profile_across_all_search_space.doppler_shift
-                coherent_correlation_profile = integrate_correlation_with_doppler_shifted_prn(
-                    IntegrationType.Coherent,
-                    antenna_data,
-                    sv_id,
-                    best_doppler_shift,
-                    prn_provider,
-                )
-
-                # Rely on the correlation peak index that comes from non-coherent integration, since it'll be stronger and
-                # therefore has less chance of being overridden by noise. Coherent integration may have selected a noise
-                # peak.
-                sample_offset_of_correlation_peak = best_non_coherent_correlation_profile_across_all_search_space.sample_offset_of_correlation_peak
-                carrier_wave_phase_shift = np.angle(coherent_correlation_profile[sample_offset_of_correlation_peak])
-                # The sample offset where the best correlation occurs gives us (an estimate) of the phase shift of the PRN
-                prn_phase_shift = sample_offset_of_correlation_peak
-                print(f'Detected SV({sv_id}):')
-                print(f'\tDoppler {best_doppler_shift:.2f}')
-                print(f'\tCarrier phase {carrier_wave_phase_shift}')
-                print(f'\tPRN phase {prn_phase_shift:.2f}')
-                detected_satellites_by_id[satellites_by_id[sv_id]] = DetectedSatelliteInfo(
-                    satellite_id=sv_id,
-                    doppler_shift=best_doppler_shift,
-                    carrier_wave_phase_shift=carrier_wave_phase_shift,
-                    prn_phase_shift=prn_phase_shift,
-                )
-
-        return detected_satellites_by_id
-
 
 
 def main():
