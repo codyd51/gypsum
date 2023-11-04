@@ -14,6 +14,7 @@ class ChipDelayMs:
     """New-type to represent the delay assigned to a given GPS satellite PRN.
     Each chip is transmitted over 1 millisecond, so the chip delay is directly expressed in milliseconds.
     """
+
     delay_ms: int
 
     def __init__(self, delay_ms: int) -> None:
@@ -31,6 +32,7 @@ class G2SequenceTapsConfiguration:
 @dataclass
 class GpsSatelliteId:
     """New-type to semantically store GPS satellite IDs by their PRN signal ID"""
+
     id: int
 
     def __init__(self, id: int) -> None:
@@ -48,6 +50,7 @@ class GpsSatelliteId:
 @dataclass
 class GpsReplicaPrnSignal:
     """New-type to semantically store the 'replica' PRN signal for a given satellite"""
+
     inner: np.ndarray
 
 
@@ -79,17 +82,17 @@ def _generate_ca_code_rolled_by(delay_ms: int) -> np.ndarray:
     # G1 = X^10 + X^3 + 1
     g1 = max_len_seq(seq_bit_count, taps=[seq_bit_count - 3])[0]
     # G2 = X^10 + X^9 + X^8 + X^6 + X^3 + X^2 + 1
-    g2 = max_len_seq(seq_bit_count, taps=[
-        seq_bit_count - 9,
-        seq_bit_count - 8,
-        seq_bit_count - 6,
-        seq_bit_count - 3,
-        seq_bit_count - 2,
-        ])[0]
-    return np.bitwise_xor(
-        g1,
-        np.roll(g2, delay_ms)
-    )
+    g2 = max_len_seq(
+        seq_bit_count,
+        taps=[
+            seq_bit_count - 9,
+            seq_bit_count - 8,
+            seq_bit_count - 6,
+            seq_bit_count - 3,
+            seq_bit_count - 2,
+        ],
+    )[0]
+    return np.bitwise_xor(g1, np.roll(g2, delay_ms))
 
 
 def shift(register, feedback, output):
@@ -99,18 +102,18 @@ def shift(register, feedback, output):
     :returns output of shift register:
     """
     # calculate output
-    out = [register[i-1] for i in output]
+    out = [register[i - 1] for i in output]
     if len(out) > 1:
         out = sum(out) % 2
     else:
         out = out[0]
 
     # modulo 2 add feedback
-    fb = sum([register[i-1] for i in feedback]) % 2
+    fb = sum([register[i - 1] for i in feedback]) % 2
 
     # shift to the right
     for i in reversed(range(len(register[1:]))):
-        register[i+1] = register[i]
+        register[i + 1] = register[i]
 
     # put feedback in position 1
     register[0] = fb
@@ -125,8 +128,8 @@ def _generate_ca_code_with_taps(taps: list[int]) -> np.ndarray:
     ca = []
     # create sequence
     for _ in range(1023):
-        g1 = shift(G1, [3,10], [10])
-        g2 = shift(G2, [2,3,6,8,9,10], taps)
+        g1 = shift(G1, [3, 10], [10])
+        g2 = shift(G2, [2, 3, 6, 8, 9, 10], taps)
 
         # modulo 2 add and append to the code
         ca.append((g1 + g2) % 2)
@@ -136,7 +139,7 @@ def _generate_ca_code_with_taps(taps: list[int]) -> np.ndarray:
 
 
 def generate_replica_prn_signals() -> dict[GpsSatelliteId, GpsReplicaPrnSignal]:
-    _logger.info(f'Generating replica PRN signals for satellites 1 through 32...')
+    _logger.info(f"Generating replica PRN signals for satellites 1 through 32...")
     # Ref: https://www.gps.gov/technical/icwg/IS-GPS-200L.pdf
     # Table 3-Ia. Code Phase Assignments
     # "The G2i sequence is a G2 sequence selectively delayed by pre-assigned number of chips, thereby
@@ -187,16 +190,12 @@ def generate_replica_prn_signals() -> dict[GpsSatelliteId, GpsReplicaPrnSignal]:
     # Antenna data will instead vary from [-1 to 1].
     # Note each signal has exactly 1023 data points (which is the correct/exact length of the G2 code).
     output = {
-        sat_id: (
-            GpsReplicaPrnSignal(
-                _generate_ca_code_with_taps(prn_tap_configs.taps)
-            )
-        )
+        sat_id: (GpsReplicaPrnSignal(_generate_ca_code_with_taps(prn_tap_configs.taps)))
         for sat_id, prn_tap_configs in satellite_id_to_g2_sequence_tap_configuration.items()
     }
 
     # Immediately verify that the PRNs were generated correctly
-    _logger.info(f'Validating watermarks of generated PRNs...')
+    _logger.info(f"Validating watermarks of generated PRNs...")
     expected_prn_starting_markers = {
         GpsSatelliteId(1): 1440,
         GpsSatelliteId(2): 1620,
@@ -235,10 +234,10 @@ def generate_replica_prn_signals() -> dict[GpsSatelliteId, GpsReplicaPrnSignal]:
         prn = output[satellite_id].inner
         expected_prn_start_octal_digits = str(expected_prn_start)
         # The PRN needs to always start high
-        if expected_prn_start_octal_digits[0] != '1':
-            raise ValueError(f'Test vector PRN is always expected to begin with 1')
+        if expected_prn_start_octal_digits[0] != "1":
+            raise ValueError(f"Test vector PRN is always expected to begin with 1")
         if prn[0] != 1:
-            raise ValueError(f'Generated PRNs always need to start with 1')
+            raise ValueError(f"Generated PRNs always need to start with 1")
 
         # Skip the starting 1
         expected_prn_start_octal_digits = expected_prn_start_octal_digits[1:]
@@ -246,9 +245,13 @@ def generate_replica_prn_signals() -> dict[GpsSatelliteId, GpsReplicaPrnSignal]:
 
         for digit_idx, expected_prn_octal_digit in enumerate(expected_prn_start_octal_digits):
             actual_prn_bits_start_idx = digit_idx * 3
-            actual_prn_octal_digit = int(''.join([str(bit) for bit in prn[actual_prn_bits_start_idx:actual_prn_bits_start_idx+3]]), 2)
+            actual_prn_octal_digit = int(
+                "".join([str(bit) for bit in prn[actual_prn_bits_start_idx : actual_prn_bits_start_idx + 3]]), 2
+            )
             if actual_prn_octal_digit != int(expected_prn_octal_digit):
-                raise ValueError(f'SV {satellite_id.id}: PRN digit {actual_prn_octal_digit} didn\'t match expected digit {expected_prn_octal_digit}')
+                raise ValueError(
+                    f"SV {satellite_id.id}: PRN digit {actual_prn_octal_digit} didn't match expected digit {expected_prn_octal_digit}"
+                )
 
-    _logger.info(f'Finished generating and validating {len(output)} replica PRNs.')
+    _logger.info(f"Finished generating and validating {len(output)} replica PRNs.")
     return output

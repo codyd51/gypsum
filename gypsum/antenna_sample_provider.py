@@ -23,7 +23,7 @@ class AntennaSampleProviderBackedByBytes(AntennaSampleProvider):
         self.cursor = 0
 
     def peek_samples(self, sample_count: int) -> np.ndarray:
-        return self.data[self.cursor:self.cursor + sample_count]
+        return self.data[self.cursor : self.cursor + sample_count]
 
     def get_samples(self, sample_count: int) -> np.ndarray:
         data = self.peek_samples(sample_count)
@@ -43,7 +43,7 @@ class AntennaSampleProviderBackedByFile(AntennaSampleProvider):
             # We have interleaved IQ samples, so the number of words to read will be the sample count * 2
             count=sample_count * 2,
             # Note the change in units: `count` is specified in terms of `dtype`, while `offset` is in bytes.
-            offset=self.cursor * 2 * np.dtype(np.float32).itemsize
+            offset=self.cursor * 2 * np.dtype(np.float32).itemsize,
         )
         # Recombine the inline IQ samples into complex values
         return (words[0::2]) + (1j * words[1::2])
