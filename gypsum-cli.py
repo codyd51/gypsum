@@ -7,8 +7,6 @@ import numpy as np
 
 from dataclasses import dataclass
 
-from scipy.signal import resample_poly
-
 from gypsum.gps_ca_prn_codes import generate_replica_prn_signals, GpsSatelliteId
 from gypsum.radio_input import INPUT_SOURCES
 from gypsum.constants import SAMPLES_PER_SECOND, SAMPLES_PER_PRN_TRANSMISSION
@@ -35,22 +33,6 @@ def get_satellites_info_and_antenna_samples() -> Tuple[dict[GpsSatelliteId, GpsS
     print(input_source.path.as_posix())
     antenna_data = AntennaSampleProviderBackedByFile(input_source)
     return satellites_by_id, antenna_data
-
-
-class ResampledPrnProvider:
-    def __init__(self, satellites: dict[GpsSatelliteId, GpsSatellite]):
-        self.satellites = satellites
-        self.sv_id_to_resampled_prn_cache = defaultdict(dict)
-
-    def get_resampled_prn(self, sv_id: GpsSatelliteId, sample_count: int) -> np.ndarray:
-        if sample_count not in self.sv_id_to_resampled_prn_cache[sv_id]:
-            prn = self.satellites[sv_id].prn_as_complex
-            resampled_prn = resample_poly(prn, sample_count, len(prn))
-            resampled_prn = np.array(
-                [complex(1, 0) if x.real >= 0.5 else complex(-1, 0) for x in resampled_prn][:sample_count]
-            )
-            self.sv_id_to_resampled_prn_cache[sv_id][sample_count] = resampled_prn
-        return self.sv_id_to_resampled_prn_cache[sv_id][sample_count]
 
 
 # 2 approaches:
