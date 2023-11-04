@@ -1,3 +1,4 @@
+from typing import Any
 from typing import TypeVar, Collection, Iterator
 
 
@@ -20,3 +21,7 @@ def chunks(li: Collection[_IterType], chunk_size: int, step: int | None = None) 
 
 def round_to_previous_multiple_of(val: int, multiple: int) -> int:
     return val - (val % multiple)
+
+
+def does_list_contain_sublist(l: list[Any], sub: list[Any]) -> bool:
+    return any(l[pos:pos + len(sub)] == sub for pos in range(0, len(l) - len(sub) + 1))
