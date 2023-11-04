@@ -22,6 +22,7 @@ _logger = logging.getLogger(__name__)
 
 _AntennaSamplesSpanningOneMs = np.ndarray
 _AntennaSamplesSpanningAcquisitionIntegrationPeriodMs = np.ndarray
+_PrnReplicaCodeSamplesSpanningOneMs = np.ndarray
 
 _CorrelationProfile = np.ndarray
 _CorrelationStrength = float
@@ -54,11 +55,22 @@ class SatelliteAcquisitionAttemptResult:
     correlation_strength: float
 
 
-def frequency_domain_correlation(segment, prn_replica):
-    R = np.fft.fft(segment)
-    L = np.fft.fft(prn_replica)
-    product = R * np.conj(L)
-    return np.fft.ifft(product)
+def frequency_domain_correlation(
+    antenna_samples: _AntennaSamplesSpanningOneMs,
+    prn_replica: _PrnReplicaCodeSamplesSpanningOneMs
+) -> _CorrelationProfile:
+    # Perform correlation in the frequency domain.
+    # This is much more efficient than attempting to perform correlation in the time domain, as we don't need to try
+    # every possible phase shift of the PRN to identify the correlation peak.
+    antenna_samples_fft = np.fft.fft(antenna_samples)
+    prn_replica_fft = np.fft.fft(prn_replica)
+    # Multiply by the complex conjugate of the PRN replica.
+    # This aligns the phases of the antenna data and replica, and performs the cross-correlation.
+    correlation_in_frequency_domain = antenna_samples_fft * np.conj(prn_replica_fft)
+    # Convert the correlation result back to the time domain.
+    # Each value gives the correlation of the antenna data with the PRN at different phase offsets.
+    # Therefore, the offset of the peak will give the phase shift of the PRN that gives maximum correlation.
+    return np.fft.ifft(correlation_in_frequency_domain)
 
 
 def integrate_correlation_with_doppler_shifted_prn(
@@ -92,54 +104,19 @@ def integrate_correlation_with_doppler_shifted_prn(
     return coherent_integration_result
 
 
-class GpsReceiver:
-    def __init__(self, antenna_samples_provider: AntennaSampleProvider) -> None:
-        self.antenna_samples_provider = antenna_samples_provider
+class GpsSatelliteDetector:
+    def __init__(self, satellites_by_id: dict[GpsSatelliteId, GpsSatellite]) -> None:
+        self.satellites_by_id = satellites_by_id
 
-        # Generate the replica signals that we'll use to correlate against the received antenna signals upfront
-        satellites_to_replica_prn_signals = generate_replica_prn_signals()
-        self.satellites_by_id = {
-            satellite_id: GpsSatellite(satellite_id=satellite_id, prn_code=code)
-            for satellite_id, code in satellites_to_replica_prn_signals.items()
-        }
-
-        self.acquired_satellites = []
-        self.satellite_ids_eligible_for_acquisition = deepcopy(ALL_SATELLITE_IDS)
-
-        # Used during acquisition to integrate correlation over a longer period than a millisecond.
-        self.rolling_samples_buffer = collections.deque(maxlen=ACQUISITION_INTEGRATION_PERIOD_MS)
-
-    def step(self):
-        """Run one 'iteration' of the GPS receiver. This consumes one millisecond of antenna data."""
-        samples: _AntennaSamplesSpanningOneMs = self.antenna_samples_provider.get_samples(SAMPLES_PER_PRN_TRANSMISSION)
-        # Firstly, record this sample in our rolling buffer
-        self.rolling_samples_buffer.append(samples)
-
-        # If we need to perform acquisition, do so now
-        if len(self.acquired_satellites) < MINIMUM_TRACKED_SATELLITES_FOR_POSITION_FIX:
-            _logger.info(
-                f"Will perform acquisition search because we're only "
-                f"tracking {len(self.acquired_satellites)} satellites"
-            )
-            self._perform_acquisition()
-
-    def _perform_acquisition(self) -> None:
-        # To improve signal-to-noise ratio during acquisition, we integrate antenna data over 20ms.
-        # Therefore, we keep a rolling buffer of the last few samples.
-        # If this buffer isn't primed yet, we can't do any work yet.
-        if len(self.rolling_samples_buffer) < ACQUISITION_INTEGRATION_PERIOD_MS:
-            _logger.info(f"Skipping acquisition attempt because the history buffer isn't primed yet.")
-            return
-
-        _logger.info(
-            f"Performing acquisition search over {len(self.satellite_ids_eligible_for_acquisition)} satellites."
-        )
-
-        samples_for_integration_period = np.concatenate(self.rolling_samples_buffer)
-        for satellite_id in self.satellite_ids_eligible_for_acquisition:
+    def detect_satellites_in_antenna_data(
+        self,
+        satellites_to_search_for: list[GpsSatelliteId],
+        antenna_data: _AntennaSamplesSpanningAcquisitionIntegrationPeriodMs,
+    ) -> None:
+        for satellite_id in satellites_to_search_for:
             result = self._attempt_acquisition_for_satellite_id(
                 satellite_id,
-                samples_for_integration_period,
+                antenna_data,
             )
             # TODO(PT): How to decide whether the correlation strength is strong enough?
             if result.correlation_strength > 70.0:
@@ -184,7 +161,9 @@ class GpsReceiver:
                 )
 
         _logger.info(
-            f"Best correlation for SV({satellite_id}) at Doppler {center_doppler_shift_estimation:.2f} corr {best_non_coherent_correlation_profile_across_all_search_space.correlation_strength:.2f}"
+            f"Best correlation for SV({satellite_id}) at "
+            f"Doppler {center_doppler_shift_estimation:.2f} "
+            f"corr {best_non_coherent_correlation_profile_across_all_search_space.correlation_strength:.2f}"
         )
 
         best_doppler_shift = best_non_coherent_correlation_profile_across_all_search_space.doppler_shift
@@ -257,4 +236,55 @@ class GpsReceiver:
             non_coherent_correlation_profile=best_correlation_profile,
             sample_offset_of_correlation_peak=int(sample_offset_of_correlation_peak),
             correlation_strength=correlation_strength,
+        )
+
+
+class GpsReceiver:
+    def __init__(self, antenna_samples_provider: AntennaSampleProvider) -> None:
+        self.antenna_samples_provider = antenna_samples_provider
+
+        # Generate the replica signals that we'll use to correlate against the received antenna signals upfront
+        satellites_to_replica_prn_signals = generate_replica_prn_signals()
+        self.satellites_by_id = {
+            satellite_id: GpsSatellite(satellite_id=satellite_id, prn_code=code)
+            for satellite_id, code in satellites_to_replica_prn_signals.items()
+        }
+
+        self.acquired_satellites = []
+        self.satellite_ids_eligible_for_acquisition = deepcopy(ALL_SATELLITE_IDS)
+
+        self.satellite_detector = GpsSatelliteDetector(self.satellites_by_id)
+        # Used during acquisition to integrate correlation over a longer period than a millisecond.
+        self.rolling_samples_buffer = collections.deque(maxlen=ACQUISITION_INTEGRATION_PERIOD_MS)
+
+    def step(self):
+        """Run one 'iteration' of the GPS receiver. This consumes one millisecond of antenna data."""
+        samples: _AntennaSamplesSpanningOneMs = self.antenna_samples_provider.get_samples(SAMPLES_PER_PRN_TRANSMISSION)
+        # Firstly, record this sample in our rolling buffer
+        self.rolling_samples_buffer.append(samples)
+
+        # If we need to perform acquisition, do so now
+        if len(self.acquired_satellites) < MINIMUM_TRACKED_SATELLITES_FOR_POSITION_FIX:
+            _logger.info(
+                f"Will perform acquisition search because we're only "
+                f"tracking {len(self.acquired_satellites)} satellites"
+            )
+            self._perform_acquisition()
+
+    def _perform_acquisition(self) -> None:
+        # To improve signal-to-noise ratio during acquisition, we integrate antenna data over 20ms.
+        # Therefore, we keep a rolling buffer of the last few samples.
+        # If this buffer isn't primed yet, we can't do any work yet.
+        if len(self.rolling_samples_buffer) < ACQUISITION_INTEGRATION_PERIOD_MS:
+            _logger.info(f"Skipping acquisition attempt because the history buffer isn't primed yet.")
+            return
+
+        _logger.info(
+            f"Performing acquisition search over {len(self.satellite_ids_eligible_for_acquisition)} satellites."
+        )
+
+        samples_for_integration_period = np.concatenate(self.rolling_samples_buffer)
+        self.satellite_detector.detect_satellites_in_antenna_data(
+            self.satellite_ids_eligible_for_acquisition,
+            samples_for_integration_period,
         )
