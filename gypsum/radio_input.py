@@ -4,8 +4,6 @@ from pathlib import Path
 
 import numpy as np
 
-from gps.constants import PRN_CHIP_COUNT, PRN_REPETITIONS_PER_SECOND, SAMPLES_PER_SECOND
-
 
 class InputFileType(Enum):
     Raw = auto()

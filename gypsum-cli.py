@@ -12,13 +12,13 @@ from dataclasses import dataclass
 
 from scipy.signal import resample_poly
 
-from gps.gps_ca_prn_codes import generate_replica_prn_signals, GpsSatelliteId
-from gps.radio_input import INPUT_SOURCES
-from gps.constants import SAMPLES_PER_SECOND, SAMPLES_PER_PRN_TRANSMISSION, MINIMUM_TRACKED_SATELLITES_FOR_POSITION_FIX
-from gps.satellite import GpsSatellite, ALL_SATELLITE_IDS
-from gps.utils import chunks
-from gps.antenna_sample_provider import AntennaSampleProvider, AntennaSampleProviderBackedByFile
-from gps.config import ACQUISITION_INTEGRATION_PERIOD_MS
+from gypsum.gps_ca_prn_codes import generate_replica_prn_signals, GpsSatelliteId
+from gypsum.radio_input import INPUT_SOURCES
+from gypsum.constants import SAMPLES_PER_SECOND, SAMPLES_PER_PRN_TRANSMISSION, MINIMUM_TRACKED_SATELLITES_FOR_POSITION_FIX
+from gypsum.satellite import GpsSatellite, ALL_SATELLITE_IDS
+from gypsum.utils import chunks
+from gypsum.antenna_sample_provider import AntennaSampleProvider, AntennaSampleProviderBackedByFile
+from gypsum.config import ACQUISITION_INTEGRATION_PERIOD_MS
 
 
 _AntennaSamplesSpanningOneMs = np.ndarray

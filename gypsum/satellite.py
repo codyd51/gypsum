@@ -3,7 +3,7 @@ from functools import lru_cache
 
 import numpy as np
 
-from gps.gps_ca_prn_codes import GpsSatelliteId, GpsReplicaPrnSignal
+from gypsum.gps_ca_prn_codes import GpsSatelliteId, GpsReplicaPrnSignal
 
 
 ALL_SATELLITE_IDS = [GpsSatelliteId(i + 1) for i in range(32)]
