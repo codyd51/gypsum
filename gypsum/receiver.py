@@ -4,9 +4,11 @@ from copy import deepcopy
 from dataclasses import dataclass
 from enum import Enum
 from enum import auto
+from typing import Any
 
 import matplotlib.pyplot as plt
 import numpy as np
+from numpy.fft import fft
 
 from gypsum.constants import SAMPLES_PER_SECOND
 from gypsum.gps_ca_prn_codes import generate_replica_prn_signals, GpsSatelliteId
@@ -77,7 +79,7 @@ def integrate_correlation_with_doppler_shifted_prn(
     integration_type: IntegrationType,
     antenna_data: _AntennaSamplesSpanningAcquisitionIntegrationPeriodMs,
     doppler_shift: _DopplerShiftHz,
-    prn_as_complex: np.ndarray,
+    prn_as_complex: _PrnReplicaCodeSamplesSpanningOneMs,
 ) -> _CorrelationProfile:
     sample_count = len(antenna_data)
     integration_time_domain = np.arange(sample_count) / SAMPLES_PER_SECOND
@@ -107,6 +109,7 @@ def integrate_correlation_with_doppler_shifted_prn(
 class GpsSatelliteDetector:
     def __init__(self, satellites_by_id: dict[GpsSatelliteId, GpsSatellite]) -> None:
         self.satellites_by_id = satellites_by_id
+        self._cached_correlation_profiles: dict[Any, _CorrelationProfile] = {}
 
     def detect_satellites_in_antenna_data(
         self,
@@ -133,7 +136,7 @@ class GpsSatelliteDetector:
         doppler_frequency_estimation_spread = 7000
         # This must be 10 as the search factor divides the spread by 10
         while doppler_frequency_estimation_spread >= 10:
-            best_non_coherent_correlation_profile_in_this_search_space = self.compute_best_doppler_shift_estimation(
+            best_non_coherent_correlation_profile_in_this_search_space = self.get_best_doppler_shift_estimation(
                 center_doppler_shift_estimation,
                 doppler_frequency_estimation_spread,
                 samples_for_integration_period,
@@ -169,9 +172,9 @@ class GpsSatelliteDetector:
         best_doppler_shift = best_non_coherent_correlation_profile_across_all_search_space.doppler_shift
         plt.plot(best_non_coherent_correlation_profile_across_all_search_space.non_coherent_correlation_profile)
         plt.title(f"SV {satellite_id.id} doppler {best_doppler_shift}")
-        plt.show()
+        plt.show(block=True)
         # Now, compute the coherent correlation so that we can determine (an estimate) of the phase of the carrier wave
-        coherent_correlation_profile = integrate_correlation_with_doppler_shifted_prn(
+        coherent_correlation_profile = self.get_integrated_correlation_with_doppler_shifted_prn(
             IntegrationType.Coherent,
             samples_for_integration_period,
             best_doppler_shift,
@@ -201,7 +204,7 @@ class GpsSatelliteDetector:
             correlation_strength=correlation_strength,
         )
 
-    def compute_best_doppler_shift_estimation(
+    def get_best_doppler_shift_estimation(
         self,
         center_doppler_shift: float,
         doppler_shift_spread: float,
@@ -214,7 +217,7 @@ class GpsSatelliteDetector:
             int(center_doppler_shift + doppler_shift_spread),
             int(doppler_shift_spread / 10),
         ):
-            correlation_profile = integrate_correlation_with_doppler_shifted_prn(
+            correlation_profile = self.get_integrated_correlation_with_doppler_shifted_prn(
                 # Always use non-coherent integration when searching for the best Doppler peaks.
                 # This will give us the strongest SNR possible to detect peaks.
                 IntegrationType.NonCoherent,
@@ -237,6 +240,32 @@ class GpsSatelliteDetector:
             sample_offset_of_correlation_peak=int(sample_offset_of_correlation_peak),
             correlation_strength=correlation_strength,
         )
+
+    def get_integrated_correlation_with_doppler_shifted_prn(
+        self,
+        integration_type: IntegrationType,
+        antenna_data: _AntennaSamplesSpanningAcquisitionIntegrationPeriodMs,
+        doppler_shift: _DopplerShiftHz,
+        prn_as_complex: _PrnReplicaCodeSamplesSpanningOneMs,
+    ) -> _CorrelationProfile:
+        # Ref: https://stackoverflow.com/questions/16589791/most-efficient-property-to-hash-for-numpy-array
+        # antenna_data.sum() will have a higher chance of collisions than .tostring(), but it's faster,
+        # and I'm willing to take the chance.
+        key = hash((integration_type, hash(antenna_data.sum()), doppler_shift, hash(prn_as_complex.tostring())))
+        if key in self._cached_correlation_profiles:
+            _logger.debug(f'Did hit cache for PRN correlation result')
+            cached_correlation_profile = self._cached_correlation_profiles[key]
+            return cached_correlation_profile
+
+        _logger.debug(f'Did not hit cache for PRN correlation result')
+        correlation_profile = integrate_correlation_with_doppler_shifted_prn(
+            integration_type,
+            antenna_data,
+            doppler_shift,
+            prn_as_complex,
+        )
+        self._cached_correlation_profiles[key] = correlation_profile
+        return correlation_profile
 
 
 class GpsReceiver:
