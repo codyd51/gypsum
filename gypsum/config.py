@@ -1,5 +1,7 @@
 # Controls how many milliseconds of antenna data we'll integrate when searching for satellite PRNs.
-ACQUISITION_INTEGRATION_PERIOD_MS = 32
+# Don't go above 20 as we might be subject to navigation message bit flips
+ACQUISITION_INTEGRATION_PERIOD_MS = 20
+ACQUISITION_INTEGRATED_CORRELATION_STRENGTH_DETECTION_THRESHOLD = ACQUISITION_INTEGRATION_PERIOD_MS * 3
 
 # PT: Chosen through manually inspecting correlation graphs
 PRN_CORRELATION_MAGNITUDE_THRESHOLD = 80
