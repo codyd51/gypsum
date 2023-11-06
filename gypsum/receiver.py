@@ -11,8 +11,6 @@ from typing import Any
 import matplotlib.pyplot as plt
 import numpy as np
 from numpy.fft import fft
-from scipy.signal import butter
-from scipy.signal import filtfilt
 
 from gypsum.config import ACQUISITION_INTEGRATED_CORRELATION_STRENGTH_DETECTION_THRESHOLD
 from gypsum.constants import SAMPLES_PER_SECOND
@@ -87,23 +85,14 @@ def integrate_correlation_with_doppler_shifted_prn(
     doppler_shift: _DopplerShiftHz,
     prn_as_complex: _PrnReplicaCodeSamplesSpanningOneMs,
 ) -> _CorrelationProfile:
-    sample_count = len(antenna_data)
-
     correlation_data_type = {
         IntegrationType.Coherent: complex,
         IntegrationType.NonCoherent: np.float64,
     }[integration_type]
     integrated_correlation_result = np.zeros(SAMPLES_PER_PRN_TRANSMISSION, dtype=correlation_data_type)
-    #for i, chunk_that_may_contain_one_prn in enumerate(
-    #    chunks(doppler_shifted_antenna_data_snippet, SAMPLES_PER_PRN_TRANSMISSION)
-    #):
-    for i, chunk_that_may_contain_one_prn in enumerate(
-        chunks(antenna_data, SAMPLES_PER_PRN_TRANSMISSION)
-    ):
+    for i, chunk_that_may_contain_one_prn in enumerate(chunks(antenna_data, SAMPLES_PER_PRN_TRANSMISSION)):
         sample_index = i * SAMPLES_PER_PRN_TRANSMISSION
         integration_time_domain = (np.arange(SAMPLES_PER_PRN_TRANSMISSION) / SAMPLES_PER_SECOND) + (sample_index / SAMPLES_PER_SECOND)
-        #integration_time_domain = (np.arange(SAMPLES_PER_PRN_TRANSMISSION) / SAMPLES_PER_SECOND) + ((i * SAMPLES_PER_PRN_TRANSMISSION) / SAMPLES_PER_SECOND)
-        #integration_time_domain = (np.arange(SAMPLES_PER_PRN_TRANSMISSION) / SAMPLES_PER_SECOND)
         doppler_shift_carrier = np.exp(-1j * math.tau * doppler_shift * integration_time_domain)
         doppler_shifted_antenna_data_chunk = chunk_that_may_contain_one_prn * doppler_shift_carrier
 
@@ -135,7 +124,6 @@ class GpsSatelliteDetector:
                 satellite_id,
                 antenna_data,
             )
-            # TODO(PT): How to decide whether the correlation strength is strong enough?
             if result.correlation_strength > ACQUISITION_INTEGRATED_CORRELATION_STRENGTH_DETECTION_THRESHOLD:
                 _logger.info(f"Correlation strength above threshold, successfully detected satellite {satellite_id}!")
                 detected_satellites.append(result)
@@ -211,45 +199,10 @@ class GpsSatelliteDetector:
         _logger.info(f"\tCarrier phase {carrier_wave_phase_shift}")
         _logger.info(f"\tPRN phase {prn_phase_shift:.2f}")
 
-        if True:
-            #plt.plot(best_non_coherent_correlation_profile_across_all_search_space.non_coherent_correlation_profile)
-            #plt.title("best non coherent profile")
-            #plt.show(block=True)
-            #plt.plot(np.abs(coherent_correlation_profile))
-            #plt.title("coherent profile")
-            #plt.show(block=True)
-            # For Sat 25, PRN phase is 178 when doing integration, but it's like 350 when looking at samples individually. What the heck?
-            # Ah, it's because of the PRN code phase slide
-            #unslid_prn = satellite_tracking_params.satellite.prn_as_complex
-            unslid_prn = self.satellites_by_id[satellite_id].prn_as_complex
-            #prompt_prn = np.roll(unslid_prn, -prn_phase_shift)
-            result = np.zeros(SAMPLES_PER_PRN_TRANSMISSION, dtype=np.float64)
-            result2 = np.zeros(SAMPLES_PER_PRN_TRANSMISSION, dtype=complex)
-            for i, c in enumerate(chunks(samples_for_integration_period, SAMPLES_PER_PRN_TRANSMISSION)):
-                # PT: Need to multiply by carrier wave?
-                integration_time_domain = (np.arange(SAMPLES_PER_PRN_TRANSMISSION) / SAMPLES_PER_SECOND) + ((i*SAMPLES_PER_PRN_TRANSMISSION) / SAMPLES_PER_SECOND)
-                #integration_time_domain = (np.arange(SAMPLES_PER_PRN_TRANSMISSION) / SAMPLES_PER_SECOND)
-                #integration_time_domain = (np.arange(SAMPLES_PER_PRN_TRANSMISSION) / SAMPLES_PER_SECOND)
-                doppler_shift_carrier = np.exp(-1j * math.tau * best_doppler_shift * integration_time_domain)
-                doppler_shifted_antenna_data_chunk = c * doppler_shift_carrier
-                #coherent_prompt_correlation = frequency_domain_correlation(c, prompt_prn)
-                coherent_prompt_correlation = frequency_domain_correlation(doppler_shifted_antenna_data_chunk, np.roll(unslid_prn, prn_phase_shift))
-                result += np.abs(coherent_prompt_correlation)
-                result2 += coherent_prompt_correlation
-                #plt.plot(np.abs(coherent_prompt_correlation))
-                #plt.title(f'Corr for chunk {i}')
-                #plt.show(block=True)
-            # Is it because the max might not be what we think for the correlation one?
-            new_carrier_wave_phase_shift = np.angle(result2[0])
-            print(f'Old carrier phase shift: {carrier_wave_phase_shift:.4f} New: {new_carrier_wave_phase_shift:.4f}')
-
-        # PT: It looks like, for satellite 3, immediately correlating with the first 1ms doesn't show any spike,
-        # even though we see a spike when correlating 20ms here! I smell a bug.
-
         return SatelliteAcquisitionAttemptResult(
             satellite_id=satellite_id,
             doppler_shift=best_doppler_shift,
-            carrier_wave_phase_shift=new_carrier_wave_phase_shift,
+            carrier_wave_phase_shift=carrier_wave_phase_shift,
             prn_phase_shift=prn_phase_shift,
             correlation_strength=correlation_strength,
         )
@@ -442,7 +395,7 @@ class GpsReceiver:
         samples: _AntennaSamplesSpanningOneMs = self.antenna_samples_provider.get_samples(SAMPLES_PER_PRN_TRANSMISSION)
         # PT: Instead of trying to find a roll that works across all time, dynamically adjust where we consider the start to be?
 
-        if (len(self.tracked_satellites) and len(self.tracked_satellites[-1].carrier_wave_phase_errors) > 12000*4) or len(samples) < SAMPLES_PER_PRN_TRANSMISSION:
+        if (len(self.tracked_satellites) and len(self.tracked_satellites[-1].carrier_wave_phase_errors) > 6000) or len(samples) < SAMPLES_PER_PRN_TRANSMISSION:
             for sat in reversed(self.tracked_satellites):
                 self.decode_nav_bits(sat)
                 plt.plot(sat.doppler_shifts[::50])
@@ -558,7 +511,6 @@ class GpsReceiver:
         samples: _AntennaSamplesSpanningOneMs,
         sample_index: int
     ) -> None:
-        #loop_bandwidth = 2.046 / 1000
         loop_bandwidth = 2.046 / 1000
         # Common choice for zeta, considered optimal
         damping_factor = math.sqrt(2) / 2.0
@@ -572,11 +524,8 @@ class GpsReceiver:
         # which applies to the estimate of the Doppler shifted frequency.
         # Also called 'beta'.
         loop_gain_freq = (4 * (natural_freq ** 2)) / (1 + ((2 * damping_factor * natural_freq) + (natural_freq ** 2)))
-        #loop_gain_phase = 0.0005
-        #loop_gain_freq = 0.00005
 
         # Generate Doppler-shifted and phase-shifted carrier wave
-        #time_domain = (np.arange(SAMPLES_PER_PRN_TRANSMISSION) / SAMPLES_PER_SECOND) + (sample_index / SAMPLES_PER_SECOND)
         time_domain = (np.arange(SAMPLES_PER_PRN_TRANSMISSION) / SAMPLES_PER_SECOND) + (sample_index / SAMPLES_PER_SECOND)
         doppler_shift_carrier = np.exp(-1j * ((2 * np.pi * satellite_tracking_params.current_doppler_shift * time_domain) + satellite_tracking_params.current_carrier_wave_phase_shift))
         doppler_shifted_samples = samples * doppler_shift_carrier
@@ -589,19 +538,6 @@ class GpsReceiver:
         non_coherent_prompt_correlation = np.abs(coherent_prompt_correlation)
         non_coherent_prompt_peak_offset = np.argmax(non_coherent_prompt_correlation)
         non_coherent_prompt_peak = non_coherent_prompt_correlation[non_coherent_prompt_peak_offset]
-
-        if False:
-            plt.plot(non_coherent_prompt_correlation)
-            plt.title(f'Track {satellite_tracking_params.satellite.satellite_id.id} D {satellite_tracking_params.current_doppler_shift} C {satellite_tracking_params.current_carrier_wave_phase_shift}')
-            plt.show(block=True)
-
-        # Try to detect and ignore low-quality samples
-        if False and non_coherent_prompt_peak < 7:
-            logging.info(f"Skipping bad sample with a low peak of {non_coherent_prompt_peak}")
-            # Need to add an empty correlation array/empty bit to keep all our numbers on track
-            correlations.append(np.zeros(SAMPLES_PER_PRN_TRANSMISSION))
-            navigation_bit_pseudosymbols.append(0)
-            return
 
         # Recenter the code phase offset so that it looks positive or negative, depending on where the offset sits
         # in the period of the PRN.
@@ -628,18 +564,9 @@ class GpsReceiver:
         new_non_coherent_prompt_peak_offset = np.argmax(new_non_coherent_prompt_correlation)
         new_coherent_prompt_prn_correlation_peak = new_coherent_prompt_correlation[new_non_coherent_prompt_peak_offset]
 
-        if False:
-            plt.plot(non_coherent_prompt_correlation, label="Orig")
-            plt.plot(new_non_coherent_prompt_correlation, label="New")
-            plt.title(f'Track {satellite_tracking_params.satellite.satellite_id.id} D {satellite_tracking_params.current_doppler_shift} C {satellite_tracking_params.current_carrier_wave_phase_shift}')
-            plt.legend()
-            plt.show(block=True)
-
         I = np.real(new_coherent_prompt_prn_correlation_peak)
         Q = np.imag(new_coherent_prompt_prn_correlation_peak)
         carrier_wave_phase_error = I * Q
-        #carrier_wave_phase_error = np.arctan2(Q, I)
-        #carrier_wave_phase_error = (I * Q) / (I ** 2 + Q ** 2)
 
         satellite_tracking_params.current_doppler_shift += loop_gain_freq * carrier_wave_phase_error
         satellite_tracking_params.current_carrier_wave_phase_shift += loop_gain_phase * carrier_wave_phase_error
@@ -647,8 +574,6 @@ class GpsReceiver:
 
         navigation_bit_pseudosymbol_value = int(np.sign(new_coherent_prompt_prn_correlation_peak))
         satellite_tracking_params.navigation_bit_pseudosymbols.append(navigation_bit_pseudosymbol_value)
-
-        #correlations.append(coherent_prompt_correlation)
 
         logging.info(f"Doppler shift {satellite_tracking_params.current_doppler_shift:.2f}")
         logging.info(f"Carrier phase {satellite_tracking_params.current_carrier_wave_phase_shift:.8f}")
