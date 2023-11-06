@@ -159,6 +159,7 @@ class GpsSatelliteDetector:
                 satellite_id,
             )
             doppler_frequency_estimation_spread /= 2
+            center_doppler_shift_estimation = best_non_coherent_correlation_profile_in_this_search_space.doppler_shift
 
             if (
                 # Base case
@@ -170,11 +171,11 @@ class GpsSatelliteDetector:
                 best_non_coherent_correlation_profile_across_all_search_space = (
                     best_non_coherent_correlation_profile_in_this_search_space
                 )
-                doppler_estimation = best_non_coherent_correlation_profile_across_all_search_space.doppler_shift
+                #center_doppler_shift_estimation = best_non_coherent_correlation_profile_across_all_search_space.doppler_shift
                 _logger.info(
                     f"Found a better candidate Doppler for SV({satellite_id}): "
-                    f"(Found in [{doppler_estimation - doppler_frequency_estimation_spread:.2f} | "
-                    f"{doppler_estimation:.2f} | {doppler_estimation + doppler_frequency_estimation_spread:.2f}], "
+                    f"(Found in [{center_doppler_shift_estimation - doppler_frequency_estimation_spread:.2f} | "
+                    f"{center_doppler_shift_estimation:.2f} | {center_doppler_shift_estimation + doppler_frequency_estimation_spread:.2f}], "
                     f"Strength: "
                     f"{best_non_coherent_correlation_profile_across_all_search_space.correlation_strength:.2f}"
                 )
@@ -239,17 +240,8 @@ class GpsSatelliteDetector:
                 #plt.title(f'Corr for chunk {i}')
                 #plt.show(block=True)
             # Is it because the max might not be what we think for the correlation one?
-            if False:
-                plt.plot(result, label="non-coh")
-                plt.plot(np.abs(result2), label="coh")
-                plt.legend()
-                plt.title(f"test for {satellite_id}")
-                plt.show(block=True)
             new_carrier_wave_phase_shift = np.angle(result2[0])
             print(f'Old carrier phase shift: {carrier_wave_phase_shift:.4f} New: {new_carrier_wave_phase_shift:.4f}')
-
-        #self.antenna_samples_provider.cursor = 0
-        #samples: _AntennaSamplesSpanningOneMs = self.antenna_samples_provider.get_samples(SAMPLES_PER_PRN_TRANSMISSION)
 
         # PT: It looks like, for satellite 3, immediately correlating with the first 1ms doesn't show any spike,
         # even though we see a spike when correlating 20ms here! I smell a bug.
@@ -438,7 +430,7 @@ class GpsReceiver:
         self.tracked_satellites = []
         self.satellite_ids_eligible_for_acquisition = deepcopy(ALL_SATELLITE_IDS)
         #self.satellite_ids_eligible_for_acquisition = [GpsSatelliteId(id=3), GpsSatelliteId(id=12), GpsSatelliteId(id=25)]
-        #self.satellite_ids_eligible_for_acquisition = [GpsSatelliteId(id=25)]
+        #self.satellite_ids_eligible_for_acquisition = [GpsSatelliteId(id=32), GpsSatelliteId(id=3)]
 
         self.satellite_detector = GpsSatelliteDetector(self.satellites_by_id)
         # Used during acquisition to integrate correlation over a longer period than a millisecond.
@@ -448,6 +440,23 @@ class GpsReceiver:
         """Run one 'iteration' of the GPS receiver. This consumes one millisecond of antenna data."""
         sample_index = self.antenna_samples_provider.cursor
         samples: _AntennaSamplesSpanningOneMs = self.antenna_samples_provider.get_samples(SAMPLES_PER_PRN_TRANSMISSION)
+        # PT: Instead of trying to find a roll that works across all time, dynamically adjust where we consider the start to be?
+
+        if (len(self.tracked_satellites) and len(self.tracked_satellites[-1].carrier_wave_phase_errors) > 12000*4) or len(samples) < SAMPLES_PER_PRN_TRANSMISSION:
+            for sat in reversed(self.tracked_satellites):
+                self.decode_nav_bits(sat)
+                plt.plot(sat.doppler_shifts[::50])
+                plt.title(f"Doppler shift for {sat.satellite.satellite_id.id}")
+                plt.show(block=True)
+                plt.plot(sat.carrier_wave_phases[::50])
+                plt.title(f"Carrier phase for {sat.satellite.satellite_id.id}")
+                plt.show(block=True)
+                plt.plot(sat.carrier_wave_phase_errors[::50])
+                plt.title(f"Carrier phase errors for {sat.satellite.satellite_id.id}")
+                plt.show(block=True)
+            import sys
+            sys.exit(0)
+
         # Firstly, record this sample in our rolling buffer
         self.rolling_samples_buffer.append(samples)
 
@@ -461,38 +470,20 @@ class GpsReceiver:
 
         # Continue tracking each acquired satellite
         self._track_acquired_satellites(samples, sample_index)
-        if len(self.tracked_satellites) and len(self.tracked_satellites[-1].carrier_wave_phase_errors) > 30000:
-            for sat in reversed(self.tracked_satellites):
-                plt.plot(sat.doppler_shifts[::50])
-                plt.title(f"Doppler shift for {sat.satellite.satellite_id.id}")
-                plt.show(block=True)
-                plt.plot(sat.carrier_wave_phases[::50])
-                plt.title(f"Carrier phase for {sat.satellite.satellite_id.id}")
-                plt.show(block=True)
-                plt.plot(sat.carrier_wave_phase_errors[::50])
-                plt.title(f"Carrier phase errors for {sat.satellite.satellite_id.id}")
-                plt.show(block=True)
-
-                self.decode_nav_bits(sat)
-            import sys
-            sys.exit(0)
 
     def decode_nav_bits(self, sat: GpsSatelliteTrackingParameters):
         navigation_bit_pseudosymbols = sat.navigation_bit_pseudosymbols
         confidence_scores = []
         for roll in range(0, 20):
-            print(f"Try roll {roll}")
             phase_shifted_bits = navigation_bit_pseudosymbols[roll:]
-
             confidences = []
             for twenty_pseudosymbols in chunks(phase_shifted_bits, 20):
-                # print(twenty_pseudosymbols)
                 integrated_value = sum(twenty_pseudosymbols)
                 confidences.append(abs(integrated_value))
             # Compute an overall confidence score for this offset
             confidence_scores.append(np.mean(confidences))
 
-        print(f"Confidence scores: {confidence_scores}")
+        #print(f"Confidence scores: {confidence_scores}")
         best_offset = np.argmax(confidence_scores)
         print(f"Best Offset: {best_offset} ({confidence_scores[best_offset]})")
 
@@ -525,22 +516,6 @@ class GpsReceiver:
             x[0] for x in (np.argwhere(np.array(get_matches(inverted_bits, preamble)) == True))
         ]
         print(f"Preamble starts in inverted bits: {preamble_starts_in_inverted_bits}")
-        if False:
-            from itertools import pairwise
-
-            for i, j in pairwise(preamble_starts_in_digital_bits):
-                diff = j - i
-                print(f"\tDiff from {j} to {i}: {diff}")
-            # plt.plot([1 if x in preamble_starts_in_digital_bits else 0 for x in range(len(digital_bits))],
-            #         label="Preambles in upright bits")
-
-            preamble_starts_in_inverted_bits = [
-                x[0] for x in (np.argwhere(np.array(get_matches(inverted_bits, preamble)) == True))
-            ]
-            print(f"Preamble starts in inverted bits: {preamble_starts_in_inverted_bits}")
-            for i, j in pairwise(preamble_starts_in_inverted_bits):
-                diff = j - i
-                print(f"\tDiff from {j} to {i}: {diff}")
 
     def _perform_acquisition(self) -> None:
         # To improve signal-to-noise ratio during acquisition, we integrate antenna data over 20ms.
@@ -583,61 +558,27 @@ class GpsReceiver:
         samples: _AntennaSamplesSpanningOneMs,
         sample_index: int
     ) -> None:
-        # PT: If any issues come up, check if it's because the time offset is always zero-based?
-
-        # This represents the gain of *instantaneous* error correction,
-        # which applies to the estimate of the carrier wave phase.
-        # Also called 'alpha'.
-        #loop_gain_phase = 0.0005
-        #loop_gain_phase = 0.00005
-        #loop_gain_phase = 0.001
-        # This represents the *integrated* error correction,
-        # which applies to the estimate of the Doppler shifted frequency.
-        # Also called 'beta'.
-        #loop_gain_freq = 0.0005
-        #loop_gain_phase = 0.1
-        #loop_gain_freq = 0.01
-
-        #loop_gain_phase = 0.05
-        #loop_gain_freq = 0.0025
-
-        #loop_gain_phase = 0.00005
-        #loop_gain_freq = 0.00005
-        # Constants
-        #loop_bandwidth = 25  # Loop bandwidth in Hz
-        #loop_bandwidth = math.tau / 2000.0
-        #loop_bandwidth = 2.046*1000 / 1000
+        #loop_bandwidth = 2.046 / 1000
         loop_bandwidth = 2.046 / 1000
         # Common choice for zeta, considered optimal
         damping_factor = math.sqrt(2) / 2.0
-
-        # Natural frequency calculation
-        omega_n = loop_bandwidth / (damping_factor * (1 + damping_factor ** 2) ** 0.5)
-
-        # Coefficients calculation
-        damp = damping_factor
-        bw = loop_bandwidth
-        loop_gain_phase = (4 * damp * bw) / (1 + 2 * damp * bw + bw * bw)
-        loop_gain_freq = (4 * bw * bw) / (1 + 2 * damp * bw + bw * bw)
-        loop_gain_phase = (4 * damping_factor * omega_n) / (1 + ((2 * damping_factor * omega_n) + (omega_n ** 2)))
-        loop_gain_freq = (4 * (omega_n ** 2)) / (1 + ((2 * damping_factor * omega_n) + (omega_n ** 2)))
-        #loop_gain_phase = 0.00005
+        # Natural frequency
+        natural_freq = loop_bandwidth / (damping_factor * (1 + damping_factor ** 2) ** 0.5)
+        # This represents the gain of *instantaneous* error correction,
+        # which applies to the estimate of the carrier wave phase.
+        # Also called 'alpha'.
+        loop_gain_phase = (4 * damping_factor * natural_freq) / (1 + ((2 * damping_factor * natural_freq) + (natural_freq ** 2)))
+        # This represents the *integrated* error correction,
+        # which applies to the estimate of the Doppler shifted frequency.
+        # Also called 'beta'.
+        loop_gain_freq = (4 * (natural_freq ** 2)) / (1 + ((2 * damping_factor * natural_freq) + (natural_freq ** 2)))
+        #loop_gain_phase = 0.0005
         #loop_gain_freq = 0.00005
 
         # Generate Doppler-shifted and phase-shifted carrier wave
-        time_domain = (np.arange(SAMPLES_PER_PRN_TRANSMISSION) / SAMPLES_PER_SECOND) + (
-                sample_index / SAMPLES_PER_SECOND)
-        if False:
-            plt.plot(time_domain, label="with offset")
-            time_domain_no_offset = (np.arange(SAMPLES_PER_PRN_TRANSMISSION) / SAMPLES_PER_SECOND)
-            plt.plot(time_domain_no_offset, label="no offset")
-            plt.show(block=True)
-        #time_domain = (np.arange(SAMPLES_PER_PRN_TRANSMISSION) / SAMPLES_PER_SECOND)
-        #doppler_shift_carrier = np.exp(-1j * ((math.tau * satellite_tracking_params.current_doppler_shift * time_domain) + satellite_tracking_params.current_carrier_wave_phase_shift))
+        #time_domain = (np.arange(SAMPLES_PER_PRN_TRANSMISSION) / SAMPLES_PER_SECOND) + (sample_index / SAMPLES_PER_SECOND)
+        time_domain = (np.arange(SAMPLES_PER_PRN_TRANSMISSION) / SAMPLES_PER_SECOND) + (sample_index / SAMPLES_PER_SECOND)
         doppler_shift_carrier = np.exp(-1j * ((2 * np.pi * satellite_tracking_params.current_doppler_shift * time_domain) + satellite_tracking_params.current_carrier_wave_phase_shift))
-        #doppler_shift_carrier = np.exp((-1j * (math.tau * satellite_tracking_params.current_doppler_shift * time_domain)) + satellite_tracking_params.current_carrier_wave_phase_shift)
-        #doppler_shift_carrier = np.exp((1j * (math.tau * satellite_tracking_params.current_doppler_shift * time_domain)) + satellite_tracking_params.current_carrier_wave_phase_shift)
-        #doppler_shift_carrier = np.exp((1j * (math.tau * satellite_tracking_params.current_doppler_shift * time_domain))) + satellite_tracking_params.current_carrier_wave_phase_shift
         doppler_shifted_samples = samples * doppler_shift_carrier
 
         # Correlate early, prompt, and late phase versions of the PRN
@@ -667,7 +608,7 @@ class GpsReceiver:
         if non_coherent_prompt_peak_offset <= SAMPLES_PER_PRN_TRANSMISSION / 2:
             centered_non_coherent_prompt_peak_offset = non_coherent_prompt_peak_offset
         else:
-            centered_non_coherent_prompt_peak_offset = non_coherent_prompt_peak_offset - SAMPLES_PER_PRN_TRANSMISSION
+            centered_non_coherent_prompt_peak_offset = non_coherent_prompt_peak_offset - SAMPLES_PER_PRN_TRANSMISSION + 1
 
         logging.info(
             f"Peak offset {non_coherent_prompt_peak_offset}, centered offset {centered_non_coherent_prompt_peak_offset}"
@@ -687,7 +628,7 @@ class GpsReceiver:
         new_non_coherent_prompt_peak_offset = np.argmax(new_non_coherent_prompt_correlation)
         new_coherent_prompt_prn_correlation_peak = new_coherent_prompt_correlation[new_non_coherent_prompt_peak_offset]
 
-        if True:
+        if False:
             plt.plot(non_coherent_prompt_correlation, label="Orig")
             plt.plot(new_non_coherent_prompt_correlation, label="New")
             plt.title(f'Track {satellite_tracking_params.satellite.satellite_id.id} D {satellite_tracking_params.current_doppler_shift} C {satellite_tracking_params.current_carrier_wave_phase_shift}')
