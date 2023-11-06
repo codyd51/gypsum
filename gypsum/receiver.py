@@ -557,22 +557,17 @@ class GpsReceiver:
         # Finally, ensure we're always sliding within one PRN transmission
         satellite_tracking_params.current_prn_code_phase_shift = int(satellite_tracking_params.current_prn_code_phase_shift) % SAMPLES_PER_PRN_TRANSMISSION
 
-        # Ensure carrier wave alignment
-        new_prompt_prn = np.roll(unslid_prn, satellite_tracking_params.current_prn_code_phase_shift)
-        new_coherent_prompt_correlation = frequency_domain_correlation(doppler_shifted_samples, new_prompt_prn)
-        new_non_coherent_prompt_correlation = np.abs(new_coherent_prompt_correlation)
-        new_non_coherent_prompt_peak_offset = np.argmax(new_non_coherent_prompt_correlation)
-        new_coherent_prompt_prn_correlation_peak = new_coherent_prompt_correlation[new_non_coherent_prompt_peak_offset]
+        coherent_prompt_prn_correlation_peak = coherent_prompt_correlation[non_coherent_prompt_peak_offset]
 
-        I = np.real(new_coherent_prompt_prn_correlation_peak)
-        Q = np.imag(new_coherent_prompt_prn_correlation_peak)
+        I = np.real(coherent_prompt_prn_correlation_peak)
+        Q = np.imag(coherent_prompt_prn_correlation_peak)
         carrier_wave_phase_error = I * Q
 
         satellite_tracking_params.current_doppler_shift += loop_gain_freq * carrier_wave_phase_error
         satellite_tracking_params.current_carrier_wave_phase_shift += loop_gain_phase * carrier_wave_phase_error
         satellite_tracking_params.current_carrier_wave_phase_shift %= math.tau
 
-        navigation_bit_pseudosymbol_value = int(np.sign(new_coherent_prompt_prn_correlation_peak))
+        navigation_bit_pseudosymbol_value = int(np.sign(coherent_prompt_prn_correlation_peak))
         satellite_tracking_params.navigation_bit_pseudosymbols.append(navigation_bit_pseudosymbol_value)
 
         logging.info(f"Doppler shift {satellite_tracking_params.current_doppler_shift:.2f}")
