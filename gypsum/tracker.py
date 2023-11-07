@@ -40,20 +40,25 @@ class GpsSatelliteTracker:
         # Common choice for zeta, considered optimal
         damping_factor = math.sqrt(2) / 2.0
         # Natural frequency
-        natural_freq = loop_bandwidth / (damping_factor * (1 + damping_factor ** 2) ** 0.5)
+        natural_freq = loop_bandwidth / (damping_factor * (1 + damping_factor**2) ** 0.5)
         # This represents the gain of *instantaneous* error correction,
         # which applies to the estimate of the carrier wave phase.
         # Also called 'alpha'.
         loop_gain_phase = (4 * damping_factor * natural_freq) / (
-                1 + ((2 * damping_factor * natural_freq) + (natural_freq ** 2)))
+            1 + ((2 * damping_factor * natural_freq) + (natural_freq**2))
+        )
         # This represents the *integrated* error correction,
         # which applies to the estimate of the Doppler shifted frequency.
         # Also called 'beta'.
-        loop_gain_freq = (4 * (natural_freq ** 2)) / (1 + ((2 * damping_factor * natural_freq) + (natural_freq ** 2)))
+        loop_gain_freq = (4 * (natural_freq**2)) / (1 + ((2 * damping_factor * natural_freq) + (natural_freq**2)))
 
         # Generate Doppler-shifted and phase-shifted carrier wave
-        time_domain = (np.arange(SAMPLES_PER_PRN_TRANSMISSION) / SAMPLES_PER_SECOND) + (sample_index / SAMPLES_PER_SECOND)
-        doppler_shift_carrier = np.exp(-1j * ((2 * np.pi * params.current_doppler_shift * time_domain) + params.current_carrier_wave_phase_shift))
+        time_domain = (np.arange(SAMPLES_PER_PRN_TRANSMISSION) / SAMPLES_PER_SECOND) + (
+            sample_index / SAMPLES_PER_SECOND
+        )
+        doppler_shift_carrier = np.exp(
+            -1j * ((2 * np.pi * params.current_doppler_shift * time_domain) + params.current_carrier_wave_phase_shift)
+        )
         doppler_shifted_samples = samples * doppler_shift_carrier
 
         # Correlate early, prompt, and late phase versions of the PRN
@@ -70,7 +75,9 @@ class GpsSatelliteTracker:
         if non_coherent_prompt_peak_offset <= SAMPLES_PER_PRN_TRANSMISSION / 2:
             centered_non_coherent_prompt_peak_offset = non_coherent_prompt_peak_offset
         else:
-            centered_non_coherent_prompt_peak_offset = non_coherent_prompt_peak_offset - SAMPLES_PER_PRN_TRANSMISSION + 1
+            centered_non_coherent_prompt_peak_offset = (
+                non_coherent_prompt_peak_offset - SAMPLES_PER_PRN_TRANSMISSION + 1
+            )
 
         logging.info(
             f"Peak offset {non_coherent_prompt_peak_offset}, centered offset {centered_non_coherent_prompt_peak_offset}"

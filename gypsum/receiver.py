@@ -48,7 +48,10 @@ class GpsReceiver:
         samples: AntennaSamplesSpanningOneMs = self.antenna_samples_provider.get_samples(SAMPLES_PER_PRN_TRANSMISSION)
         # PT: Instead of trying to find a roll that works across all time, dynamically adjust where we consider the start to be?
 
-        if (len(self.satellite_trackers) and len(self.satellite_trackers[-1].tracking_params.carrier_wave_phase_errors) > 12000*8) or len(samples) < SAMPLES_PER_PRN_TRANSMISSION:
+        if (
+            len(self.satellite_trackers)
+            and len(self.satellite_trackers[-1].tracking_params.carrier_wave_phase_errors) > 12000 * 8
+        ) or len(samples) < SAMPLES_PER_PRN_TRANSMISSION:
             for tracker in reversed(self.satellite_trackers):
                 sat = tracker.tracking_params
                 self.decode_nav_bits(sat)
@@ -62,6 +65,7 @@ class GpsReceiver:
                 plt.title(f"Carrier phase errors for {sat.satellite.satellite_id.id}")
                 plt.show(block=True)
             import sys
+
             sys.exit(0)
 
         # Firstly, record this sample in our rolling buffer
@@ -90,7 +94,7 @@ class GpsReceiver:
             # Compute an overall confidence score for this offset
             confidence_scores.append(np.mean(confidences))
 
-        #print(f"Confidence scores: {confidence_scores}")
+        # print(f"Confidence scores: {confidence_scores}")
         best_offset = np.argmax(confidence_scores)
         print(f"Best Offset: {best_offset} ({confidence_scores[best_offset]})")
 

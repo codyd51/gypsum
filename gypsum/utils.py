@@ -51,8 +51,7 @@ def does_list_contain_sublist(l: list[Any], sub: list[Any]) -> bool:
 
 
 def frequency_domain_correlation(
-    antenna_samples: AntennaSamplesSpanningOneMs,
-    prn_replica: PrnReplicaCodeSamplesSpanningOneMs
+    antenna_samples: AntennaSamplesSpanningOneMs, prn_replica: PrnReplicaCodeSamplesSpanningOneMs
 ) -> CorrelationProfile:
     # Perform correlation in the frequency domain.
     # This is much more efficient than attempting to perform correlation in the time domain, as we don't need to try
@@ -81,7 +80,9 @@ def integrate_correlation_with_doppler_shifted_prn(
     integrated_correlation_result = np.zeros(SAMPLES_PER_PRN_TRANSMISSION, dtype=correlation_data_type)
     for i, chunk_that_may_contain_one_prn in enumerate(chunks(antenna_data, SAMPLES_PER_PRN_TRANSMISSION)):
         sample_index = i * SAMPLES_PER_PRN_TRANSMISSION
-        integration_time_domain = (np.arange(SAMPLES_PER_PRN_TRANSMISSION) / SAMPLES_PER_SECOND) + (sample_index / SAMPLES_PER_SECOND)
+        integration_time_domain = (np.arange(SAMPLES_PER_PRN_TRANSMISSION) / SAMPLES_PER_SECOND) + (
+            sample_index / SAMPLES_PER_SECOND
+        )
         doppler_shift_carrier = np.exp(-1j * math.tau * doppler_shift * integration_time_domain)
         doppler_shifted_antenna_data_chunk = chunk_that_may_contain_one_prn * doppler_shift_carrier
 

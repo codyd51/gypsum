@@ -79,16 +79,16 @@ class GpsSatelliteDetector:
             center_doppler_shift_estimation = best_non_coherent_correlation_profile_in_this_search_space.doppler_shift
 
             if (
-                    # Base case
-                    not best_non_coherent_correlation_profile_across_all_search_space
-                    # Found a better candidate
-                    or best_non_coherent_correlation_profile_in_this_search_space.correlation_strength
-                    > best_non_coherent_correlation_profile_across_all_search_space.correlation_strength
+                # Base case
+                not best_non_coherent_correlation_profile_across_all_search_space
+                # Found a better candidate
+                or best_non_coherent_correlation_profile_in_this_search_space.correlation_strength
+                > best_non_coherent_correlation_profile_across_all_search_space.correlation_strength
             ):
                 best_non_coherent_correlation_profile_across_all_search_space = (
                     best_non_coherent_correlation_profile_in_this_search_space
                 )
-                #center_doppler_shift_estimation = best_non_coherent_correlation_profile_across_all_search_space.doppler_shift
+                # center_doppler_shift_estimation = best_non_coherent_correlation_profile_across_all_search_space.doppler_shift
                 _logger.info(
                     f"Found a better candidate Doppler for SV({satellite_id}): "
                     f"(Found in [{center_doppler_shift_estimation - doppler_frequency_estimation_spread:.2f} | "
@@ -145,9 +145,9 @@ class GpsSatelliteDetector:
     ) -> BestNonCoherentCorrelationProfile:
         doppler_shift_to_correlation_profile = {}
         for doppler_shift in range(
-                int(center_doppler_shift - doppler_shift_spread),
-                int(center_doppler_shift + doppler_shift_spread),
-                int(doppler_shift_spread / 10),
+            int(center_doppler_shift - doppler_shift_spread),
+            int(center_doppler_shift + doppler_shift_spread),
+            int(doppler_shift_spread / 10),
         ):
             correlation_profile = self.get_integrated_correlation_with_doppler_shifted_prn(
                 # Always use non-coherent integration when searching for the best Doppler peaks.
@@ -185,11 +185,11 @@ class GpsSatelliteDetector:
         # and I'm willing to take the chance.
         key = hash((integration_type, hash(antenna_data.sum()), doppler_shift, hash(prn_as_complex.tostring())))
         if False and key in self._cached_correlation_profiles:
-            _logger.debug(f'Did hit cache for PRN correlation result')
+            _logger.debug(f"Did hit cache for PRN correlation result")
             cached_correlation_profile = self._cached_correlation_profiles[key]
             return cached_correlation_profile
 
-        _logger.debug(f'Did not hit cache for PRN correlation result')
+        _logger.debug(f"Did not hit cache for PRN correlation result")
         correlation_profile = integrate_correlation_with_doppler_shifted_prn(
             integration_type,
             antenna_data,
