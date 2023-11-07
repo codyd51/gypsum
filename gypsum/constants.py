@@ -19,3 +19,7 @@ GPS_L1_FREQUENCY = 1575.42e6
 # Three satellites give two points along that circle.
 # Four satellites give a single point.
 MINIMUM_TRACKED_SATELLITES_FOR_POSITION_FIX = 4
+
+# The navigation message is transmitted at 50 bits per second
+# This means that there are 20 PRN correlations / 20 'pseudosymbols' per navigation message bit
+PSEUDOSYMBOLS_PER_NAVIGATION_BIT = 20

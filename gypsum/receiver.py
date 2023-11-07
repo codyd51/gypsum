@@ -1,13 +1,19 @@
 import collections
 import logging
 from copy import deepcopy
+from enum import Enum
+from enum import auto
 
 import matplotlib.pyplot as plt
 import numpy as np
 
 from gypsum.acquisition import GpsSatelliteDetector
+from gypsum.acquisition import SatelliteAcquisitionAttemptResult
+from gypsum.gps_ca_prn_codes import GpsSatelliteId
 from gypsum.gps_ca_prn_codes import generate_replica_prn_signals
 from gypsum.constants import SAMPLES_PER_PRN_TRANSMISSION, MINIMUM_TRACKED_SATELLITES_FOR_POSITION_FIX
+from gypsum.navigation_bit_intergrator import DeterminedBitPhaseEvent
+from gypsum.navigation_bit_intergrator import EmitNavigationBitEvent
 from gypsum.navigation_bit_intergrator import NavigationBitIntegrator
 from gypsum.navigation_message_decoder import NavigationMessageDecoder
 from gypsum.satellite import ALL_SATELLITE_IDS
@@ -94,53 +100,29 @@ class GpsReceiver:
             satellite_id: GpsSatellite(satellite_id=satellite_id, prn_code=code)
             for satellite_id, code in satellites_to_replica_prn_signals.items()
         }
-
-        self.satellite_trackers: list[GpsSatelliteTracker] = []
-        self.satellite_ids_eligible_for_acquisition = deepcopy(ALL_SATELLITE_IDS)
-
+        # TODO(PT): Perhaps this state should belong to the detector.
+        # The receiver can remove satellites from the pool when it decides a satellite has been acquired
+        #self.satellite_ids_eligible_for_acquisition = deepcopy(ALL_SATELLITE_IDS)
+        self.satellite_ids_eligible_for_acquisition = [GpsSatelliteId(id=32)]
         self.satellite_detector = GpsSatelliteDetector(self.satellites_by_id)
         # Used during acquisition to integrate correlation over a longer period than a millisecond.
         self.rolling_samples_buffer = collections.deque(maxlen=ACQUISITION_INTEGRATION_PERIOD_MS)
-        # The main loop could always peel off two milliseconds, then pass whatever it can to the trackers
-        # Even better: the trackers can return a "would block" / needs more samples
 
-        self.navigation_bit_integrator = NavigationBitIntegrator()
-        self.navigation_message_decoder = NavigationMessageDecoder()
+        self.tracked_satellite_ids_to_processing_pipelines: dict[GpsSatelliteId, GpsSatelliteSignalProcessingPipeline] = {}
 
     def step(self):
         """Run one 'iteration' of the GPS receiver. This consumes one millisecond of antenna data."""
         sample_index = self.antenna_samples_provider.cursor
         samples: AntennaSamplesSpanningOneMs = self.antenna_samples_provider.get_samples(SAMPLES_PER_PRN_TRANSMISSION)
-        # PT: Instead of trying to find a roll that works across all time, dynamically adjust where we consider the start to be?
-
-        if (
-            len(self.satellite_trackers)
-            and len(self.satellite_trackers[-1].tracking_params.carrier_wave_phase_errors) > 12000 * 8
-        ) or len(samples) < SAMPLES_PER_PRN_TRANSMISSION:
-            for tracker in reversed(self.satellite_trackers):
-                sat = tracker.tracking_params
-                self.decode_nav_bits(sat)
-                plt.plot(sat.doppler_shifts[::50])
-                plt.title(f"Doppler shift for {sat.satellite.satellite_id.id}")
-                plt.show(block=True)
-                plt.plot(sat.carrier_wave_phases[::50])
-                plt.title(f"Carrier phase for {sat.satellite.satellite_id.id}")
-                plt.show(block=True)
-                plt.plot(sat.carrier_wave_phase_errors[::50])
-                plt.title(f"Carrier phase errors for {sat.satellite.satellite_id.id}")
-                plt.show(block=True)
-            import sys
-
-            sys.exit(0)
-
         # Firstly, record this sample in our rolling buffer
         self.rolling_samples_buffer.append(samples)
 
         # If we need to perform acquisition, do so now
-        if len(self.satellite_trackers) < MINIMUM_TRACKED_SATELLITES_FOR_POSITION_FIX:
+        #if len(self.tracked_satellite_ids_to_processing_pipelines) < MINIMUM_TRACKED_SATELLITES_FOR_POSITION_FIX:
+        if len(self.tracked_satellite_ids_to_processing_pipelines) < 1:
             _logger.info(
                 f"Will perform acquisition search because we're only "
-                f"tracking {len(self.satellite_trackers)} satellites"
+                f"tracking {len(self.tracked_satellite_ids_to_processing_pipelines)} satellites"
             )
             self._perform_acquisition()
 
@@ -211,28 +193,10 @@ class GpsReceiver:
             samples_for_integration_period,
         )
         for satellite_acquisition_result in newly_acquired_satellites:
-            tracking_params = GpsSatelliteTrackingParameters(
-                satellite=self.satellites_by_id[satellite_acquisition_result.satellite_id],
-                current_doppler_shift=satellite_acquisition_result.doppler_shift,
-                current_carrier_wave_phase_shift=satellite_acquisition_result.carrier_wave_phase_shift,
-                current_prn_code_phase_shift=satellite_acquisition_result.prn_phase_shift,
-                doppler_shifts=[],
-                carrier_wave_phases=[],
-                carrier_wave_phase_errors=[],
-                navigation_bit_pseudosymbols=[],
-            )
-            self.satellite_trackers.append(GpsSatelliteTracker(tracking_params))
+            sat_id = satellite_acquisition_result.satellite_id
+            satellite = self.satellites_by_id[sat_id]
+            self.tracked_satellite_ids_to_processing_pipelines[sat_id] = GpsSatelliteSignalProcessingPipeline(satellite, satellite_acquisition_result)
 
     def _track_acquired_satellites(self, samples: AntennaSamplesSpanningOneMs, sample_index: int):
-        for tracker in self.satellite_trackers:
-            pseudosymbol = tracker.process_samples(samples, sample_index)
-            satellite = tracker.tracking_params.satellite
-            maybe_navigation_bit = self.navigation_bit_integrator.process_pseudosymbol_from_satellite(
-                satellite,
-                pseudosymbol
-            )
-
-            if not maybe_navigation_bit:
-                continue
-
-            self.navigation_message_decoder.process_bit_from_satellite(satellite, maybe_navigation_bit)
+        for _satellite_id, pipeline in self.tracked_satellite_ids_to_processing_pipelines.items():
+            pipeline.process_samples(samples, sample_index)
