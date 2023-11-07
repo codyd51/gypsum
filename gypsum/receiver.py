@@ -8,6 +8,8 @@ import numpy as np
 from gypsum.acquisition import GpsSatelliteDetector
 from gypsum.gps_ca_prn_codes import generate_replica_prn_signals
 from gypsum.constants import SAMPLES_PER_PRN_TRANSMISSION, MINIMUM_TRACKED_SATELLITES_FOR_POSITION_FIX
+from gypsum.navigation_bit_intergrator import NavigationBitIntegrator
+from gypsum.navigation_message_decoder import NavigationMessageDecoder
 from gypsum.satellite import ALL_SATELLITE_IDS
 from gypsum.satellite import GpsSatellite
 from gypsum.antenna_sample_provider import AntennaSampleProvider
@@ -41,6 +43,9 @@ class GpsReceiver:
         self.rolling_samples_buffer = collections.deque(maxlen=ACQUISITION_INTEGRATION_PERIOD_MS)
         # The main loop could always peel off two milliseconds, then pass whatever it can to the trackers
         # Even better: the trackers can return a "would block" / needs more samples
+
+        self.navigation_bit_integrator = NavigationBitIntegrator()
+        self.navigation_message_decoder = NavigationMessageDecoder()
 
     def step(self):
         """Run one 'iteration' of the GPS receiver. This consumes one millisecond of antenna data."""
@@ -161,3 +166,13 @@ class GpsReceiver:
     def _track_acquired_satellites(self, samples: AntennaSamplesSpanningOneMs, sample_index: int):
         for tracker in self.satellite_trackers:
             pseudosymbol = tracker.process_samples(samples, sample_index)
+            satellite = tracker.tracking_params.satellite
+            maybe_navigation_bit = self.navigation_bit_integrator.process_pseudosymbol_from_satellite(
+                satellite,
+                pseudosymbol
+            )
+
+            if not maybe_navigation_bit:
+                continue
+
+            self.navigation_message_decoder.process_bit_from_satellite(satellite, maybe_navigation_bit)

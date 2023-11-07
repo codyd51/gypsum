@@ -19,6 +19,18 @@ from gypsum.utils import frequency_domain_correlation
 _logger = logging.getLogger(__name__)
 
 
+class BitValue(Enum):
+    ZERO = auto()
+    ONE = auto()
+
+    @classmethod
+    def from_val(cls, val: int) -> Self:
+        return {
+            0: BitValue.ZERO,
+            1: BitValue.ONE,
+        }[val]
+
+
 class NavigationBitPseudosymbol(Enum):
     MINUS_ONE = auto()
     ONE = auto()
