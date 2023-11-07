@@ -42,6 +42,12 @@ class NavigationBitPseudosymbol(Enum):
             1: NavigationBitPseudosymbol.ONE,
         }[val]
 
+    def as_val(self) -> int:
+        return {
+            NavigationBitPseudosymbol.MINUS_ONE: -1,
+            NavigationBitPseudosymbol.ONE: 1,
+        }[self]
+
 
 @dataclass
 class GpsSatelliteTrackingParameters:
@@ -106,9 +112,9 @@ class GpsSatelliteTracker:
                 non_coherent_prompt_peak_offset - SAMPLES_PER_PRN_TRANSMISSION + 1
             )
 
-        logging.info(
-            f"Peak offset {non_coherent_prompt_peak_offset}, centered offset {centered_non_coherent_prompt_peak_offset}"
-        )
+        #logging.info(
+        #    f"Peak offset {non_coherent_prompt_peak_offset}, centered offset {centered_non_coherent_prompt_peak_offset}"
+        #)
         if centered_non_coherent_prompt_peak_offset > 0:
             params.current_prn_code_phase_shift += centered_non_coherent_prompt_peak_offset
         else:
@@ -130,9 +136,9 @@ class GpsSatelliteTracker:
         navigation_bit_pseudosymbol_value = int(np.sign(coherent_prompt_prn_correlation_peak))
         params.navigation_bit_pseudosymbols.append(navigation_bit_pseudosymbol_value)
 
-        logging.info(f"Doppler shift {params.current_doppler_shift:.2f}")
-        logging.info(f"Carrier phase {params.current_carrier_wave_phase_shift:.8f}")
-        logging.info(f"Code phase {params.current_prn_code_phase_shift}")
+        #logging.info(f"Doppler shift {params.current_doppler_shift:.2f}")
+        #logging.info(f"Carrier phase {params.current_carrier_wave_phase_shift:.8f}")
+        #logging.info(f"Code phase {params.current_prn_code_phase_shift}")
 
         params.doppler_shifts.append(params.current_doppler_shift)
         params.carrier_wave_phases.append(params.current_carrier_wave_phase_shift)

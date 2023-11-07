@@ -24,6 +24,66 @@ from gypsum.utils import does_list_contain_sublist
 _logger = logging.getLogger(__name__)
 
 
+class UnknownEventError(Exception):
+    pass
+
+
+class TrackingState(Enum):
+    PROVISIONAL_PROBE = auto()
+    LOCKED = auto()
+
+
+class GpsSatelliteSignalProcessingPipeline:
+    satellite: GpsSatellite
+    state: TrackingState
+
+    # Tracks PRN code phase shift, carrier wave Doppler shift, and carrier wave phase
+    tracker: GpsSatelliteTracker
+
+    pseudosymbol_integrator: NavigationBitIntegrator
+    navigation_message_decoder: NavigationMessageDecoder
+
+    def __init__(self, satellite: GpsSatellite, acquisition_result: SatelliteAcquisitionAttemptResult) -> None:
+        self.satellite = satellite
+        self.state = TrackingState.PROVISIONAL_PROBE
+        tracking_params = GpsSatelliteTrackingParameters(
+            satellite=satellite,
+            current_doppler_shift=acquisition_result.doppler_shift,
+            current_carrier_wave_phase_shift=acquisition_result.carrier_wave_phase_shift,
+            current_prn_code_phase_shift=acquisition_result.prn_phase_shift,
+            doppler_shifts=[],
+            carrier_wave_phases=[],
+            carrier_wave_phase_errors=[],
+            navigation_bit_pseudosymbols=[],
+        )
+        self.tracker = GpsSatelliteTracker(tracking_params)
+        self.pseudosymbol_integrator = NavigationBitIntegrator()
+        self.navigation_message_decoder = NavigationMessageDecoder()
+
+    def process_samples(self, samples: AntennaSamplesSpanningOneMs, sample_index: int):
+        pseudosymbol = self.tracker.process_samples(samples, sample_index)
+        integrator_events = self.pseudosymbol_integrator.process_pseudosymbol(pseudosymbol)
+
+        for event in integrator_events:
+            if isinstance(event, DeterminedBitPhaseEvent):
+                _logger.info(
+                    f'Integrator for SV({self.satellite.satellite_id.id}) has determined bit phase {event.bit_phase}'
+                )
+
+            elif isinstance(event, EmitNavigationBitEvent):
+                _logger.info(
+                    f'Integrator for SV({self.satellite.satellite_id.id}) emitted bit {event.bit_value}'
+                )
+                self.navigation_message_decoder.process_bit_from_satellite(self.satellite, event.bit_value)
+
+            else:
+                raise UnknownEventError(type(event))
+
+        # The pseudosymbol integrator will only emit a bit every 20 pseudosymbols
+        #if not maybe_navigation_bit:
+        #    return
+
+
 class GpsReceiver:
     def __init__(self, antenna_samples_provider: AntennaSampleProvider) -> None:
         self.antenna_samples_provider = antenna_samples_provider
