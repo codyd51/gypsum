@@ -1,5 +1,8 @@
 import logging
 from dataclasses import dataclass
+from enum import Enum
+from enum import auto
+from typing import Self
 
 import math
 import numpy as np
@@ -14,6 +17,18 @@ from gypsum.utils import PrnCodePhaseInSamples
 from gypsum.utils import frequency_domain_correlation
 
 _logger = logging.getLogger(__name__)
+
+
+class NavigationBitPseudosymbol(Enum):
+    MINUS_ONE = auto()
+    ONE = auto()
+
+    @classmethod
+    def from_val(cls, val: int) -> Self:
+        return {
+            -1: NavigationBitPseudosymbol.MINUS_ONE,
+            1: NavigationBitPseudosymbol.ONE,
+        }[val]
 
 
 @dataclass
@@ -33,7 +48,7 @@ class GpsSatelliteTracker:
     def __init__(self, tracking_params: GpsSatelliteTrackingParameters) -> None:
         self.tracking_params = tracking_params
 
-    def process_samples(self, samples: AntennaSamplesSpanningOneMs, sample_index: int) -> None:
+    def process_samples(self, samples: AntennaSamplesSpanningOneMs, sample_index: int) -> NavigationBitPseudosymbol:
         params = self.tracking_params
 
         loop_bandwidth = 2.046 / 1000
@@ -110,3 +125,5 @@ class GpsSatelliteTracker:
         params.doppler_shifts.append(params.current_doppler_shift)
         params.carrier_wave_phases.append(params.current_carrier_wave_phase_shift)
         params.carrier_wave_phase_errors.append(carrier_wave_phase_error)
+
+        return NavigationBitPseudosymbol.from_val(navigation_bit_pseudosymbol_value)

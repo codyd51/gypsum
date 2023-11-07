@@ -160,4 +160,4 @@ class GpsReceiver:
 
     def _track_acquired_satellites(self, samples: AntennaSamplesSpanningOneMs, sample_index: int):
         for tracker in self.satellite_trackers:
-            tracker.process_samples(samples, sample_index)
+            pseudosymbol = tracker.process_samples(samples, sample_index)
