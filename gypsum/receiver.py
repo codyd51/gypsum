@@ -2,6 +2,8 @@ import collections
 import logging
 from enum import Enum
 from enum import auto
+from typing import Callable
+from typing import Type
 
 import numpy as np
 
@@ -13,6 +15,7 @@ from gypsum.constants import SAMPLES_PER_PRN_TRANSMISSION
 from gypsum.navigation_bit_intergrator import CannotDetermineBitPhaseEvent
 from gypsum.navigation_bit_intergrator import DeterminedBitPhaseEvent
 from gypsum.navigation_bit_intergrator import EmitNavigationBitEvent
+from gypsum.navigation_bit_intergrator import Event
 from gypsum.navigation_bit_intergrator import NavigationBitIntegrator
 from gypsum.navigation_message_decoder import NavigationMessageDecoder
 from gypsum.satellite import GpsSatellite
@@ -65,31 +68,41 @@ class GpsSatelliteSignalProcessingPipeline:
         self.navigation_message_decoder = NavigationMessageDecoder()
 
     def process_samples(self, samples: AntennaSamplesSpanningOneMs, sample_index: int):
-        satellite_id = self.satellite.satellite_id.id
         pseudosymbol = self.tracker.process_samples(samples, sample_index)
         integrator_events = self.pseudosymbol_integrator.process_pseudosymbol(pseudosymbol)
 
+        integrator_event_type_to_callback: dict[Type[Event], Callable[[Event], None]] = {   # type: ignore
+            DeterminedBitPhaseEvent: self._handle_integrator_determined_bit_phase,
+            CannotDetermineBitPhaseEvent: self._handle_integrator_cannot_determine_bit_phase,
+            EmitNavigationBitEvent: self._handle_integrator_emitted_bit,
+        }
         for event in integrator_events:
-            if isinstance(event, DeterminedBitPhaseEvent):
-                _logger.info(
-                    f'Integrator for SV({satellite_id}) has determined bit phase {event.bit_phase}'
-                )
+            event_type = type(event)
+            if event_type not in integrator_event_type_to_callback:
+                raise UnknownEventError(event_type)
+            callback = integrator_event_type_to_callback[event_type]
+            callback(event)
 
-            elif isinstance(event, CannotDetermineBitPhaseEvent):
-                _logger.info(
-                    f'Integrator for SV({satellite_id} could not determine bit phase.'
-                )
-                # TODO(PT): Untrack this satellite (as the bits are low confidence)
-                raise NotImplementedError(f'Satellite should be removed from the tracking pool')
+    def _handle_integrator_determined_bit_phase(self, event: DeterminedBitPhaseEvent) -> None:
+        satellite_id = self.satellite.satellite_id.id
+        _logger.info(
+            f'Integrator for SV({satellite_id}) has determined bit phase {event.bit_phase}'
+        )
 
-            elif isinstance(event, EmitNavigationBitEvent):
-                _logger.info(
-                    f'Integrator for SV({satellite_id}) emitted bit {event.bit_value}'
-                )
-                self.navigation_message_decoder.process_bit_from_satellite(event.bit_value)
+    def _handle_integrator_cannot_determine_bit_phase(self, event: CannotDetermineBitPhaseEvent) -> None:
+        satellite_id = self.satellite.satellite_id.id
+        _logger.info(
+            f'Integrator for SV({satellite_id} could not determine bit phase. Confidence: {int(event.confidence*100)}%'
+        )
+        # TODO(PT): Untrack this satellite (as the bits are low confidence)
+        raise NotImplementedError(f'Satellite should be removed from the tracking pool')
 
-            else:
-                raise UnknownEventError(type(event))
+    def _handle_integrator_emitted_bit(self, event: EmitNavigationBitEvent) -> None:
+        satellite_id = self.satellite.satellite_id.id
+        _logger.info(
+            f'Integrator for SV({satellite_id}) emitted bit {event.bit_value}'
+        )
+        self.navigation_message_decoder.process_bit_from_satellite(event.bit_value)
 
 
 class GpsReceiver:
