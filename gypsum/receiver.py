@@ -9,6 +9,7 @@ import numpy as np
 
 from gypsum.acquisition import GpsSatelliteDetector
 from gypsum.acquisition import SatelliteAcquisitionAttemptResult
+from gypsum.events import UnknownEventError
 from gypsum.gps_ca_prn_codes import GpsSatelliteId
 from gypsum.gps_ca_prn_codes import generate_replica_prn_signals
 from gypsum.constants import SAMPLES_PER_PRN_TRANSMISSION
@@ -29,10 +30,6 @@ from gypsum.utils import does_list_contain_sublist
 
 
 _logger = logging.getLogger(__name__)
-
-
-class UnknownEventError(Exception):
-    pass
 
 
 class TrackingState(Enum):
@@ -102,7 +99,9 @@ class GpsSatelliteSignalProcessingPipeline:
         _logger.info(
             f'Integrator for SV({satellite_id}) emitted bit {event.bit_value}'
         )
-        self.navigation_message_decoder.process_bit_from_satellite(event.bit_value)
+        decoder_events = self.navigation_message_decoder.process_bit_from_satellite(event.bit_value)
+        for event in decoder_events:
+            print(event)
 
 
 class GpsReceiver:

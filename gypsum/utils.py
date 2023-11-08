@@ -46,8 +46,15 @@ def round_to_previous_multiple_of(val: int, multiple: int) -> int:
     return val - (val % multiple)
 
 
-def does_list_contain_sublist(l: list[Any], sub: list[Any]) -> bool:
-    return any(l[pos : pos + len(sub)] == sub for pos in range(0, len(l) - len(sub) + 1))
+def get_indexes_of_sublist(li: list[Any], sub: list[Any]) -> list[int]:
+    index_to_is_sublist_match = [li[pos: pos + len(sub)] == sub for pos in range(0, len(li) - len(sub) + 1)]
+    indexes_of_sublist_matches = [match[0] for match in np.argwhere(index_to_is_sublist_match == True)]
+    return indexes_of_sublist_matches
+
+
+def does_list_contain_sublist(li: list[Any], sub: list[Any]) -> bool:
+    indexes_of_sublist = get_indexes_of_sublist(li, sub)
+    return len(indexes_of_sublist) > 0
 
 
 def frequency_domain_correlation(

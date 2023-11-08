@@ -1,10 +1,9 @@
 import logging
-from dataclasses import dataclass
 
 import numpy as np
 
 from gypsum.constants import PSEUDOSYMBOLS_PER_NAVIGATION_BIT
-from gypsum.satellite import GpsSatellite
+from gypsum.events import Event
 from gypsum.tracker import BitValue
 from gypsum.tracker import NavigationBitPseudosymbol
 
@@ -12,11 +11,6 @@ _logger = logging.getLogger(__name__)
 
 
 Percentage = float
-
-
-@dataclass
-class Event:
-    pass
 
 
 class EmitNavigationBitEvent(Event):
