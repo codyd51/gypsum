@@ -7,21 +7,11 @@ from gypsum.constants import PSEUDOSYMBOLS_PER_NAVIGATION_BIT
 from gypsum.satellite import GpsSatellite
 from gypsum.tracker import BitValue
 from gypsum.tracker import NavigationBitPseudosymbol
-from gypsum.utils import chunks
 
 _logger = logging.getLogger(__name__)
 
 
-@dataclass
-class GpsSatellitePseudosymbolIntegratorState:
-    satellite: GpsSatellite
-
-    @property
-    def is_satellite_lock_provisional(self) -> bool:
-        # If we haven't chosen a bit phase, this satellite is still in the provisional tracking phase
-        return self.bit_phase is None
-
-    # finalize
+Percentage = float
 
 
 @dataclass
@@ -37,6 +27,11 @@ class EmitNavigationBitEvent(Event):
 class DeterminedBitPhaseEvent(Event):
     def __init__(self, bit_phase: int) -> None:
         self.bit_phase = bit_phase
+
+
+class CannotDetermineBitPhaseEvent(Event):
+    def __init__(self, confidence: Percentage) -> None:
+        self.confidence = confidence
 
 
 class NavigationBitIntegrator:
@@ -67,14 +62,27 @@ class NavigationBitIntegrator:
                     # This could be sensitive to tracking errors in this particular second of processing...
 
                 highest_confidence_phase_offset = int(np.argmax(confidence_scores))
+                highest_confidence_score = confidence_scores[highest_confidence_phase_offset]
                 _logger.info(
                     f'Highest confidence phase offset: {highest_confidence_phase_offset}. '
-                    f'Score: {confidence_scores[highest_confidence_phase_offset]}'
+                    f'Score: {highest_confidence_score}'
                 )
-                self.determined_bit_phase = highest_confidence_phase_offset
-                # Discard queued symbols from the first partial symbol
-                self.queued_pseudosymbols = self.queued_pseudosymbols[self.determined_bit_phase:]
-                events.append(DeterminedBitPhaseEvent(highest_confidence_phase_offset))
+
+                highest_confidence_as_percentage: Percentage = (
+                    highest_confidence_score / PSEUDOSYMBOLS_PER_NAVIGATION_BIT
+                )
+
+                if highest_confidence_as_percentage >= 0.70:
+                    self.determined_bit_phase = highest_confidence_phase_offset
+                    # Discard queued symbols from the first partial symbol
+                    self.queued_pseudosymbols = self.queued_pseudosymbols[self.determined_bit_phase:]
+                    events.append(DeterminedBitPhaseEvent(highest_confidence_phase_offset))
+                else:
+                    _logger.info(
+                        f'Highest confidence bit phase was below confidence threshold: {highest_confidence_as_percentage}'
+                    )
+                    events.append(CannotDetermineBitPhaseEvent(highest_confidence_as_percentage))
+
             else:
                 _logger.info(
                     f'Pseudosymbol integrator hasn\'t yet determined bit phase '

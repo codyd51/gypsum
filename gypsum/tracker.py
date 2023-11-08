@@ -30,6 +30,12 @@ class BitValue(Enum):
             1: BitValue.ONE,
         }[val]
 
+    def as_val(self) -> int:
+        return {
+            BitValue.ZERO: 0,
+            BitValue.ONE: 1,
+        }[self]
+
 
 class NavigationBitPseudosymbol(Enum):
     MINUS_ONE = auto()

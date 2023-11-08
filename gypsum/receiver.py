@@ -1,22 +1,20 @@
 import collections
 import logging
-from copy import deepcopy
 from enum import Enum
 from enum import auto
 
-import matplotlib.pyplot as plt
 import numpy as np
 
 from gypsum.acquisition import GpsSatelliteDetector
 from gypsum.acquisition import SatelliteAcquisitionAttemptResult
 from gypsum.gps_ca_prn_codes import GpsSatelliteId
 from gypsum.gps_ca_prn_codes import generate_replica_prn_signals
-from gypsum.constants import SAMPLES_PER_PRN_TRANSMISSION, MINIMUM_TRACKED_SATELLITES_FOR_POSITION_FIX
+from gypsum.constants import SAMPLES_PER_PRN_TRANSMISSION
+from gypsum.navigation_bit_intergrator import CannotDetermineBitPhaseEvent
 from gypsum.navigation_bit_intergrator import DeterminedBitPhaseEvent
 from gypsum.navigation_bit_intergrator import EmitNavigationBitEvent
 from gypsum.navigation_bit_intergrator import NavigationBitIntegrator
 from gypsum.navigation_message_decoder import NavigationMessageDecoder
-from gypsum.satellite import ALL_SATELLITE_IDS
 from gypsum.satellite import GpsSatellite
 from gypsum.antenna_sample_provider import AntennaSampleProvider
 from gypsum.config import ACQUISITION_INTEGRATION_PERIOD_MS
@@ -67,27 +65,31 @@ class GpsSatelliteSignalProcessingPipeline:
         self.navigation_message_decoder = NavigationMessageDecoder()
 
     def process_samples(self, samples: AntennaSamplesSpanningOneMs, sample_index: int):
+        satellite_id = self.satellite.satellite_id.id
         pseudosymbol = self.tracker.process_samples(samples, sample_index)
         integrator_events = self.pseudosymbol_integrator.process_pseudosymbol(pseudosymbol)
 
         for event in integrator_events:
             if isinstance(event, DeterminedBitPhaseEvent):
                 _logger.info(
-                    f'Integrator for SV({self.satellite.satellite_id.id}) has determined bit phase {event.bit_phase}'
+                    f'Integrator for SV({satellite_id}) has determined bit phase {event.bit_phase}'
                 )
+
+            elif isinstance(event, CannotDetermineBitPhaseEvent):
+                _logger.info(
+                    f'Integrator for SV({satellite_id} could not determine bit phase.'
+                )
+                # TODO(PT): Untrack this satellite (as the bits are low confidence)
+                raise NotImplementedError(f'Satellite should be removed from the tracking pool')
 
             elif isinstance(event, EmitNavigationBitEvent):
                 _logger.info(
-                    f'Integrator for SV({self.satellite.satellite_id.id}) emitted bit {event.bit_value}'
+                    f'Integrator for SV({satellite_id}) emitted bit {event.bit_value}'
                 )
-                self.navigation_message_decoder.process_bit_from_satellite(self.satellite, event.bit_value)
+                self.navigation_message_decoder.process_bit_from_satellite(event.bit_value)
 
             else:
                 raise UnknownEventError(type(event))
-
-        # The pseudosymbol integrator will only emit a bit every 20 pseudosymbols
-        #if not maybe_navigation_bit:
-        #    return
 
 
 class GpsReceiver:
@@ -160,6 +162,7 @@ class GpsReceiver:
         print(f"Inverted bits: {inverted_bits}")
 
         preamble = [1, 0, 0, 0, 1, 0, 1, 1]
+        inverted = [0, 1, 1, 1, 0, 1, 0, 0]
         print(f"Preamble {preamble} found in bits? {does_list_contain_sublist(digital_bits, preamble)}")
         print(f"Preamble {preamble} found in inverted bits? {does_list_contain_sublist(inverted_bits, preamble)}")
 
