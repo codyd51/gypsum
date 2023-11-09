@@ -17,7 +17,11 @@ from gypsum.navigation_bit_intergrator import CannotDetermineBitPhaseEvent
 from gypsum.navigation_bit_intergrator import DeterminedBitPhaseEvent
 from gypsum.navigation_bit_intergrator import EmitNavigationBitEvent
 from gypsum.navigation_bit_intergrator import Event
+from gypsum.navigation_bit_intergrator import LostBitPhaseCoherenceError
 from gypsum.navigation_bit_intergrator import NavigationBitIntegrator
+from gypsum.navigation_message_decoder import CannotDetermineSubframePhaseEvent
+from gypsum.navigation_message_decoder import DeterminedSubframePhaseEvent
+from gypsum.navigation_message_decoder import EmitSubframeEvent
 from gypsum.navigation_message_decoder import NavigationMessageDecoder
 from gypsum.satellite import GpsSatellite
 from gypsum.antenna_sample_provider import AntennaSampleProvider
@@ -66,7 +70,22 @@ class GpsSatelliteSignalProcessingPipeline:
 
     def process_samples(self, samples: AntennaSamplesSpanningOneMs, sample_index: int):
         pseudosymbol = self.tracker.process_samples(samples, sample_index)
-        integrator_events = self.pseudosymbol_integrator.process_pseudosymbol(pseudosymbol)
+        try:
+            integrator_events = self.pseudosymbol_integrator.process_pseudosymbol(pseudosymbol)
+        except LostBitPhaseCoherenceError:
+            print(f'*** found ***')
+            from matplotlib import pyplot as plt
+            plt.plot(self.tracker.tracking_params.doppler_shifts[-1000:])
+            plt.title(f"Doppler shift")
+            plt.show()
+            plt.plot(self.tracker.tracking_params.carrier_wave_phases[-1000:])
+            plt.title(f"Carrier wave phase")
+            plt.show()
+            plt.plot(self.tracker.tracking_params.carrier_wave_phase_errors[-1000:])
+            plt.title(f"Carrier wave phase error")
+            plt.show()
+            import sys
+            sys.exit(0)
 
         integrator_event_type_to_callback: dict[Type[Event], Callable[[Event], None]] = {   # type: ignore
             DeterminedBitPhaseEvent: self._handle_integrator_determined_bit_phase,
@@ -96,12 +115,39 @@ class GpsSatelliteSignalProcessingPipeline:
 
     def _handle_integrator_emitted_bit(self, event: EmitNavigationBitEvent) -> None:
         satellite_id = self.satellite.satellite_id.id
-        _logger.info(
-            f'Integrator for SV({satellite_id}) emitted bit {event.bit_value}'
-        )
+        #_logger.info(f'handling bit {self.pseudosymbol_integrator.bit_index-1}')
         decoder_events = self.navigation_message_decoder.process_bit_from_satellite(event.bit_value)
+
+        decoder_event_type_to_callback: dict[Type[Event], Callable[[Event], None]] = {   # type: ignore
+            DeterminedSubframePhaseEvent: self._handle_decoder_determined_subframe_phase,
+            CannotDetermineSubframePhaseEvent: self._handle_decoder_cannot_determine_subframe_phase,
+            EmitSubframeEvent: self._handle_decoder_emitted_subframe,
+        }
         for event in decoder_events:
-            print(event)
+            event_type = type(event)
+            if event_type not in decoder_event_type_to_callback:
+                raise UnknownEventError(event_type)
+            callback = decoder_event_type_to_callback[event_type]
+            callback(event)
+
+    def _handle_decoder_determined_subframe_phase(self, event: DeterminedSubframePhaseEvent) -> None:
+        satellite_id = self.satellite.satellite_id.id
+        _logger.info(
+            f'Decoder for SV({satellite_id}) has determined subframe phase {event.subframe_phase}'
+        )
+
+    def _handle_decoder_cannot_determine_subframe_phase(self, event: CannotDetermineBitPhaseEvent) -> None:
+        satellite_id = self.satellite.satellite_id.id
+        _logger.info(f'Decoder for SV({satellite_id}) could not determine subframe phase.')
+        # TODO(PT): Wait longer for a subframe to appear..?
+        raise NotImplementedError(f'Should wait longer for a subframe to appear..?')
+
+    def _handle_decoder_emitted_subframe(self, event: EmitSubframeEvent) -> None:
+        satellite_id = self.satellite.satellite_id.id
+        _logger.info(f'Decoder for SV({satellite_id}) emitted a subframe:')
+        _logger.info(f'\tTelemetry word: {event.telemetry_word}')
+        _logger.info(f'\tHandover word: {event.handover_word}')
+        #_logger.info(f'Emitted when integrator was at bit {self.pseudosymbol_integrator.bit_index-1}')
 
 
 class GpsReceiver:
