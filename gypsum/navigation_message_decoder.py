@@ -3,6 +3,9 @@ from enum import Enum
 from enum import auto
 
 from gypsum.events import Event
+from gypsum.navigation_message_parser import HandoverWord
+from gypsum.navigation_message_parser import NavigationMessageSubframeParser
+from gypsum.navigation_message_parser import TelemetryWord
 from gypsum.tracker import BitValue
 from gypsum.utils import get_indexes_of_sublist
 
@@ -10,7 +13,17 @@ _logger = logging.getLogger(__name__)
 
 
 BITS_PER_SUBFRAME = 300
-TELEMETRY_WORD_PREAMBLE = [1, 0, 0, 0, 1, 0, 1, 1]
+#TELEMETRY_WORD_PREAMBLE = [1, 0, 0, 0, 1, 0, 1, 1]
+TELEMETRY_WORD_PREAMBLE = [
+    BitValue.ONE,
+    BitValue.ZERO,
+    BitValue.ZERO,
+    BitValue.ZERO,
+    BitValue.ONE,
+    BitValue.ZERO,
+    BitValue.ONE,
+    BitValue.ONE,
+]
 
 
 class BitPolarity(Enum):
@@ -23,8 +36,19 @@ class CannotDetermineSubframePhaseEvent(Event):
 
 
 class DeterminedSubframePhaseEvent(Event):
-    def __init__(self, subframe_phase: int) -> None:
+    def __init__(self, subframe_phase: int, polarity: BitPolarity) -> None:
         self.subframe_phase = subframe_phase
+        self.polarity = polarity
+
+
+class EmitSubframeEvent(Event):
+    def __init__(
+        self,
+        telemetry_word: TelemetryWord,
+        handover_word: HandoverWord,
+    ) -> None:
+        self.telemetry_word = telemetry_word
+        self.handover_word = handover_word
 
 
 class NavigationMessageDecoder:
@@ -67,7 +91,7 @@ class NavigationMessageDecoder:
                     self.determined_polarity = BitPolarity.NEGATIVE
                     # Discard queued bits from the first partial subframe
                     self.queued_bits = self.queued_bits[self.determined_subframe_phase:]
-                    events.append(DeterminedSubframePhaseEvent(candidate))
+                    events.append(DeterminedSubframePhaseEvent(candidate, BitPolarity.NEGATIVE))
                     break
             else:
                 # Failed to find any preambles
@@ -87,6 +111,19 @@ class NavigationMessageDecoder:
 
     def parse_subframe(self) -> EmitSubframeEvent:
         _logger.info(f'Emitting subframe')
-        bit_pseudosymbols = self.queued_pseudosymbols[:PSEUDOSYMBOLS_PER_NAVIGATION_BIT]
-        # Consume these pseudosymbols by removing them from the queue
-        self.queued_pseudosymbols = self.queued_pseudosymbols[PSEUDOSYMBOLS_PER_NAVIGATION_BIT:]
+        subframe_bits = self.queued_bits[:BITS_PER_SUBFRAME]
+        # Consume these bits by removing them from the queue
+        self.queued_bits = self.queued_bits[BITS_PER_SUBFRAME:]
+
+        # Flip the bit polarity so everything looks upright
+        preprocessed_bits = subframe_bits
+        if self.determined_polarity == BitPolarity.NEGATIVE:
+            preprocessed_bits = [b.inverted() for b in preprocessed_bits]
+        bits_as_ints = [b.as_val() for b in preprocessed_bits]
+        subframe_parser = NavigationMessageSubframeParser(bits_as_ints)
+        telemetry_word = subframe_parser.parse_telemetry_word()
+        handover_word = subframe_parser.parse_handover_word()
+        return EmitSubframeEvent(
+            telemetry_word,
+            handover_word
+        )
