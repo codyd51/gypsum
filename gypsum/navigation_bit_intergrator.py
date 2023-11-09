@@ -28,10 +28,15 @@ class CannotDetermineBitPhaseEvent(Event):
         self.confidence = confidence
 
 
+class LostBitPhaseCoherenceError(Exception):
+    pass
+
+
 class NavigationBitIntegrator:
     def __init__(self):
         self.queued_pseudosymbols: list[NavigationBitPseudosymbol] = []
         self.determined_bit_phase: int | None = None
+        self.bit_index = 0
 
     def process_pseudosymbol(self, pseudosymbol: NavigationBitPseudosymbol) -> list[Event]:
         events = []
@@ -97,7 +102,15 @@ class NavigationBitIntegrator:
                         bit_value = BitValue.ONE
                     else:
                         bit_value = BitValue.ZERO
+
+                    confidence_score: Percentage = abs(int((
+                        pseudosymbol_sum / PSEUDOSYMBOLS_PER_NAVIGATION_BIT
+                    ) * 100))
+                    if confidence_score < 60:
+                        raise LostBitPhaseCoherenceError()
+                        # _logger.info(f'Bit confidence (bit idx {self.bit_index}): {confidence_score}%')
                     events.append(EmitNavigationBitEvent(bit_value))
+                    self.bit_index += 1
                 else:
                     break
 
