@@ -31,16 +31,22 @@ class NavigationMessageDecoder:
     def __init__(self):
         self.queued_bits = []
         self.determined_subframe_phase: int | None = None
+        self.determined_polarity: BitPolarity | None = None
 
     def process_bit_from_satellite(self, bit: BitValue) -> list[Event]:
         events = []
         self.queued_bits.append(bit)
-        _logger.info(f'Queued bits: {"".join([str(b.as_val()) for b in self.queued_bits])}')
+        # _logger.info(f'Queued bits: {"".join([str(b.as_val()) for b in self.queued_bits])}')
 
         # Try to identify subframe phase once we have enough bits to see a few subframes
         if len(self.queued_bits) == BITS_PER_SUBFRAME * 3:
+            # Depending on the phase of our PRN correlations, our bits could appear either 'upright' or 'inverted'.
+            # To determine which, we'll need to search for the preamble both as 'upright' and 'inverted'. Whichever
+            # version produces a match will tell us the polarity of our bits.
+            #
             # Search our bits for the subframe preamble
-            preamble_candidates = get_indexes_of_sublist(self.queued_bits, TELEMETRY_WORD_PREAMBLE)
+            inverted_preamble = [b.inverted() for b in TELEMETRY_WORD_PREAMBLE]
+            preamble_candidates = get_indexes_of_sublist(self.queued_bits, inverted_preamble)
             # We need at least two preambles
             if len(preamble_candidates) < 2:
                 events.append(CannotDetermineSubframePhaseEvent())
@@ -58,6 +64,7 @@ class NavigationMessageDecoder:
                     # We've found two preambles 300 bits apart. Consider this a valid detection, and stop looking.
                     # Our first subframe starts at this candidate
                     self.determined_subframe_phase = candidate
+                    self.determined_polarity = BitPolarity.NEGATIVE
                     # Discard queued bits from the first partial subframe
                     self.queued_bits = self.queued_bits[self.determined_subframe_phase:]
                     events.append(DeterminedSubframePhaseEvent(candidate))
@@ -73,6 +80,8 @@ class NavigationMessageDecoder:
             while True:
                 if len(self.queued_bits) >= BITS_PER_SUBFRAME:
                     events.append(self.parse_subframe())
+                else:
+                    break
 
         return events
 
