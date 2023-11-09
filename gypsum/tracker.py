@@ -36,6 +36,20 @@ class BitValue(Enum):
             BitValue.ONE: 1,
         }[self]
 
+    def inverted(self) -> Self:
+        return {
+            BitValue.ZERO: BitValue.ONE,
+            BitValue.ONE: BitValue.ZERO,
+        }[self]
+
+    def __eq__(self, other) -> bool:
+        if not isinstance(other, BitValue):
+            return False
+        return self.as_val() == other.as_val()
+
+    def __hash__(self) -> int:
+        return hash(self.value)
+
 
 class NavigationBitPseudosymbol(Enum):
     MINUS_ONE = auto()
