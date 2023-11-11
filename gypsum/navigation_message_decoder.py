@@ -90,7 +90,7 @@ class NavigationMessageDecoder:
         # _logger.info(f'Queued bits: {"".join([str(b.as_val()) for b in self.queued_bits])}')
 
         # Try to identify subframe phase once we have enough bits to see a few subframes
-        if len(self.queued_bits) == BITS_PER_SUBFRAME * 3:
+        if len(self.queued_bits) == BITS_PER_SUBFRAME * 4:
             # Depending on the phase of our PRN correlations, our bits could appear either 'upright' or 'inverted'.
             # To determine which, we'll need to search for the preamble both as 'upright' and 'inverted'. Whichever
             # version produces a match will tell us the polarity of our bits.
