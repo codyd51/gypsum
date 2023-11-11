@@ -17,6 +17,7 @@ from gypsum.navigation_bit_intergrator import CannotDetermineBitPhaseEvent
 from gypsum.navigation_bit_intergrator import DeterminedBitPhaseEvent
 from gypsum.navigation_bit_intergrator import EmitNavigationBitEvent
 from gypsum.navigation_bit_intergrator import Event
+from gypsum.navigation_bit_intergrator import LostBitCoherenceEvent
 from gypsum.navigation_bit_intergrator import LostBitPhaseCoherenceError
 from gypsum.navigation_bit_intergrator import NavigationBitIntegrator
 from gypsum.navigation_message_decoder import CannotDetermineSubframePhaseEvent
@@ -70,26 +71,12 @@ class GpsSatelliteSignalProcessingPipeline:
 
     def process_samples(self, samples: AntennaSamplesSpanningOneMs, sample_index: int):
         pseudosymbol = self.tracker.process_samples(samples, sample_index)
-        try:
-            integrator_events = self.pseudosymbol_integrator.process_pseudosymbol(pseudosymbol)
-        except LostBitPhaseCoherenceError:
-            print(f'*** found ***')
-            from matplotlib import pyplot as plt
-            plt.plot(self.tracker.tracking_params.doppler_shifts[-1000:])
-            plt.title(f"Doppler shift")
-            plt.show()
-            plt.plot(self.tracker.tracking_params.carrier_wave_phases[-1000:])
-            plt.title(f"Carrier wave phase")
-            plt.show()
-            plt.plot(self.tracker.tracking_params.carrier_wave_phase_errors[-1000:])
-            plt.title(f"Carrier wave phase error")
-            plt.show()
-            import sys
-            sys.exit(0)
+        integrator_events = self.pseudosymbol_integrator.process_pseudosymbol(pseudosymbol)
 
         integrator_event_type_to_callback: dict[Type[Event], Callable[[Event], None]] = {   # type: ignore
             DeterminedBitPhaseEvent: self._handle_integrator_determined_bit_phase,
             CannotDetermineBitPhaseEvent: self._handle_integrator_cannot_determine_bit_phase,
+            LostBitCoherenceEvent: self._handle_integrator_lost_bit_coherence,
             EmitNavigationBitEvent: self._handle_integrator_emitted_bit,
         }
         for event in integrator_events:
@@ -111,7 +98,35 @@ class GpsSatelliteSignalProcessingPipeline:
             f'Integrator for SV({satellite_id} could not determine bit phase. Confidence: {int(event.confidence*100)}%'
         )
         # TODO(PT): Untrack this satellite (as the bits are low confidence)
+        print(f'*** found ***')
+        from matplotlib import pyplot as plt
+        plt.plot(self.tracker.tracking_params.doppler_shifts[-2000:])
+        plt.title(f"Doppler shift")
+        plt.show()
+        plt.plot(self.tracker.tracking_params.carrier_wave_phases[-2000:])
+        plt.title(f"Carrier wave phase")
+        plt.show()
+        plt.plot(self.tracker.tracking_params.carrier_wave_phase_errors[-2000:])
+        plt.title(f"Carrier wave phase error")
+        plt.show()
+        import sys
+        sys.exit(0)
         raise NotImplementedError(f'Satellite should be removed from the tracking pool')
+
+    def _handle_integrator_lost_bit_coherence(self, event: LostBitCoherenceEvent) -> None:
+        satellite_id = self.satellite.satellite_id.id
+        _logger.info(
+            f'Integrator for SV({satellite_id} lost bit coherence. '
+            f'Confidence for bit {self.pseudosymbol_integrator.bit_index}: {event.confidence}%'
+        )
+        # The integrator will need to determine a new bit phase?
+        self.pseudosymbol_integrator.determined_bit_phase = None
+        self.pseudosymbol_integrator.queued_pseudosymbols = []
+        # The decoder will need to re-acquire the bit polarity and subframe phase. Clear it now.
+        # TODO(PT): Put this in a method
+        self.navigation_message_decoder.determined_polarity = None
+        self.navigation_message_decoder.determined_subframe_phase = None
+        self.navigation_message_decoder.queued_bits = []
 
     def _handle_integrator_emitted_bit(self, event: EmitNavigationBitEvent) -> None:
         satellite_id = self.satellite.satellite_id.id
@@ -136,7 +151,7 @@ class GpsSatelliteSignalProcessingPipeline:
             f'Decoder for SV({satellite_id}) has determined subframe phase {event.subframe_phase}'
         )
 
-    def _handle_decoder_cannot_determine_subframe_phase(self, event: CannotDetermineBitPhaseEvent) -> None:
+    def _handle_decoder_cannot_determine_subframe_phase(self, event: CannotDetermineSubframePhaseEvent) -> None:
         satellite_id = self.satellite.satellite_id.id
         _logger.info(f'Decoder for SV({satellite_id}) could not determine subframe phase.')
         # TODO(PT): Wait longer for a subframe to appear..?

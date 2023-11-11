@@ -28,6 +28,11 @@ class CannotDetermineBitPhaseEvent(Event):
         self.confidence = confidence
 
 
+class LostBitCoherenceEvent(Event):
+    def __init__(self, confidence: Percentage) -> None:
+        self.confidence = confidence
+
+
 class LostBitPhaseCoherenceError(Exception):
     pass
 
@@ -67,7 +72,7 @@ class NavigationBitIntegrator:
                     f'Score: {highest_confidence_score}'
                 )
 
-                highest_confidence_as_percentage: Percentage = (
+                highest_confidence_as_percentage: Percentage = abs(
                     highest_confidence_score / PSEUDOSYMBOLS_PER_NAVIGATION_BIT
                 )
 
@@ -106,12 +111,15 @@ class NavigationBitIntegrator:
                     confidence_score: Percentage = abs(int((
                         pseudosymbol_sum / PSEUDOSYMBOLS_PER_NAVIGATION_BIT
                     ) * 100))
-                    if confidence_score < 60:
-                        raise LostBitPhaseCoherenceError()
-                        # _logger.info(f'Bit confidence (bit idx {self.bit_index}): {confidence_score}%')
-                    events.append(EmitNavigationBitEvent(bit_value))
                     self.bit_index += 1
+                    if confidence_score >= 60:
+                        events.append(EmitNavigationBitEvent(bit_value))
+                    else:
+                        events.append(LostBitCoherenceEvent(confidence_score))
+                        # Stop consuming bits now
+                        break
                 else:
+                    # Not enough pseudosymbols to emit a bit
                     break
 
         return events
