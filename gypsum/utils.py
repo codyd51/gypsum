@@ -28,7 +28,7 @@ class IntegrationType(Enum):
     NonCoherent = auto()
 
 
-def chunks(li: Collection[_IterType], chunk_size: int, step: int | None = None) -> Iterator[_IterType]:
+def chunks(li: Collection[_IterType], chunk_size: int, step: int | None = None) -> Iterator[Collection[_IterType]]:
     chunk_step = chunk_size
     if step:
         if step <= chunk_size:

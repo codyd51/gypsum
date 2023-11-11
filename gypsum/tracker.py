@@ -83,27 +83,27 @@ class GpsSatelliteTrackingParameters:
 
 
 class GpsSatelliteTracker:
-    def __init__(self, tracking_params: GpsSatelliteTrackingParameters) -> None:
+    def __init__(self, tracking_params: GpsSatelliteTrackingParameters, loop_bandwidth: float) -> None:
         self.tracking_params = tracking_params
-
-    def process_samples(self, samples: AntennaSamplesSpanningOneMs, sample_index: int) -> NavigationBitPseudosymbol:
-        params = self.tracking_params
-
-        loop_bandwidth = 2.046 / 1000
+        self.loop_bandwidth = loop_bandwidth
         # Common choice for zeta, considered optimal
         damping_factor = math.sqrt(2) / 2.0
         # Natural frequency
-        natural_freq = loop_bandwidth / (damping_factor * (1 + damping_factor**2) ** 0.5)
+        natural_freq = loop_bandwidth / (damping_factor * (1 + damping_factor ** 2) ** 0.5)
         # This represents the gain of *instantaneous* error correction,
         # which applies to the estimate of the carrier wave phase.
         # Also called 'alpha'.
-        loop_gain_phase = (4 * damping_factor * natural_freq) / (
-            1 + ((2 * damping_factor * natural_freq) + (natural_freq**2))
-        )
+        self.loop_gain_phase = (
+                (4 * damping_factor * natural_freq) / (
+                1 + ((2 * damping_factor * natural_freq) + (natural_freq ** 2))
+        ))
         # This represents the *integrated* error correction,
         # which applies to the estimate of the Doppler shifted frequency.
         # Also called 'beta'.
-        loop_gain_freq = (4 * (natural_freq**2)) / (1 + ((2 * damping_factor * natural_freq) + (natural_freq**2)))
+        self.loop_gain_freq = (4 * (natural_freq ** 2)) / (1 + ((2 * damping_factor * natural_freq) + (natural_freq ** 2)))
+
+    def process_samples(self, samples: AntennaSamplesSpanningOneMs, sample_index: int) -> NavigationBitPseudosymbol:
+        params = self.tracking_params
 
         # Generate Doppler-shifted and phase-shifted carrier wave
         time_domain = (np.arange(SAMPLES_PER_PRN_TRANSMISSION) / SAMPLES_PER_SECOND) + (
