@@ -129,16 +129,16 @@ class GpsSatelliteTracker:
             centered_non_coherent_prompt_peak_offset = non_coherent_prompt_peak_offset
         else:
             centered_non_coherent_prompt_peak_offset = (
-                non_coherent_prompt_peak_offset - SAMPLES_PER_PRN_TRANSMISSION + 1
+                    non_coherent_prompt_peak_offset - SAMPLES_PER_PRN_TRANSMISSION
             )
 
-        #logging.info(
+        # logging.info(
         #    f"Peak offset {non_coherent_prompt_peak_offset}, centered offset {centered_non_coherent_prompt_peak_offset}"
-        #)
+        # )
         if centered_non_coherent_prompt_peak_offset > 0:
-            params.current_prn_code_phase_shift += centered_non_coherent_prompt_peak_offset
-        else:
-            params.current_prn_code_phase_shift -= centered_non_coherent_prompt_peak_offset
+            params.current_prn_code_phase_shift += 1
+        elif centered_non_coherent_prompt_peak_offset < 0:
+            params.current_prn_code_phase_shift -= 1
 
         # Finally, ensure we're always sliding within one PRN transmission
         params.current_prn_code_phase_shift = int(params.current_prn_code_phase_shift) % SAMPLES_PER_PRN_TRANSMISSION
@@ -149,16 +149,23 @@ class GpsSatelliteTracker:
         Q = np.imag(coherent_prompt_prn_correlation_peak)
         carrier_wave_phase_error = I * Q
 
-        params.current_doppler_shift += loop_gain_freq * carrier_wave_phase_error
-        params.current_carrier_wave_phase_shift += loop_gain_phase * carrier_wave_phase_error
+        params.current_doppler_shift += self.loop_gain_freq * carrier_wave_phase_error
+        params.current_carrier_wave_phase_shift += self.loop_gain_phase * carrier_wave_phase_error
         params.current_carrier_wave_phase_shift %= math.tau
+
+        #for i, s in enumerate(coherent_prompt_correlation):
+        #    i2 = np.real(s)
+        #    q2 = np.imag(s)
+        #    sample_error = (i2 * q2) / 2
+        #    params.current_carrier_wave_phase_shift += self.loop_gain_phase * sample_error
+        #    #params.current_carrier_wave_phase_shift %= math.tau
 
         navigation_bit_pseudosymbol_value = int(np.sign(coherent_prompt_prn_correlation_peak))
         params.navigation_bit_pseudosymbols.append(navigation_bit_pseudosymbol_value)
 
-        #logging.info(f"Doppler shift {params.current_doppler_shift:.2f}")
-        #logging.info(f"Carrier phase {params.current_carrier_wave_phase_shift:.8f}")
-        #logging.info(f"Code phase {params.current_prn_code_phase_shift}")
+        # logging.info(f"Doppler shift {params.current_doppler_shift:.2f}")
+        # logging.info(f"Code phase {params.current_prn_code_phase_shift}")
+        # logging.info(f"Carrier phase {params.current_carrier_wave_phase_shift:.8f}")
 
         params.doppler_shifts.append(params.current_doppler_shift)
         params.carrier_wave_phases.append(params.current_carrier_wave_phase_shift)
