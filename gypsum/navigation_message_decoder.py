@@ -57,6 +57,33 @@ class NavigationMessageDecoder:
         self.determined_subframe_phase: int | None = None
         self.determined_polarity: BitPolarity | None = None
 
+    def _identify_preamble_in_queued_bits(
+        self,
+        preamble: list[BitValue],
+    ) -> int | None:
+        preamble_candidates = get_indexes_of_sublist(self.queued_bits, preamble)
+        # We need at least two preambles
+        if len(preamble_candidates) < 2:
+            return None
+
+        # There could be other copies of the preamble that are not actually the preamble, but are instead
+        # coincidence.
+        # We'll need to look at our candidates and see if there's another preamble 300 bits away. If we do, it's
+        # very likely it's the real preamble.
+        #
+        # We can't look after the last candidate, so stop just before it
+        for candidate in preamble_candidates[:-1]:
+            next_preamble_after_this_candidate = candidate + BITS_PER_SUBFRAME
+            # Did we also see this next preamble?
+            if next_preamble_after_this_candidate in preamble_candidates:
+                # We've found two preambles 300 bits apart. Consider this a valid detection, and stop looking.
+                # Our first subframe starts at this candidate
+                return candidate
+
+        # Failed to find any preambles
+        # TODO(PT): Maybe we could just keep waiting for a better lock?
+        return None
+
     def process_bit_from_satellite(self, bit: BitValue) -> list[Event]:
         events = []
         self.queued_bits.append(bit)
@@ -69,33 +96,23 @@ class NavigationMessageDecoder:
             # version produces a match will tell us the polarity of our bits.
             #
             # Search our bits for the subframe preamble
-            inverted_preamble = [b.inverted() for b in TELEMETRY_WORD_PREAMBLE]
-            preamble_candidates = get_indexes_of_sublist(self.queued_bits, inverted_preamble)
-            # We need at least two preambles
-            if len(preamble_candidates) < 2:
-                events.append(CannotDetermineSubframePhaseEvent())
-
-            # There could be other copies of the preamble that are not actually the preamble, but are instead
-            # coincidence.
-            # We'll need to look at our candidates and see if there's another preamble 300 bits away. If we do, it's
-            # very likely it's the real preamble.
-            #
-            # We can't look after the last candidate, so stop just before it
-            for candidate in preamble_candidates[:-1]:
-                next_preamble_after_this_candidate = candidate + BITS_PER_SUBFRAME
-                # Did we also see this next preamble?
-                if next_preamble_after_this_candidate in preamble_candidates:
-                    # We've found two preambles 300 bits apart. Consider this a valid detection, and stop looking.
-                    # Our first subframe starts at this candidate
-                    self.determined_subframe_phase = candidate
-                    self.determined_polarity = BitPolarity.NEGATIVE
+            preamble_and_polarity = [
+                (TELEMETRY_WORD_PREAMBLE, BitPolarity.POSITIVE),
+                ([b.inverted() for b in TELEMETRY_WORD_PREAMBLE], BitPolarity.NEGATIVE),
+            ]
+            for preamble, polarity in preamble_and_polarity:
+                print(f'try polarity {polarity}')
+                first_identified_preamble_index = self._identify_preamble_in_queued_bits(preamble)
+                if first_identified_preamble_index:
+                    events.append(DeterminedSubframePhaseEvent(first_identified_preamble_index, polarity))
+                    self.determined_subframe_phase = first_identified_preamble_index
+                    self.determined_polarity = polarity
                     # Discard queued bits from the first partial subframe
                     self.queued_bits = self.queued_bits[self.determined_subframe_phase:]
-                    events.append(DeterminedSubframePhaseEvent(candidate, BitPolarity.NEGATIVE))
+                    print('found')
                     break
             else:
-                # Failed to find any preambles
-                # TODO(PT): Maybe we could just keep waiting for a better lock?
+                # Didn't find the preamble phase in either polarity
                 events.append(CannotDetermineSubframePhaseEvent())
 
         # We may have just determined the subframe phase above, so check again
