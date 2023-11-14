@@ -114,6 +114,34 @@ class NavigationMessageSubframeParser:
             to_be_solved=to_be_solved,
             parity_bits=parity_bits,
         )
+
+    def get_bit_string(self, bit_count: int) -> str:
+        bits = self.get_bit_count(bit_count)
+        # Convert array of bits to an integer
+        bits_as_str = "".join([str(b) for b in bits])
+        return bits_as_str
+
+    def get_num(
+        self,
+        bit_count: int,
+        scale_factor_exp2: int = 0,
+        twos_complement: bool = False,
+    ) -> float:
+        bits_as_str = self.get_bit_string(bit_count)
+        value = int(bits_as_str, 2)
+        if twos_complement:
+            def twos_comp(val, bits):
+                """compute the 2's complement of int value val"""
+                if (val & (1 << (bits - 1))) != 0:  # if sign bit is set e.g., 8bit: 128-255
+                    val = val - (1 << bits)  # compute negative value
+                return val
+            value = twos_comp(value, len(bits_as_str))
+            #and (.Params) (
+
+            #{{ $style = cond (and (.Params) (isset .Params `adjust_y`)) (printf "transform: translate(0%, %s%)" .Get "adjust_y") ("") }}
+
+        return value * (2 ** scale_factor_exp2)
+
     def validate_parity(self):
         parity_bits = self.get_bit_count(_PARITY_BIT_COUNT_PER_WORD)
         data_bits = list(self.word_bits)
