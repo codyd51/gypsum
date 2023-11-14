@@ -69,22 +69,24 @@ class GpsSatelliteSignalProcessingPipeline:
         self.pseudosymbol_integrator = NavigationBitIntegrator()
         self.navigation_message_decoder = NavigationMessageDecoder()
 
-    def process_samples(self, samples: AntennaSamplesSpanningOneMs, sample_index: int):
+    def process_samples(self, samples: AntennaSamplesSpanningOneMs, sample_index: int) -> list[Event]:
         pseudosymbol = self.tracker.process_samples(samples, sample_index)
         integrator_events = self.pseudosymbol_integrator.process_pseudosymbol(pseudosymbol)
 
-        integrator_event_type_to_callback: dict[Type[Event], Callable[[Event], None]] = {   # type: ignore
+        integrator_event_type_to_callback: dict[Type[Event], Callable[[Event], list[Event] | None]] = {   # type: ignore
             DeterminedBitPhaseEvent: self._handle_integrator_determined_bit_phase,
             CannotDetermineBitPhaseEvent: self._handle_integrator_cannot_determine_bit_phase,
             LostBitCoherenceEvent: self._handle_integrator_lost_bit_coherence,
             EmitNavigationBitEvent: self._handle_integrator_emitted_bit,
         }
+        events_to_return = []
         for event in integrator_events:
             event_type = type(event)
             if event_type not in integrator_event_type_to_callback:
                 raise UnknownEventError(event_type)
             callback = integrator_event_type_to_callback[event_type]
-            callback(event)
+            events_to_return.extend(callback(event) or [])
+        return events_to_return
 
     def _handle_integrator_determined_bit_phase(self, event: DeterminedBitPhaseEvent) -> None:
         satellite_id = self.satellite.satellite_id.id
@@ -128,22 +130,24 @@ class GpsSatelliteSignalProcessingPipeline:
         self.navigation_message_decoder.determined_subframe_phase = None
         self.navigation_message_decoder.queued_bits = []
 
-    def _handle_integrator_emitted_bit(self, event: EmitNavigationBitEvent) -> None:
+    def _handle_integrator_emitted_bit(self, event: EmitNavigationBitEvent) -> list[Event]:
         satellite_id = self.satellite.satellite_id.id
         #_logger.info(f'handling bit {self.pseudosymbol_integrator.bit_index-1}')
         decoder_events = self.navigation_message_decoder.process_bit_from_satellite(event.bit_value)
 
-        decoder_event_type_to_callback: dict[Type[Event], Callable[[Event], None]] = {   # type: ignore
+        decoder_event_type_to_callback: dict[Type[Event], Callable[[Event], list[Event] | None]] = {   # type: ignore
             DeterminedSubframePhaseEvent: self._handle_decoder_determined_subframe_phase,
             CannotDetermineSubframePhaseEvent: self._handle_decoder_cannot_determine_subframe_phase,
             EmitSubframeEvent: self._handle_decoder_emitted_subframe,
         }
+        events_to_return = []
         for event in decoder_events:
             event_type = type(event)
             if event_type not in decoder_event_type_to_callback:
                 raise UnknownEventError(event_type)
             callback = decoder_event_type_to_callback[event_type]
-            callback(event)
+            events_to_return.extend(callback(event) or [])
+        return events_to_return
 
     def _handle_decoder_determined_subframe_phase(self, event: DeterminedSubframePhaseEvent) -> None:
         satellite_id = self.satellite.satellite_id.id
@@ -157,11 +161,12 @@ class GpsSatelliteSignalProcessingPipeline:
         # TODO(PT): Wait longer for a subframe to appear..?
         raise NotImplementedError(f'Should wait longer for a subframe to appear..?')
 
-    def _handle_decoder_emitted_subframe(self, event: EmitSubframeEvent) -> None:
+    def _handle_decoder_emitted_subframe(self, event: EmitSubframeEvent) -> list[Event]:
         satellite_id = self.satellite.satellite_id.id
         _logger.info(f'Decoder for SV({satellite_id}) emitted a subframe:')
         _logger.info(f'\tTelemetry word: {event.telemetry_word}')
         _logger.info(f'\tHandover word: {event.handover_word}')
+        return [event]
         #_logger.info(f'Emitted when integrator was at bit {self.pseudosymbol_integrator.bit_index-1}')
 
 
@@ -202,7 +207,9 @@ class GpsReceiver:
             self._perform_acquisition()
 
         # Continue tracking each acquired satellite
-        self._track_acquired_satellites(samples, sample_index)
+        satellite_ids_to_subframes = self._track_acquired_satellites(samples, sample_index)
+        if satellite_ids_to_subframes:
+            print(satellite_ids_to_subframes)
 
     def decode_nav_bits(self, sat: GpsSatelliteTrackingParameters):
         navigation_bit_pseudosymbols = sat.navigation_bit_pseudosymbols
