@@ -19,6 +19,22 @@ class HandoverWord:
     to_be_solved: list[int]
     parity_bits: list[int]
 
+@dataclass
+class Subframe5:
+    data_id: list[int]
+    satellite_id: list[int]
+    eccentricity: float
+    time_of_ephemeris: float
+    delta_inclination_angle:float
+    right_ascension_rate: float
+    sv_health: int
+    semi_major_axis_sqrt: float
+    longitude_of_ascension_mode: float
+    argument_of_perigree: float
+    mean_anomaly_at_reference_time: float
+    a_f0: float
+    a_f1: float
+
 
 class NavigationMessageSubframeParser:
     def __init__(self, bits: list[int]) -> None:
@@ -73,4 +89,58 @@ class NavigationMessageSubframeParser:
             subframe_id_codes=subframe_id_codes,
             to_be_solved=to_be_solved,
             parity_bits=parity_bits,
+        )
+    def parse_subframe_5(self) -> Subframe5:
+        # Ref: IS-GPS-200L, 20.3.3.5 Subframes 4 and 5
+        data_id = self.match_bits([0, 1])
+        satellite_id = self.get_bit_count(5)
+
+        eccentricity = self.get_num(bit_count=16, scale_factor_exp2=-21)
+        self.validate_parity()
+
+        time_of_ephemeris = self.get_num(bit_count=8, scale_factor_exp2=12)
+        delta_inclination_angle = self.get_num(bit_count=16, scale_factor_exp2=2, twos_complement=True)
+        self.validate_parity()
+
+        right_ascension_rate = self.get_num(bit_count=16, scale_factor_exp2=-38, twos_complement=True)
+        sv_health = self.get_num(bit_count=8)
+        self.validate_parity()
+
+        semi_major_axis_sqrt = self.get_num(bit_count=24, scale_factor_exp2=-11, twos_complement=True)
+        self.validate_parity()
+
+        longitude_of_ascension_mode = self.get_num(bit_count=24, scale_factor_exp2=-23, twos_complement=True)
+        self.validate_parity()
+
+        argument_of_perigree = self.get_num(bit_count=24, scale_factor_exp2=-23, twos_complement=True)
+        self.validate_parity()
+
+        mean_anomaly_at_reference_time = self.get_num(bit_count=24, scale_factor_exp2=-23, twos_complement=True)
+        self.validate_parity()
+
+        #a_f0_high = self.get_num(bit_count=8, scale_factor_exp2=-20)
+        a_f0_high = self.get_num(bit_count=8)
+        a_f1 = self.get_num(bit_count=11, scale_factor_exp2=-38)
+        #a_f0_low = self.get_num(bit_count=3, scale_factor_exp2=-20)
+        a_f0_low = self.get_num(bit_count=3)
+        t = self.get_num(bit_count=2)
+        self.validate_parity()
+
+        print(f'a_f0_high {a_f0_high} a_f0_low {a_f0_low}')
+        a_f0 = ((int(a_f0_high) << 3) | int(a_f0_low)) * (2 ** -20)
+
+        return Subframe5(
+            data_id=data_id,
+            satellite_id=satellite_id,
+            eccentricity=eccentricity,
+            time_of_ephemeris=time_of_ephemeris,
+            delta_inclination_angle=delta_inclination_angle,
+            right_ascension_rate=right_ascension_rate,
+            sv_health=sv_health,
+            semi_major_axis_sqrt=semi_major_axis_sqrt,
+            longitude_of_ascension_mode=longitude_of_ascension_mode,
+            argument_of_perigree=argument_of_perigree,
+            mean_anomaly_at_reference_time=mean_anomaly_at_reference_time,
+            a_f0=a_f0,
+            a_f1=a_f1,
         )
