@@ -1,4 +1,13 @@
+import collections
 from dataclasses import dataclass
+from enum import Enum
+from enum import auto
+from typing import Self
+
+# Every word ends in 6 parity bits
+_DATA_BIT_COUNT_PER_WORD = 24
+_PARITY_BIT_COUNT_PER_WORD = 6
+
 
 
 @dataclass
@@ -40,6 +49,7 @@ class NavigationMessageSubframeParser:
     def __init__(self, bits: list[int]) -> None:
         self.bits = bits
         self.cursor = 0
+        self.word_bits = collections.deque(maxlen=_DATA_BIT_COUNT_PER_WORD)
 
     def peek_bit_count(self, n: int) -> list[int]:
         return self.bits[self.cursor : self.cursor + n]
@@ -47,18 +57,20 @@ class NavigationMessageSubframeParser:
     def get_bit_count(self, n: int) -> list[int]:
         out = self.peek_bit_count(n)
         self.cursor += n
+        self.word_bits.extend(out)
         return out
 
     def get_bit(self) -> int:
         return self.get_bit_count(1)[0]
 
-    def match_bits(self, expected_bits: list[int]) -> None:
+    def match_bits(self, expected_bits: list[int]) -> list[int]:
         actual_bits = self.get_bit_count(len(expected_bits))
         if actual_bits != expected_bits:
             raise ValueError(
                 f'Expected to read {"".join([str(b) for b in expected_bits])}, '
                 f'but read {"".join([str(b) for b in actual_bits])}'
             )
+        return expected_bits
 
     def parse_telemetry_word(self) -> TelemetryWord:
         # Ref: IS-GPS-200L, Figure 20-2
@@ -90,6 +102,12 @@ class NavigationMessageSubframeParser:
             to_be_solved=to_be_solved,
             parity_bits=parity_bits,
         )
+    def validate_parity(self):
+        parity_bits = self.get_bit_count(_PARITY_BIT_COUNT_PER_WORD)
+        data_bits = list(self.word_bits)
+        self.word_bits.clear()
+        print(f'TODO: Validate parity bits {parity_bits} for {data_bits}')
+
     def parse_subframe_5(self) -> Subframe5:
         # Ref: IS-GPS-200L, 20.3.3.5 Subframes 4 and 5
         data_id = self.match_bits([0, 1])

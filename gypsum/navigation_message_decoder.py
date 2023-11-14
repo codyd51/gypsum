@@ -140,7 +140,10 @@ class NavigationMessageDecoder:
         subframe_parser = NavigationMessageSubframeParser(bits_as_ints)
         telemetry_word = subframe_parser.parse_telemetry_word()
         handover_word = subframe_parser.parse_handover_word()
+        _logger.info(f'Handover word time of week: {handover_word.time_of_week_in_seconds}')
+
         return EmitSubframeEvent(
             telemetry_word,
             handover_word
         )
+
