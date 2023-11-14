@@ -28,6 +28,18 @@ class HandoverWord:
     to_be_solved: list[int]
     parity_bits: list[int]
 
+    @property
+    def time_of_week_in_seconds(self) -> int:
+        time_of_week_accumulator = 0
+        # Each bit represents (1.5*(2^(bit_position+2))) seconds
+        # Start with the LSB
+        for i, bit in enumerate(reversed(self.time_of_week)):
+            bit_granularity = 1.5 * (2 ** (i + 2))
+            if bit == 1:
+                time_of_week_accumulator += bit_granularity
+        return time_of_week_accumulator
+
+
 @dataclass
 class Subframe5:
     data_id: list[int]
