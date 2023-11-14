@@ -9,6 +9,23 @@ _DATA_BIT_COUNT_PER_WORD = 24
 _PARITY_BIT_COUNT_PER_WORD = 6
 
 
+class GpsSubframeId(Enum):
+    ONE = auto()
+    TWO = auto()
+    THREE = auto()
+    FOUR = auto()
+    FIVE = auto()
+
+    @classmethod
+    def from_bits(cls, bits: list[int]) -> Self:
+        return {
+            (0, 0, 1): GpsSubframeId.ONE,
+            (0, 1, 0): GpsSubframeId.TWO,
+            (0, 1, 1): GpsSubframeId.THREE,
+            (1, 0, 0): GpsSubframeId.FOUR,
+            (1, 0, 1): GpsSubframeId.FIVE,
+        }[*bits]
+
 
 @dataclass
 class TelemetryWord:
@@ -24,7 +41,7 @@ class HandoverWord:
     time_of_week: list[int]
     alert_flag: int
     anti_spoof_flag: int
-    subframe_id_codes: list[int]
+    subframe_id: GpsSubframeId
     to_be_solved: list[int]
     parity_bits: list[int]
 
@@ -110,7 +127,7 @@ class NavigationMessageSubframeParser:
             time_of_week=time_of_week,
             alert_flag=alert_flag,
             anti_spoof_flag=anti_spoof_flag,
-            subframe_id_codes=subframe_id_codes,
+            subframe_id=GpsSubframeId.from_bits(subframe_id_codes),
             to_be_solved=to_be_solved,
             parity_bits=parity_bits,
         )
