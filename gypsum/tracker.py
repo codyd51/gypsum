@@ -1,20 +1,20 @@
 import logging
+import math
 from dataclasses import dataclass
-from enum import Enum
-from enum import auto
+from enum import Enum, auto
 from typing import Self
 
-import math
 import numpy as np
 
-from gypsum.constants import SAMPLES_PER_PRN_TRANSMISSION
-from gypsum.constants import SAMPLES_PER_SECOND
+from gypsum.constants import SAMPLES_PER_PRN_TRANSMISSION, SAMPLES_PER_SECOND
 from gypsum.satellite import GpsSatellite
-from gypsum.utils import AntennaSamplesSpanningOneMs
-from gypsum.utils import CarrierWavePhaseInRadians
-from gypsum.utils import DopplerShiftHz
-from gypsum.utils import PrnCodePhaseInSamples
-from gypsum.utils import frequency_domain_correlation
+from gypsum.utils import (
+    AntennaSamplesSpanningOneMs,
+    CarrierWavePhaseInRadians,
+    DopplerShiftHz,
+    PrnCodePhaseInSamples,
+    frequency_domain_correlation,
+)
 
 _logger = logging.getLogger(__name__)
 
@@ -89,18 +89,19 @@ class GpsSatelliteTracker:
         # Common choice for zeta, considered optimal
         damping_factor = math.sqrt(2) / 2.0
         # Natural frequency
-        natural_freq = loop_bandwidth / (damping_factor * (1 + damping_factor ** 2) ** 0.5)
+        natural_freq = loop_bandwidth / (damping_factor * (1 + damping_factor**2) ** 0.5)
         # This represents the gain of *instantaneous* error correction,
         # which applies to the estimate of the carrier wave phase.
         # Also called 'alpha'.
-        self.loop_gain_phase = (
-                (4 * damping_factor * natural_freq) / (
-                1 + ((2 * damping_factor * natural_freq) + (natural_freq ** 2))
-        ))
+        self.loop_gain_phase = (4 * damping_factor * natural_freq) / (
+            1 + ((2 * damping_factor * natural_freq) + (natural_freq**2))
+        )
         # This represents the *integrated* error correction,
         # which applies to the estimate of the Doppler shifted frequency.
         # Also called 'beta'.
-        self.loop_gain_freq = (4 * (natural_freq ** 2)) / (1 + ((2 * damping_factor * natural_freq) + (natural_freq ** 2)))
+        self.loop_gain_freq = (4 * (natural_freq**2)) / (
+            1 + ((2 * damping_factor * natural_freq) + (natural_freq**2))
+        )
 
     def process_samples(self, samples: AntennaSamplesSpanningOneMs, sample_index: int) -> NavigationBitPseudosymbol:
         params = self.tracking_params
@@ -128,9 +129,7 @@ class GpsSatelliteTracker:
         if non_coherent_prompt_peak_offset <= SAMPLES_PER_PRN_TRANSMISSION / 2:
             centered_non_coherent_prompt_peak_offset = non_coherent_prompt_peak_offset
         else:
-            centered_non_coherent_prompt_peak_offset = (
-                    non_coherent_prompt_peak_offset - SAMPLES_PER_PRN_TRANSMISSION
-            )
+            centered_non_coherent_prompt_peak_offset = non_coherent_prompt_peak_offset - SAMPLES_PER_PRN_TRANSMISSION
 
         # logging.info(
         #    f"Peak offset {non_coherent_prompt_peak_offset}, centered offset {centered_non_coherent_prompt_peak_offset}"
@@ -153,7 +152,7 @@ class GpsSatelliteTracker:
         params.current_carrier_wave_phase_shift += self.loop_gain_phase * carrier_wave_phase_error
         params.current_carrier_wave_phase_shift %= math.tau
 
-        #for i, s in enumerate(coherent_prompt_correlation):
+        # for i, s in enumerate(coherent_prompt_correlation):
         #    i2 = np.real(s)
         #    q2 = np.imag(s)
         #    sample_error = (i2 * q2) / 2

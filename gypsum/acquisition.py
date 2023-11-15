@@ -7,14 +7,16 @@ import numpy as np
 from gypsum.config import ACQUISITION_INTEGRATED_CORRELATION_STRENGTH_DETECTION_THRESHOLD
 from gypsum.gps_ca_prn_codes import GpsSatelliteId
 from gypsum.satellite import GpsSatellite
-from gypsum.utils import AntennaSamplesSpanningAcquisitionIntegrationPeriodMs
-from gypsum.utils import CarrierWavePhaseInRadians
-from gypsum.utils import CorrelationProfile
-from gypsum.utils import DopplerShiftHz
-from gypsum.utils import IntegrationType
-from gypsum.utils import PrnCodePhaseInSamples
-from gypsum.utils import PrnReplicaCodeSamplesSpanningOneMs
-from gypsum.utils import integrate_correlation_with_doppler_shifted_prn
+from gypsum.utils import (
+    AntennaSamplesSpanningAcquisitionIntegrationPeriodMs,
+    CarrierWavePhaseInRadians,
+    CorrelationProfile,
+    DopplerShiftHz,
+    IntegrationType,
+    PrnCodePhaseInSamples,
+    PrnReplicaCodeSamplesSpanningOneMs,
+    integrate_correlation_with_doppler_shifted_prn,
+)
 
 _logger = logging.getLogger(__name__)
 

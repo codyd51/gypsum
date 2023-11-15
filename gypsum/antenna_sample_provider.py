@@ -34,7 +34,7 @@ class AntennaSampleProviderBackedByBytes(AntennaSampleProvider):
 class AntennaSampleProviderBackedByFile(AntennaSampleProvider):
     def __init__(self, path: Path) -> None:
         self.path = path
-        #self.cursor = 795296568
+        # self.cursor = 795296568
         self.cursor = 0
 
     def peek_samples(self, sample_count: int) -> np.ndarray:

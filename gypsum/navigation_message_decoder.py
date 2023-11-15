@@ -1,13 +1,14 @@
 import logging
-from enum import Enum
-from enum import auto
+from enum import Enum, auto
 
 from gypsum.events import Event
-from gypsum.navigation_message_parser import GpsSubframeId
-from gypsum.navigation_message_parser import HandoverWord
-from gypsum.navigation_message_parser import NavigationMessageSubframe
-from gypsum.navigation_message_parser import NavigationMessageSubframeParser
-from gypsum.navigation_message_parser import TelemetryWord
+from gypsum.navigation_message_parser import (
+    GpsSubframeId,
+    HandoverWord,
+    NavigationMessageSubframe,
+    NavigationMessageSubframeParser,
+    TelemetryWord,
+)
 from gypsum.tracker import BitValue
 from gypsum.utils import get_indexes_of_sublist
 
@@ -15,7 +16,7 @@ _logger = logging.getLogger(__name__)
 
 
 BITS_PER_SUBFRAME = 300
-#TELEMETRY_WORD_PREAMBLE = [1, 0, 0, 0, 1, 0, 1, 1]
+# TELEMETRY_WORD_PREAMBLE = [1, 0, 0, 0, 1, 0, 1, 1]
 TELEMETRY_WORD_PREAMBLE = [
     BitValue.ONE,
     BitValue.ZERO,
@@ -105,15 +106,15 @@ class NavigationMessageDecoder:
                 ([b.inverted() for b in TELEMETRY_WORD_PREAMBLE], BitPolarity.NEGATIVE),
             ]
             for preamble, polarity in preamble_and_polarity:
-                print(f'try polarity {polarity}')
+                print(f"try polarity {polarity}")
                 first_identified_preamble_index = self._identify_preamble_in_queued_bits(preamble)
                 if first_identified_preamble_index:
                     events.append(DeterminedSubframePhaseEvent(first_identified_preamble_index, polarity))
                     self.determined_subframe_phase = first_identified_preamble_index
                     self.determined_polarity = polarity
                     # Discard queued bits from the first partial subframe
-                    self.queued_bits = self.queued_bits[self.determined_subframe_phase:]
-                    print('found')
+                    self.queued_bits = self.queued_bits[self.determined_subframe_phase :]
+                    print("found")
                     break
             else:
                 # Didn't find the preamble phase in either polarity
@@ -131,7 +132,7 @@ class NavigationMessageDecoder:
         return events
 
     def parse_subframe(self) -> EmitSubframeEvent:
-        _logger.info(f'Emitting subframe')
+        _logger.info(f"Emitting subframe")
         subframe_bits = self.queued_bits[:BITS_PER_SUBFRAME]
         # Consume these bits by removing them from the queue
         self.queued_bits = self.queued_bits[BITS_PER_SUBFRAME:]
@@ -144,7 +145,7 @@ class NavigationMessageDecoder:
         subframe_parser = NavigationMessageSubframeParser(bits_as_ints)
         telemetry_word = subframe_parser.parse_telemetry_word()
         handover_word = subframe_parser.parse_handover_word()
-        _logger.info(f'Handover word time of week: {handover_word.time_of_week_in_seconds}')
+        _logger.info(f"Handover word time of week: {handover_word.time_of_week_in_seconds}")
 
         subframe_id = handover_word.subframe_id
         if subframe_id == GpsSubframeId.ONE:
@@ -154,7 +155,7 @@ class NavigationMessageDecoder:
         else:
             raise NotImplementedError(subframe_id)
 
-        print(f'**** Subframe {subframe}')
+        print(f"**** Subframe {subframe}")
         return EmitSubframeEvent(
             telemetry_word,
             handover_word,

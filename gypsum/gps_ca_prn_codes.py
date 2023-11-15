@@ -5,7 +5,6 @@ from typing import Any
 import numpy as np
 from scipy.signal import max_len_seq
 
-
 _logger = logging.getLogger(__name__)
 
 

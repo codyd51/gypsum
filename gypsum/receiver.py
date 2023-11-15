@@ -1,42 +1,35 @@
 import collections
 import logging
 from copy import deepcopy
-from enum import Enum
-from enum import auto
-from typing import Callable
-from typing import Type
+from enum import Enum, auto
+from typing import Callable, Type
 
 import numpy as np
 
-from gypsum.acquisition import GpsSatelliteDetector
-from gypsum.acquisition import SatelliteAcquisitionAttemptResult
-from gypsum.config import PRIMARY_PLL_BANDWIDTH
-from gypsum.config import SECONDARY_PLL_BANDWIDTH
-from gypsum.events import UnknownEventError
-from gypsum.gps_ca_prn_codes import GpsSatelliteId
-from gypsum.gps_ca_prn_codes import generate_replica_prn_signals
-from gypsum.constants import SAMPLES_PER_PRN_TRANSMISSION
-from gypsum.navigation_bit_intergrator import CannotDetermineBitPhaseEvent
-from gypsum.navigation_bit_intergrator import DeterminedBitPhaseEvent
-from gypsum.navigation_bit_intergrator import EmitNavigationBitEvent
-from gypsum.navigation_bit_intergrator import Event
-from gypsum.navigation_bit_intergrator import LostBitCoherenceEvent
-from gypsum.navigation_bit_intergrator import LostBitPhaseCoherenceError
-from gypsum.navigation_bit_intergrator import NavigationBitIntegrator
-from gypsum.navigation_message_decoder import CannotDetermineSubframePhaseEvent
-from gypsum.navigation_message_decoder import DeterminedSubframePhaseEvent
-from gypsum.navigation_message_decoder import EmitSubframeEvent
-from gypsum.navigation_message_decoder import NavigationMessageDecoder
-from gypsum.satellite import ALL_SATELLITE_IDS
-from gypsum.satellite import GpsSatellite
+from gypsum.acquisition import GpsSatelliteDetector, SatelliteAcquisitionAttemptResult
 from gypsum.antenna_sample_provider import AntennaSampleProvider
-from gypsum.config import ACQUISITION_INTEGRATION_PERIOD_MS
-from gypsum.tracker import GpsSatelliteTracker
-from gypsum.tracker import GpsSatelliteTrackingParameters
-from gypsum.utils import AntennaSamplesSpanningOneMs
-from gypsum.utils import chunks
-from gypsum.utils import does_list_contain_sublist
-
+from gypsum.config import ACQUISITION_INTEGRATION_PERIOD_MS, PRIMARY_PLL_BANDWIDTH, SECONDARY_PLL_BANDWIDTH
+from gypsum.constants import SAMPLES_PER_PRN_TRANSMISSION
+from gypsum.events import UnknownEventError
+from gypsum.gps_ca_prn_codes import GpsSatelliteId, generate_replica_prn_signals
+from gypsum.navigation_bit_intergrator import (
+    CannotDetermineBitPhaseEvent,
+    DeterminedBitPhaseEvent,
+    EmitNavigationBitEvent,
+    Event,
+    LostBitCoherenceEvent,
+    LostBitPhaseCoherenceError,
+    NavigationBitIntegrator,
+)
+from gypsum.navigation_message_decoder import (
+    CannotDetermineSubframePhaseEvent,
+    DeterminedSubframePhaseEvent,
+    EmitSubframeEvent,
+    NavigationMessageDecoder,
+)
+from gypsum.satellite import ALL_SATELLITE_IDS, GpsSatellite
+from gypsum.tracker import GpsSatelliteTracker, GpsSatelliteTrackingParameters
+from gypsum.utils import AntennaSamplesSpanningOneMs, chunks, does_list_contain_sublist
 
 _logger = logging.getLogger(__name__)
 
@@ -83,7 +76,7 @@ class GpsSatelliteSignalProcessingPipeline:
         pseudosymbol = self.tracker.process_samples(samples, sample_index)
         integrator_events = self.pseudosymbol_integrator.process_pseudosymbol(pseudosymbol)
 
-        integrator_event_type_to_callback: dict[Type[Event], Callable[[Event], list[Event] | None]] = {   # type: ignore
+        integrator_event_type_to_callback: dict[Type[Event], Callable[[Event], list[Event] | None]] = {  # type: ignore
             DeterminedBitPhaseEvent: self._handle_integrator_determined_bit_phase,
             CannotDetermineBitPhaseEvent: self._handle_integrator_cannot_determine_bit_phase,
             LostBitCoherenceEvent: self._handle_integrator_lost_bit_coherence,
@@ -100,19 +93,18 @@ class GpsSatelliteSignalProcessingPipeline:
 
     def _handle_integrator_determined_bit_phase(self, event: DeterminedBitPhaseEvent) -> None:
         satellite_id = self.satellite.satellite_id.id
-        _logger.info(
-            f'Integrator for SV({satellite_id}) has determined bit phase {event.bit_phase}'
-        )
+        _logger.info(f"Integrator for SV({satellite_id}) has determined bit phase {event.bit_phase}")
 
     def _handle_integrator_cannot_determine_bit_phase(self, event: CannotDetermineBitPhaseEvent) -> None:
         satellite_id = self.satellite.satellite_id.id
         _logger.info(
-            f'{self.sample_index}: Integrator for SV({satellite_id} could not determine bit phase. Confidence: {int(event.confidence*100)}%'
+            f"{self.sample_index}: Integrator for SV({satellite_id} could not determine bit phase. Confidence: {int(event.confidence*100)}%"
         )
         # TODO(PT): Untrack this satellite (as the bits are low confidence)
         raise LostSatelliteLockError()
-        print(f'*** found ***')
+        print(f"*** found ***")
         from matplotlib import pyplot as plt
+
         plt.plot(self.tracker.tracking_params.doppler_shifts[-2000:])
         plt.title(f"Doppler shift")
         plt.show()
@@ -123,14 +115,15 @@ class GpsSatelliteSignalProcessingPipeline:
         plt.title(f"Carrier wave phase error")
         plt.show()
         import sys
+
         sys.exit(0)
-        raise NotImplementedError(f'Satellite should be removed from the tracking pool')
+        raise NotImplementedError(f"Satellite should be removed from the tracking pool")
 
     def _handle_integrator_lost_bit_coherence(self, event: LostBitCoherenceEvent) -> None:
         satellite_id = self.satellite.satellite_id.id
         _logger.info(
-            f'{self.sample_index}: Integrator for SV({satellite_id}) lost bit coherence. '
-            f'Confidence for bit {self.pseudosymbol_integrator.bit_index}: {event.confidence}%'
+            f"{self.sample_index}: Integrator for SV({satellite_id}) lost bit coherence. "
+            f"Confidence for bit {self.pseudosymbol_integrator.bit_index}: {event.confidence}%"
         )
         raise LostSatelliteLockError()
         # The integrator will need to determine a new bit phase?
@@ -144,10 +137,10 @@ class GpsSatelliteSignalProcessingPipeline:
 
     def _handle_integrator_emitted_bit(self, event: EmitNavigationBitEvent) -> list[Event]:
         satellite_id = self.satellite.satellite_id.id
-        #_logger.info(f'handling bit {self.pseudosymbol_integrator.bit_index-1}')
+        # _logger.info(f'handling bit {self.pseudosymbol_integrator.bit_index-1}')
         decoder_events = self.navigation_message_decoder.process_bit_from_satellite(event.bit_value)
 
-        decoder_event_type_to_callback: dict[Type[Event], Callable[[Event], list[Event] | None]] = {   # type: ignore
+        decoder_event_type_to_callback: dict[Type[Event], Callable[[Event], list[Event] | None]] = {  # type: ignore
             DeterminedSubframePhaseEvent: self._handle_decoder_determined_subframe_phase,
             CannotDetermineSubframePhaseEvent: self._handle_decoder_cannot_determine_subframe_phase,
             EmitSubframeEvent: self._handle_decoder_emitted_subframe,
@@ -163,23 +156,21 @@ class GpsSatelliteSignalProcessingPipeline:
 
     def _handle_decoder_determined_subframe_phase(self, event: DeterminedSubframePhaseEvent) -> None:
         satellite_id = self.satellite.satellite_id.id
-        _logger.info(
-            f'Decoder for SV({satellite_id}) has determined subframe phase {event.subframe_phase}'
-        )
+        _logger.info(f"Decoder for SV({satellite_id}) has determined subframe phase {event.subframe_phase}")
 
     def _handle_decoder_cannot_determine_subframe_phase(self, event: CannotDetermineSubframePhaseEvent) -> None:
         satellite_id = self.satellite.satellite_id.id
-        _logger.info(f'Decoder for SV({satellite_id}) could not determine subframe phase.')
+        _logger.info(f"Decoder for SV({satellite_id}) could not determine subframe phase.")
         # TODO(PT): Wait longer for a subframe to appear..?
-        raise NotImplementedError(f'Should wait longer for a subframe to appear..?')
+        raise NotImplementedError(f"Should wait longer for a subframe to appear..?")
 
     def _handle_decoder_emitted_subframe(self, event: EmitSubframeEvent) -> list[Event]:
         satellite_id = self.satellite.satellite_id.id
-        _logger.info(f'Decoder for SV({satellite_id}) emitted a subframe:')
-        _logger.info(f'\tTelemetry word: {event.telemetry_word}')
-        _logger.info(f'\tHandover word: {event.handover_word}')
+        _logger.info(f"Decoder for SV({satellite_id}) emitted a subframe:")
+        _logger.info(f"\tTelemetry word: {event.telemetry_word}")
+        _logger.info(f"\tHandover word: {event.handover_word}")
         return [event]
-        #_logger.info(f'Emitted when integrator was at bit {self.pseudosymbol_integrator.bit_index-1}')
+        # _logger.info(f'Emitted when integrator was at bit {self.pseudosymbol_integrator.bit_index-1}')
 
 
 class GpsReceiver:
@@ -194,13 +185,15 @@ class GpsReceiver:
         }
         # TODO(PT): Perhaps this state should belong to the detector.
         # The receiver can remove satellites from the pool when it decides a satellite has been acquired
-        #self.satellite_ids_eligible_for_acquisition = deepcopy(ALL_SATELLITE_IDS)
+        # self.satellite_ids_eligible_for_acquisition = deepcopy(ALL_SATELLITE_IDS)
         self.satellite_ids_eligible_for_acquisition = [GpsSatelliteId(id=32)]
         self.satellite_detector = GpsSatelliteDetector(self.satellites_by_id)
         # Used during acquisition to integrate correlation over a longer period than a millisecond.
         self.rolling_samples_buffer = collections.deque(maxlen=ACQUISITION_INTEGRATION_PERIOD_MS)
 
-        self.tracked_satellite_ids_to_processing_pipelines: dict[GpsSatelliteId, GpsSatelliteSignalProcessingPipeline] = {}
+        self.tracked_satellite_ids_to_processing_pipelines: dict[
+            GpsSatelliteId, GpsSatelliteSignalProcessingPipeline
+        ] = {}
         self.subframe_count = 0
 
     def step(self):
@@ -211,15 +204,13 @@ class GpsReceiver:
         self.rolling_samples_buffer.append(samples)
 
         # If we need to perform acquisition, do so now
-        #if len(self.tracked_satellite_ids_to_processing_pipelines) < MINIMUM_TRACKED_SATELLITES_FOR_POSITION_FIX:
+        # if len(self.tracked_satellite_ids_to_processing_pipelines) < MINIMUM_TRACKED_SATELLITES_FOR_POSITION_FIX:
         if len(self.tracked_satellite_ids_to_processing_pipelines) < 1:
             _logger.info(
                 f"Will perform acquisition search because we're only "
                 f"tracking {len(self.tracked_satellite_ids_to_processing_pipelines)} satellites."
             )
-            _logger.info(
-                f"{self.antenna_samples_provider.cursor}: Subframe count: {self.subframe_count}"
-            )
+            _logger.info(f"{self.antenna_samples_provider.cursor}: Subframe count: {self.subframe_count}")
             self._perform_acquisition()
 
         # Continue tracking each acquired satellite
@@ -229,7 +220,7 @@ class GpsReceiver:
         for _, subframes in satellite_ids_to_subframes.items():
             for subframe in subframes:
                 subframe: EmitSubframeEvent = subframe
-                print(f'Got subframe {subframe}')
+                print(f"Got subframe {subframe}")
             self.subframe_count += len(subframes)
 
     def decode_nav_bits(self, sat: GpsSatelliteTrackingParameters):
@@ -302,10 +293,14 @@ class GpsReceiver:
         for satellite_acquisition_result in newly_acquired_satellites:
             sat_id = satellite_acquisition_result.satellite_id
             satellite = self.satellites_by_id[sat_id]
-            self.tracked_satellite_ids_to_processing_pipelines[sat_id] = GpsSatelliteSignalProcessingPipeline(satellite, satellite_acquisition_result)
+            self.tracked_satellite_ids_to_processing_pipelines[sat_id] = GpsSatelliteSignalProcessingPipeline(
+                satellite, satellite_acquisition_result
+            )
         return [n.satellite_id for n in newly_acquired_satellites]
 
-    def _track_acquired_satellites(self, samples: AntennaSamplesSpanningOneMs, sample_index: int) -> dict[GpsSatelliteId, list[Event]]:
+    def _track_acquired_satellites(
+        self, samples: AntennaSamplesSpanningOneMs, sample_index: int
+    ) -> dict[GpsSatelliteId, list[Event]]:
         satellite_ids_to_events = {}
         satellite_ids_to_reacquire = []
         for satellite_id, pipeline in self.tracked_satellite_ids_to_processing_pipelines.items():
@@ -316,11 +311,11 @@ class GpsReceiver:
                 satellite_ids_to_reacquire.append(satellite_id)
 
         for satellite_id in satellite_ids_to_reacquire:
-            del(self.tracked_satellite_ids_to_processing_pipelines[satellite_id])
-            print('Trying to re-acquire...')
+            del self.tracked_satellite_ids_to_processing_pipelines[satellite_id]
+            print("Trying to re-acquire...")
             acquired_satellite_ids = self._perform_acquisition_on_satellite_ids([satellite_id])
             if len(acquired_satellite_ids) != 1:
                 # Failed to re-acquire this satellite
-                print(f'Failed to re-acquire!')
+                print(f"Failed to re-acquire!")
                 # TODO(PT): Put it back on the queue of available-to-acquire?
         return satellite_ids_to_events

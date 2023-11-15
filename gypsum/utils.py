@@ -1,13 +1,10 @@
-from enum import Enum
-from enum import auto
-from typing import Any
-from typing import TypeVar, Collection, Iterator
-
 import math
+from enum import Enum, auto
+from typing import Any, Collection, Iterator, TypeVar
+
 import numpy as np
 
-from gypsum.constants import SAMPLES_PER_PRN_TRANSMISSION
-from gypsum.constants import SAMPLES_PER_SECOND
+from gypsum.constants import SAMPLES_PER_PRN_TRANSMISSION, SAMPLES_PER_SECOND
 
 _IterType = TypeVar("_IterType")
 
@@ -47,7 +44,7 @@ def round_to_previous_multiple_of(val: int, multiple: int) -> int:
 
 
 def get_indexes_of_sublist(li: list[Any], sub: list[Any]) -> list[int]:
-    index_to_is_sublist_match = [li[pos: pos + len(sub)] == sub for pos in range(0, len(li) - len(sub) + 1)]
+    index_to_is_sublist_match = [li[pos : pos + len(sub)] == sub for pos in range(0, len(li) - len(sub) + 1)]
     indexes_of_sublist_matches = [match[0] for match in np.argwhere(np.array(index_to_is_sublist_match) == True)]
     return indexes_of_sublist_matches
 

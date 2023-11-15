@@ -1,7 +1,6 @@
 import collections
 from dataclasses import dataclass
-from enum import Enum
-from enum import auto
+from enum import Enum, auto
 from typing import Self
 
 from gypsum.config import GPS_EPOCH_BASE_WEEK_NUMBER
@@ -91,7 +90,7 @@ class Subframe5(NavigationMessageSubframe):
     satellite_id: list[int]
     eccentricity: float
     time_of_ephemeris: float
-    delta_inclination_angle:float
+    delta_inclination_angle: float
     right_ascension_rate: float
     sv_health: int
     semi_major_axis_sqrt: float
@@ -179,24 +178,26 @@ class NavigationMessageSubframeParser:
         bits_as_str = self.get_bit_string(bit_count)
         value = int(bits_as_str, 2)
         if twos_complement:
+
             def twos_comp(val, bits):
                 """compute the 2's complement of int value val"""
                 if (val & (1 << (bits - 1))) != 0:  # if sign bit is set e.g., 8bit: 128-255
                     val = val - (1 << bits)  # compute negative value
                 return val
+
             value = twos_comp(value, len(bits_as_str))
-            #and (.Params) (
+            # and (.Params) (
 
-            #{{ $style = cond (and (.Params) (isset .Params `adjust_y`)) (printf "transform: translate(0%, %s%)" .Get "adjust_y") ("") }}
+            # {{ $style = cond (and (.Params) (isset .Params `adjust_y`)) (printf "transform: translate(0%, %s%)" .Get "adjust_y") ("") }}
 
-        return value * (2 ** scale_factor_exp2)
+        return value * (2**scale_factor_exp2)
 
     def validate_parity(self):
         parity_bits = self.get_bit_count(_PARITY_BIT_COUNT_PER_WORD)
         # TODO(PT): Verify we have exactly 24 bits in the buffer?
         data_bits = list(self.word_bits)
         self.word_bits.clear()
-        print(f'TODO: Validate parity bits {parity_bits} for {data_bits}')
+        print(f"TODO: Validate parity bits {parity_bits} for {data_bits}")
 
     def parse_subframe_1(self) -> NavigationMessageSubframe1:
         # Ref: IS-GPS-200L, 20.3.3.5 Subframes 1, Figure 20-1. Data Format (sheet 1 of 11)
@@ -276,16 +277,16 @@ class NavigationMessageSubframeParser:
         mean_anomaly_at_reference_time = self.get_num(bit_count=24, scale_factor_exp2=-23, twos_complement=True)
         self.validate_parity()
 
-        #a_f0_high = self.get_num(bit_count=8, scale_factor_exp2=-20)
+        # a_f0_high = self.get_num(bit_count=8, scale_factor_exp2=-20)
         a_f0_high = self.get_num(bit_count=8)
         a_f1 = self.get_num(bit_count=11, scale_factor_exp2=-38)
-        #a_f0_low = self.get_num(bit_count=3, scale_factor_exp2=-20)
+        # a_f0_low = self.get_num(bit_count=3, scale_factor_exp2=-20)
         a_f0_low = self.get_num(bit_count=3)
         t = self.get_num(bit_count=2)
         self.validate_parity()
 
-        print(f'a_f0_high {a_f0_high} a_f0_low {a_f0_low}')
-        a_f0 = ((int(a_f0_high) << 3) | int(a_f0_low)) * (2 ** -20)
+        print(f"a_f0_high {a_f0_high} a_f0_low {a_f0_low}")
+        a_f0 = ((int(a_f0_high) << 3) | int(a_f0_low)) * (2**-20)
 
         return Subframe5(
             data_id=data_id,
