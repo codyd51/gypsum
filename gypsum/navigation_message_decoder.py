@@ -5,6 +5,7 @@ from enum import auto
 from gypsum.events import Event
 from gypsum.navigation_message_parser import GpsSubframeId
 from gypsum.navigation_message_parser import HandoverWord
+from gypsum.navigation_message_parser import NavigationMessageSubframe
 from gypsum.navigation_message_parser import NavigationMessageSubframeParser
 from gypsum.navigation_message_parser import TelemetryWord
 from gypsum.tracker import BitValue
@@ -47,9 +48,11 @@ class EmitSubframeEvent(Event):
         self,
         telemetry_word: TelemetryWord,
         handover_word: HandoverWord,
+        subframe: NavigationMessageSubframe,
     ) -> None:
         self.telemetry_word = telemetry_word
         self.handover_word = handover_word
+        self.subframe = subframe
 
 
 class NavigationMessageDecoder:
@@ -154,5 +157,6 @@ class NavigationMessageDecoder:
         print(f'**** Subframe {subframe}')
         return EmitSubframeEvent(
             telemetry_word,
-            handover_word
+            handover_word,
+            subframe=subframe,
         )

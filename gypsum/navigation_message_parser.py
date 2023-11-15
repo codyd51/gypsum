@@ -60,7 +60,14 @@ class HandoverWord:
 
 
 @dataclass
-class Subframe1:
+class NavigationMessageSubframe:
+    @property
+    def subframe_id(self) -> GpsSubframeId:
+        raise NotImplementedError("Must be provided by subclasses")
+
+
+@dataclass
+class NavigationMessageSubframe1(NavigationMessageSubframe):
     week_num: list[int]
     ca_or_p_on_l2: list[int]
     ura_index: list[int]
@@ -73,9 +80,13 @@ class Subframe1:
     a_f1: float
     a_f0: float
 
+    @property
+    def subframe_id(self) -> GpsSubframeId:
+        return GpsSubframeId.ONE
+
 
 @dataclass
-class Subframe5:
+class Subframe5(NavigationMessageSubframe):
     data_id: list[int]
     satellite_id: list[int]
     eccentricity: float
@@ -89,6 +100,10 @@ class Subframe5:
     mean_anomaly_at_reference_time: float
     a_f0: float
     a_f1: float
+
+    @property
+    def subframe_id(self) -> GpsSubframeId:
+        return GpsSubframeId.FIVE
 
 
 class NavigationMessageSubframeParser:
@@ -183,13 +198,13 @@ class NavigationMessageSubframeParser:
         self.word_bits.clear()
         print(f'TODO: Validate parity bits {parity_bits} for {data_bits}')
 
-    def parse_subframe_1(self) -> Subframe1:
+    def parse_subframe_1(self) -> NavigationMessageSubframe1:
         # Ref: IS-GPS-200L, 20.3.3.5 Subframes 1, Figure 20-1. Data Format (sheet 1 of 11)
 
         # PT: This field stores the week number, mod 1024 weeks. See the comment on GPS_EPOCH_BASE_WEEK_NUMBER.
         # **This means that this field rolls over to zero every 19.6 years**.
         # See the comment on GPS_EPOCH_BASE_WEEK_NUMBER.
-        week_num_mod_1024 = self.get_bit_count(10)
+        week_num_mod_1024 = self.get_num(10)
         week_num = week_num_mod_1024 + GPS_EPOCH_BASE_WEEK_NUMBER
 
         ca_or_p_on_l2 = self.get_bit_count(2)
@@ -219,7 +234,7 @@ class NavigationMessageSubframeParser:
 
         iodc = (iodc_high << 8) | iodc_low
 
-        return Subframe1(
+        return NavigationMessageSubframe1(
             week_num=week_num,
             ca_or_p_on_l2=ca_or_p_on_l2,
             ura_index=ura_index,
