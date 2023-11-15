@@ -4,6 +4,8 @@ from enum import Enum
 from enum import auto
 from typing import Self
 
+from gypsum.config import GPS_EPOCH_BASE_WEEK_NUMBER
+
 # Every word ends in 6 parity bits
 _DATA_BIT_COUNT_PER_WORD = 24
 _PARITY_BIT_COUNT_PER_WORD = 6
@@ -55,6 +57,21 @@ class HandoverWord:
             if bit == 1:
                 time_of_week_accumulator += bit_granularity
         return time_of_week_accumulator
+
+
+@dataclass
+class Subframe1:
+    week_num: list[int]
+    ca_or_p_on_l2: list[int]
+    ura_index: list[int]
+    sv_health: list[int]
+    iodc: int
+    l2_p_data_flag: int
+    estimated_group_delay_differential: float
+    t_oc: float
+    a_f2: float
+    a_f1: float
+    a_f0: float
 
 
 @dataclass
@@ -161,9 +178,60 @@ class NavigationMessageSubframeParser:
 
     def validate_parity(self):
         parity_bits = self.get_bit_count(_PARITY_BIT_COUNT_PER_WORD)
+        # TODO(PT): Verify we have exactly 24 bits in the buffer?
         data_bits = list(self.word_bits)
         self.word_bits.clear()
         print(f'TODO: Validate parity bits {parity_bits} for {data_bits}')
+
+    def parse_subframe_1(self) -> Subframe1:
+        # Ref: IS-GPS-200L, 20.3.3.5 Subframes 1, Figure 20-1. Data Format (sheet 1 of 11)
+
+        # PT: This field stores the week number, mod 1024 weeks. See the comment on GPS_EPOCH_BASE_WEEK_NUMBER.
+        # **This means that this field rolls over to zero every 19.6 years**.
+        # See the comment on GPS_EPOCH_BASE_WEEK_NUMBER.
+        week_num_mod_1024 = self.get_bit_count(10)
+        week_num = week_num_mod_1024 + GPS_EPOCH_BASE_WEEK_NUMBER
+
+        ca_or_p_on_l2 = self.get_bit_count(2)
+        ura_index = self.get_bit_count(4)
+        sv_health = self.get_bit_count(6)
+        iodc_high = int(self.get_num(bit_count=2))
+        self.validate_parity()
+        l2_p_data_flag = self.get_bit()
+        _reserved_block1 = self.get_bit_count(23)
+        self.validate_parity()
+        _reserved_block2 = self.get_bit_count(24)
+        self.validate_parity()
+        _reserved_block3 = self.get_bit_count(24)
+        self.validate_parity()
+        _reserved_block4 = self.get_bit_count(16)
+        estimated_group_delay_differential = self.get_num(bit_count=8, scale_factor_exp2=-31, twos_complement=True)
+        self.validate_parity()
+        iodc_low = int(self.get_num(bit_count=8))
+        t_oc = self.get_num(bit_count=16, scale_factor_exp2=4)
+        self.validate_parity()
+        a_f2 = self.get_num(bit_count=8, scale_factor_exp2=-55, twos_complement=True)
+        a_f1 = self.get_num(bit_count=16, scale_factor_exp2=-43, twos_complement=True)
+        self.validate_parity()
+        a_f0 = self.get_num(bit_count=22, scale_factor_exp2=-31, twos_complement=True)
+        _to_be_solved = self.get_bit_count(2)
+        self.validate_parity()
+
+        iodc = (iodc_high << 8) | iodc_low
+
+        return Subframe1(
+            week_num=week_num,
+            ca_or_p_on_l2=ca_or_p_on_l2,
+            ura_index=ura_index,
+            sv_health=sv_health,
+            iodc=iodc,
+            l2_p_data_flag=l2_p_data_flag,
+            estimated_group_delay_differential=estimated_group_delay_differential,
+            t_oc=t_oc,
+            a_f2=a_f2,
+            a_f1=a_f1,
+            a_f0=a_f0,
+        )
 
     def parse_subframe_5(self) -> Subframe5:
         # Ref: IS-GPS-200L, 20.3.3.5 Subframes 4 and 5
