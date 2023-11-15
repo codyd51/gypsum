@@ -217,11 +217,12 @@ class GpsReceiver:
         satellite_ids_to_subframes = self._track_acquired_satellites(samples, sample_index)
         if satellite_ids_to_subframes:
             print(satellite_ids_to_subframes)
-        for _, subframes in satellite_ids_to_subframes.items():
-            for subframe in subframes:
-                subframe: EmitSubframeEvent = subframe
-                print(f"Got subframe {subframe}")
-            self.subframe_count += len(subframes)
+        for _, emit_subframe_events in satellite_ids_to_subframes.items():
+            for emit_subframe_event in emit_subframe_events:
+                emit_subframe_event: EmitSubframeEvent = emit_subframe_event
+                subframe = emit_subframe_event.subframe
+
+            self.subframe_count += len(emit_subframe_events)
 
     def decode_nav_bits(self, sat: GpsSatelliteTrackingParameters):
         navigation_bit_pseudosymbols = sat.navigation_bit_pseudosymbols

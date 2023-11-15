@@ -94,6 +94,25 @@ class NavigationMessageSubframe1(NavigationMessageSubframe):
 
 
 @dataclass
+class NavigationMessageSubframe2(NavigationMessageSubframe):
+    issue_of_data_ephemeris: list[int]
+    correction_to_radius_sin: float
+    mean_motion_difference_from_computed_value: float
+    mean_anomaly_at_reference_time: float
+    correction_to_latitude_cos: float
+    eccentricity: float
+    correction_to_latitude_sin: float
+    sqrt_semi_major_axis: float
+    reference_time_ephemeris: float
+    fit_interval_flag: bool
+    age_of_data_offset: list[int]
+
+    @property
+    def subframe_id(self) -> GpsSubframeId:
+        return GpsSubframeId.TWO
+
+
+@dataclass
 class Subframe5(NavigationMessageSubframe):
     data_id: list[int]
     satellite_id: list[int]
@@ -101,7 +120,7 @@ class Subframe5(NavigationMessageSubframe):
     time_of_ephemeris: float
     delta_inclination_angle: float
     right_ascension_rate: float
-    sv_health: int
+    sv_health: list[int]
     semi_major_axis_sqrt: float
     longitude_of_ascension_mode: float
     argument_of_perigree: float
@@ -309,6 +328,80 @@ class NavigationMessageSubframeParser:
             a_f2=a_f2,
             a_f1=a_f1,
             a_f0=a_f0,
+        )
+
+    def parse_subframe_2(self) -> NavigationMessageSubframe2:
+        # Ref: IS-GPS-200L, Figure 20-1. Data Format (sheet 2 of 11)
+        # Ref: IS-GPS-200L, 20.3.3.4.1 Content of Subframes 2 and 3
+        #
+        # Word 3
+        issue_of_data_ephemeris = self.get_bits(8)
+        correction_to_radius_sin = self.get_num(bit_count=16, scale_factor_exp2=-5, twos_complement=True)
+        self.validate_parity()
+
+        # Word 4
+        mean_motion_difference_from_computed_value = self.get_num(bit_count=16, scale_factor_exp2=-43, twos_complement=True)
+        mean_anomaly_at_reference_time_high = self.get_bits(8)
+        self.validate_parity()
+
+        # Word 5
+        mean_anomaly_at_reference_time_low = self.get_bits(24)
+        mean_anomaly_at_reference_time_bits = [*mean_anomaly_at_reference_time_high, *mean_anomaly_at_reference_time_low]
+        mean_anomaly_at_reference_time = self.get_num_from_bits(
+            bits=mean_anomaly_at_reference_time_bits,
+            scale_factor_exp2=-31,
+            twos_complement=True
+        )
+        self.validate_parity()
+
+        # Word 6
+        correction_to_latitude_cos = self.get_num(bit_count=16, scale_factor_exp2=-29, twos_complement=True)
+        eccentricity_high = self.get_bits(8)
+        self.validate_parity()
+
+        # Word 7
+        eccentricity_low = self.get_bits(24)
+        eccentricity_bits = [*eccentricity_high, *eccentricity_low]
+        eccentricity = self.get_num_from_bits(
+            bits=eccentricity_bits,
+            scale_factor_exp2=-33,
+            twos_complement=False
+        )
+        self.validate_parity()
+
+        # Word 8
+        correction_to_latitude_sin = self.get_num(bit_count=16, scale_factor_exp2=-29, twos_complement=True)
+        sqrt_semi_major_axis_high = self.get_bits(8)
+        self.validate_parity()
+
+        sqrt_semi_major_axis_low = self.get_bits(24)
+        sqrt_semi_major_axis_bits = [*sqrt_semi_major_axis_high, *sqrt_semi_major_axis_low]
+        sqrt_semi_major_axis = self.get_num_from_bits(
+            bits=sqrt_semi_major_axis_bits,
+            scale_factor_exp2=-19,
+            twos_complement=False
+        )
+        self.validate_parity()
+
+        reference_time_ephemeris = self.get_num(bit_count=16, scale_factor_exp2=4, twos_complement=False)
+        fit_interval_flag = self.get_bit()
+        age_of_data_offset = self.get_bits(5)
+        _to_be_solved = self.get_bits(2)
+        self.validate_parity()
+
+        # TODO(PT): Add units to each of these
+        return NavigationMessageSubframe2(
+            issue_of_data_ephemeris=issue_of_data_ephemeris,
+            correction_to_radius_sin=correction_to_radius_sin,
+            mean_motion_difference_from_computed_value=mean_motion_difference_from_computed_value,
+            mean_anomaly_at_reference_time=mean_anomaly_at_reference_time,
+            correction_to_latitude_cos=correction_to_latitude_cos,
+            eccentricity=eccentricity,
+            correction_to_latitude_sin=correction_to_latitude_sin,
+            sqrt_semi_major_axis=sqrt_semi_major_axis,
+            reference_time_ephemeris=reference_time_ephemeris,
+            fit_interval_flag=bool(fit_interval_flag),
+            age_of_data_offset=age_of_data_offset,
         )
 
     def parse_subframe_5(self) -> Subframe5:

@@ -150,12 +150,13 @@ class NavigationMessageDecoder:
         subframe_id = handover_word.subframe_id
         if subframe_id == GpsSubframeId.ONE:
             subframe = subframe_parser.parse_subframe_1()
+        elif subframe_id == GpsSubframeId.TWO:
+            subframe = subframe_parser.parse_subframe_2()
         elif subframe_id == GpsSubframeId.FIVE:
             subframe = subframe_parser.parse_subframe_5()
         else:
             raise NotImplementedError(subframe_id)
 
-        print(f"**** Subframe {subframe}")
         return EmitSubframeEvent(
             telemetry_word,
             handover_word,
