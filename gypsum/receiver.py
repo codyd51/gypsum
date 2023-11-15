@@ -267,6 +267,9 @@ class GpsReceiver:
         print(f"Preamble starts in inverted bits: {preamble_starts_in_inverted_bits}")
 
     def _perform_acquisition(self) -> None:
+        self._perform_acquisition_on_satellite_ids(self.satellite_ids_eligible_for_acquisition)
+
+    def _perform_acquisition_on_satellite_ids(self, satellite_ids: list[GpsSatelliteId]) -> list[GpsSatelliteId]:
         # To improve signal-to-noise ratio during acquisition, we integrate antenna data over 20ms.
         # Therefore, we keep a rolling buffer of the last few samples.
         # If this buffer isn't primed yet, we can't do any work yet.
@@ -280,14 +283,31 @@ class GpsReceiver:
 
         samples_for_integration_period = np.concatenate(self.rolling_samples_buffer)
         newly_acquired_satellites = self.satellite_detector.detect_satellites_in_antenna_data(
-            self.satellite_ids_eligible_for_acquisition,
+            satellite_ids,
             samples_for_integration_period,
         )
         for satellite_acquisition_result in newly_acquired_satellites:
             sat_id = satellite_acquisition_result.satellite_id
             satellite = self.satellites_by_id[sat_id]
             self.tracked_satellite_ids_to_processing_pipelines[sat_id] = GpsSatelliteSignalProcessingPipeline(satellite, satellite_acquisition_result)
+        return [n.satellite_id for n in newly_acquired_satellites]
 
-    def _track_acquired_satellites(self, samples: AntennaSamplesSpanningOneMs, sample_index: int):
-        for _satellite_id, pipeline in self.tracked_satellite_ids_to_processing_pipelines.items():
-            pipeline.process_samples(samples, sample_index)
+    def _track_acquired_satellites(self, samples: AntennaSamplesSpanningOneMs, sample_index: int) -> dict[GpsSatelliteId, list[Event]]:
+        satellite_ids_to_events = {}
+        satellite_ids_to_reacquire = []
+        for satellite_id, pipeline in self.tracked_satellite_ids_to_processing_pipelines.items():
+            try:
+                if events := pipeline.process_samples(samples, sample_index):
+                    satellite_ids_to_events[satellite_id] = events
+            except LostSatelliteLockError:
+                satellite_ids_to_reacquire.append(satellite_id)
+
+        for satellite_id in satellite_ids_to_reacquire:
+            del(self.tracked_satellite_ids_to_processing_pipelines[satellite_id])
+            print('Trying to re-acquire...')
+            acquired_satellite_ids = self._perform_acquisition_on_satellite_ids([satellite_id])
+            if len(acquired_satellite_ids) != 1:
+                # Failed to re-acquire this satellite
+                print(f'Failed to re-acquire!')
+                # TODO(PT): Put it back on the queue of available-to-acquire?
+        return satellite_ids_to_events
