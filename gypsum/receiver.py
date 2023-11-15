@@ -37,6 +37,10 @@ from gypsum.utils import does_list_contain_sublist
 _logger = logging.getLogger(__name__)
 
 
+class LostSatelliteLockError(Exception):
+    pass
+
+
 class TrackingState(Enum):
     PROVISIONAL_PROBE = auto()
     LOCKED = auto()
@@ -102,6 +106,7 @@ class GpsSatelliteSignalProcessingPipeline:
             f'{self.sample_index}: Integrator for SV({satellite_id} could not determine bit phase. Confidence: {int(event.confidence*100)}%'
         )
         # TODO(PT): Untrack this satellite (as the bits are low confidence)
+        raise LostSatelliteLockError()
         print(f'*** found ***')
         from matplotlib import pyplot as plt
         plt.plot(self.tracker.tracking_params.doppler_shifts[-2000:])
@@ -123,6 +128,7 @@ class GpsSatelliteSignalProcessingPipeline:
             f'{self.sample_index}: Integrator for SV({satellite_id}) lost bit coherence. '
             f'Confidence for bit {self.pseudosymbol_integrator.bit_index}: {event.confidence}%'
         )
+        raise LostSatelliteLockError()
         # The integrator will need to determine a new bit phase?
         self.pseudosymbol_integrator.determined_bit_phase = None
         self.pseudosymbol_integrator.queued_pseudosymbols = []
