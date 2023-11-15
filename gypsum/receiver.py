@@ -221,6 +221,10 @@ class GpsReceiver:
             for emit_subframe_event in emit_subframe_events:
                 emit_subframe_event: EmitSubframeEvent = emit_subframe_event
                 subframe = emit_subframe_event.subframe
+                print(f'*** Subframe {subframe.subframe_id}:')
+                from dataclasses import fields
+                for field in fields(subframe):
+                    print(f'\t{field.name}: {getattr(subframe, field.name)}')
 
             self.subframe_count += len(emit_subframe_events)
 

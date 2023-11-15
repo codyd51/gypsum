@@ -130,6 +130,16 @@ class NavigationMessageSubframe3(NavigationMessageSubframe):
 
 
 @dataclass
+class NavigationMessageSubframe4(NavigationMessageSubframe):
+    data_id: int
+    page_id: int
+
+    @property
+    def subframe_id(self) -> GpsSubframeId:
+        return GpsSubframeId.FOUR
+
+
+@dataclass
 class NavigationMessageSubframe5(NavigationMessageSubframe):
     data_id: list[int]
     satellite_id: list[int]
@@ -487,6 +497,27 @@ class NavigationMessageSubframeParser:
             rate_of_right_ascension=rate_of_right_ascension,
             issue_of_data_ephemeris=issue_of_data_ephemeris,
             rate_of_inclination_angle=rate_of_inclination_angle,
+        )
+
+    def parse_subframe_4(self) -> NavigationMessageSubframe4:
+        # Ref: IS-GPS-200L, Figure 20-1. Data Format, sheets 6 through 11
+        # Ref: IS-GPS-200L, 20.3.3.5 Subframes 4 and 5
+        #
+        # Word 3
+        data_id = self.get_unscaled_num(2, twos_complement=False)
+        page_id = self.get_unscaled_num(6, twos_complement=False)
+
+        # PT: The rest of the bits depend on the page we're in
+        # For now, skip the rest of the subframe
+        bits_so_far = 8
+        remaining_words = 8
+        bits_per_word = _DATA_BIT_COUNT_PER_WORD + _PARITY_BIT_COUNT_PER_WORD
+        remaining_bits = (remaining_words * bits_per_word) - bits_so_far
+        _skipped_bits = self.get_bits(remaining_bits)
+
+        return NavigationMessageSubframe4(
+            data_id,
+            page_id,
         )
 
     def parse_subframe_5(self) -> NavigationMessageSubframe5:
