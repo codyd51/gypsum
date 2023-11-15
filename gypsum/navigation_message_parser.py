@@ -10,6 +10,15 @@ _DATA_BIT_COUNT_PER_WORD = 24
 _PARITY_BIT_COUNT_PER_WORD = 6
 
 
+def _get_twos_complement(num: int, bit_count: int) -> int:
+    # Check whether the high sign bit is set
+    if (num & (1 << (bit_count - 1))) == 0:
+        # Positive, we can return it as-is
+        return num
+    # Negate to return the negative representation
+    return num - (1 << bit_count)
+
+
 class GpsSubframeId(Enum):
     ONE = auto()
     TWO = auto()
@@ -114,17 +123,17 @@ class NavigationMessageSubframeParser:
     def peek_bit_count(self, n: int) -> list[int]:
         return self.bits[self.cursor : self.cursor + n]
 
-    def get_bit_count(self, n: int) -> list[int]:
+    def get_bits(self, n: int) -> list[int]:
         out = self.peek_bit_count(n)
         self.cursor += n
         self.word_bits.extend(out)
         return out
 
     def get_bit(self) -> int:
-        return self.get_bit_count(1)[0]
+        return self.get_bits(1)[0]
 
     def match_bits(self, expected_bits: list[int]) -> list[int]:
-        actual_bits = self.get_bit_count(len(expected_bits))
+        actual_bits = self.get_bits(len(expected_bits))
         if actual_bits != expected_bits:
             raise ValueError(
                 f'Expected to read {"".join([str(b) for b in expected_bits])}, '
@@ -136,10 +145,10 @@ class NavigationMessageSubframeParser:
         # Ref: IS-GPS-200L, Figure 20-2
         tlm_prelude = [1, 0, 0, 0, 1, 0, 1, 1]
         self.match_bits(tlm_prelude)
-        telemetry_message = self.get_bit_count(14)
+        telemetry_message = self.get_bits(14)
         integrity_status_flag = self.get_bit()
         spare_bit = self.get_bit()
-        parity_bits = self.get_bit_count(6)
+        parity_bits = self.get_bits(6)
         return TelemetryWord(
             telemetry_message=telemetry_message,
             integrity_status_flag=integrity_status_flag,
@@ -148,12 +157,12 @@ class NavigationMessageSubframeParser:
         )
 
     def parse_handover_word(self) -> HandoverWord:
-        time_of_week = self.get_bit_count(17)
+        time_of_week = self.get_bits(17)
         alert_flag = self.get_bit()
         anti_spoof_flag = self.get_bit()
-        subframe_id_codes = self.get_bit_count(3)
-        to_be_solved = self.get_bit_count(2)
-        parity_bits = self.get_bit_count(6)
+        subframe_id_codes = self.get_bits(3)
+        to_be_solved = self.get_bits(2)
+        parity_bits = self.get_bits(6)
         return HandoverWord(
             time_of_week=time_of_week,
             alert_flag=alert_flag,
@@ -163,77 +172,130 @@ class NavigationMessageSubframeParser:
             parity_bits=parity_bits,
         )
 
-    def get_bit_string(self, bit_count: int) -> str:
-        bits = self.get_bit_count(bit_count)
+    @staticmethod
+    def get_bit_string_from_bits(bits: list[int]) -> str:
         # Convert array of bits to an integer
-        bits_as_str = "".join([str(b) for b in bits])
-        return bits_as_str
+        return "".join([str(b) for b in bits])
+
+    def get_bit_string(self, bit_count: int) -> str:
+        return self.get_bit_string_from_bits(self.get_bits(bit_count))
+
+    def get_num_from_bits(
+        self,
+        # Force arguments to be specified as kwargs, for readability
+        *,
+        bits: list[int],
+        scale_factor_exp2: int,
+        twos_complement: bool,
+    ) -> float:
+        bits_as_str = self.get_bit_string_from_bits(bits)
+        value = int(bits_as_str, 2)
+        if twos_complement:
+            value = _get_twos_complement(value, len(bits_as_str))
+        return value * (2**scale_factor_exp2)
 
     def get_num(
         self,
+        # Force arguments to be specified as kwargs, for readability
+        *,
         bit_count: int,
-        scale_factor_exp2: int = 0,
-        twos_complement: bool = False,
+        scale_factor_exp2: int,
+        twos_complement: bool,
     ) -> float:
-        bits_as_str = self.get_bit_string(bit_count)
-        value = int(bits_as_str, 2)
-        if twos_complement:
+        return self.get_num_from_bits(
+            bits=self.get_bits(bit_count),
+            scale_factor_exp2=scale_factor_exp2,
+            twos_complement=twos_complement,
+        )
 
-            def twos_comp(val, bits):
-                """compute the 2's complement of int value val"""
-                if (val & (1 << (bits - 1))) != 0:  # if sign bit is set e.g., 8bit: 128-255
-                    val = val - (1 << bits)  # compute negative value
-                return val
+    def get_unscaled_num(
+        self,
+        bit_count: int,
+        *,
+        # Force arguments to be specified as kwargs, for readability
+        twos_complement: bool,
+    ) -> int:
+        return int(
+            self.get_num(
+                bit_count=bit_count,
+                scale_factor_exp2=0,
+                twos_complement=twos_complement,
+            )
+        )
 
-            value = twos_comp(value, len(bits_as_str))
-            # and (.Params) (
-
-            # {{ $style = cond (and (.Params) (isset .Params `adjust_y`)) (printf "transform: translate(0%, %s%)" .Get "adjust_y") ("") }}
-
-        return value * (2**scale_factor_exp2)
+    def get_unscaled_num_from_bits(
+        self,
+        bits: list[int],
+        *,
+        # Force arguments to be specified as kwargs, for readability
+        twos_complement: bool,
+    ) -> int:
+        return int(
+            self.get_num_from_bits(
+                bits=bits,
+                scale_factor_exp2=0,
+                twos_complement=twos_complement,
+            )
+        )
 
     def validate_parity(self):
-        parity_bits = self.get_bit_count(_PARITY_BIT_COUNT_PER_WORD)
+        parity_bits = self.get_bits(_PARITY_BIT_COUNT_PER_WORD)
         # TODO(PT): Verify we have exactly 24 bits in the buffer?
         data_bits = list(self.word_bits)
         self.word_bits.clear()
-        print(f"TODO: Validate parity bits {parity_bits} for {data_bits}")
+        #print(f"TODO: Validate parity bits {parity_bits} for {data_bits}")
 
     def parse_subframe_1(self) -> NavigationMessageSubframe1:
         # Ref: IS-GPS-200L, 20.3.3.5 Subframes 1, Figure 20-1. Data Format (sheet 1 of 11)
-
+        # Word 3
         # PT: This field stores the week number, mod 1024 weeks. See the comment on GPS_EPOCH_BASE_WEEK_NUMBER.
         # **This means that this field rolls over to zero every 19.6 years**.
         # See the comment on GPS_EPOCH_BASE_WEEK_NUMBER.
-        week_num_mod_1024 = self.get_num(10)
+        week_num_mod_1024 = self.get_unscaled_num(10, twos_complement=False)
         week_num = week_num_mod_1024 + GPS_EPOCH_BASE_WEEK_NUMBER
+        ca_or_p_on_l2 = self.get_bits(2)
+        ura_index = self.get_bits(4)
+        sv_health = self.get_bits(6)
+        iodc_high = self.get_bits(2)
+        self.validate_parity()
 
-        ca_or_p_on_l2 = self.get_bit_count(2)
-        ura_index = self.get_bit_count(4)
-        sv_health = self.get_bit_count(6)
-        iodc_high = int(self.get_num(bit_count=2))
-        self.validate_parity()
+        # Word 4
         l2_p_data_flag = self.get_bit()
-        _reserved_block1 = self.get_bit_count(23)
+        _reserved_block1 = self.get_bits(23)
         self.validate_parity()
-        _reserved_block2 = self.get_bit_count(24)
+
+        # Word 5
+        _reserved_block2 = self.get_bits(24)
         self.validate_parity()
-        _reserved_block3 = self.get_bit_count(24)
+
+        # Word 6
+        _reserved_block3 = self.get_bits(24)
         self.validate_parity()
-        _reserved_block4 = self.get_bit_count(16)
+
+        # Word 7
+        _reserved_block4 = self.get_bits(16)
         estimated_group_delay_differential = self.get_num(bit_count=8, scale_factor_exp2=-31, twos_complement=True)
         self.validate_parity()
-        iodc_low = int(self.get_num(bit_count=8))
-        t_oc = self.get_num(bit_count=16, scale_factor_exp2=4)
+
+        # Word 8
+        iodc_low = self.get_bits(8)
+        t_oc = self.get_num(bit_count=16, scale_factor_exp2=4, twos_complement=False)
         self.validate_parity()
+
+        # Word 9
         a_f2 = self.get_num(bit_count=8, scale_factor_exp2=-55, twos_complement=True)
         a_f1 = self.get_num(bit_count=16, scale_factor_exp2=-43, twos_complement=True)
         self.validate_parity()
+
+        # Word 10
         a_f0 = self.get_num(bit_count=22, scale_factor_exp2=-31, twos_complement=True)
-        _to_be_solved = self.get_bit_count(2)
+        _to_be_solved = self.get_bits(2)
         self.validate_parity()
 
-        iodc = (iodc_high << 8) | iodc_low
+        iodc = self.get_unscaled_num_from_bits(
+            bits=[*iodc_high, *iodc_low],
+            twos_complement=False,
+        )
 
         return NavigationMessageSubframe1(
             week_num=week_num,
