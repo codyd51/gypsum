@@ -3,6 +3,7 @@ from enum import Enum
 from enum import auto
 
 from gypsum.events import Event
+from gypsum.navigation_message_parser import GpsSubframeId
 from gypsum.navigation_message_parser import HandoverWord
 from gypsum.navigation_message_parser import NavigationMessageSubframeParser
 from gypsum.navigation_message_parser import TelemetryWord
@@ -142,8 +143,16 @@ class NavigationMessageDecoder:
         handover_word = subframe_parser.parse_handover_word()
         _logger.info(f'Handover word time of week: {handover_word.time_of_week_in_seconds}')
 
+        subframe_id = handover_word.subframe_id
+        if subframe_id == GpsSubframeId.ONE:
+            subframe = subframe_parser.parse_subframe_1()
+        elif subframe_id == GpsSubframeId.FIVE:
+            subframe = subframe_parser.parse_subframe_5()
+        else:
+            raise NotImplementedError(subframe_id)
+
+        print(f'**** Subframe {subframe}')
         return EmitSubframeEvent(
             telemetry_word,
             handover_word
         )
-
