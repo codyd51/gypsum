@@ -313,42 +313,50 @@ class NavigationMessageSubframeParser:
 
     def parse_subframe_5(self) -> Subframe5:
         # Ref: IS-GPS-200L, 20.3.3.5 Subframes 4 and 5
+        # TODO(PT): The below is only valid for pages 1 through 24!
+        # TODO(PT): Validate page ID?!
+
+        # Word 3
         data_id = self.match_bits([0, 1])
-        satellite_id = self.get_bit_count(5)
-
-        eccentricity = self.get_num(bit_count=16, scale_factor_exp2=-21)
+        satellite_id = self.get_bits(6)
+        eccentricity = self.get_num(bit_count=16, scale_factor_exp2=-21, twos_complement=False)
         self.validate_parity()
 
-        time_of_ephemeris = self.get_num(bit_count=8, scale_factor_exp2=12)
-        delta_inclination_angle = self.get_num(bit_count=16, scale_factor_exp2=2, twos_complement=True)
+        # Word 4
+        time_of_ephemeris = self.get_num(bit_count=8, scale_factor_exp2=12, twos_complement=False)
+        delta_inclination_angle = self.get_num(bit_count=16, scale_factor_exp2=-19, twos_complement=True)
         self.validate_parity()
 
+        # Word 5
         right_ascension_rate = self.get_num(bit_count=16, scale_factor_exp2=-38, twos_complement=True)
-        sv_health = self.get_num(bit_count=8)
+        sv_health = self.get_bits(8)
         self.validate_parity()
 
-        semi_major_axis_sqrt = self.get_num(bit_count=24, scale_factor_exp2=-11, twos_complement=True)
+        # Word 6
+        semi_major_axis_sqrt = self.get_num(bit_count=24, scale_factor_exp2=-11, twos_complement=False)
         self.validate_parity()
 
+        # Word 7
         longitude_of_ascension_mode = self.get_num(bit_count=24, scale_factor_exp2=-23, twos_complement=True)
         self.validate_parity()
 
+        # Word 8
         argument_of_perigree = self.get_num(bit_count=24, scale_factor_exp2=-23, twos_complement=True)
         self.validate_parity()
 
+        # Word 9
         mean_anomaly_at_reference_time = self.get_num(bit_count=24, scale_factor_exp2=-23, twos_complement=True)
         self.validate_parity()
 
-        # a_f0_high = self.get_num(bit_count=8, scale_factor_exp2=-20)
-        a_f0_high = self.get_num(bit_count=8)
-        a_f1 = self.get_num(bit_count=11, scale_factor_exp2=-38)
-        # a_f0_low = self.get_num(bit_count=3, scale_factor_exp2=-20)
-        a_f0_low = self.get_num(bit_count=3)
-        t = self.get_num(bit_count=2)
-        self.validate_parity()
+        # Word 10
+        a_f0_high = self.get_bits(8)
+        a_f1 = self.get_num(bit_count=11, scale_factor_exp2=-38, twos_complement=True)
+        a_f0_low = self.get_bits(3)
+        a_f0_bits = [*a_f0_high, *a_f0_low]
+        a_f0 = self.get_num_from_bits(bits=a_f0_bits, scale_factor_exp2=-20, twos_complement=True)
 
-        print(f"a_f0_high {a_f0_high} a_f0_low {a_f0_low}")
-        a_f0 = ((int(a_f0_high) << 3) | int(a_f0_low)) * (2**-20)
+        _to_be_solved = self.get_bits(2)
+        self.validate_parity()
 
         return Subframe5(
             data_id=data_id,
