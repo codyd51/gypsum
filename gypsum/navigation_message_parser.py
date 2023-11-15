@@ -96,7 +96,7 @@ class NavigationMessageSubframe1(NavigationMessageSubframe):
 @dataclass
 class NavigationMessageSubframe2(NavigationMessageSubframe):
     issue_of_data_ephemeris: list[int]
-    correction_to_radius_sin: float
+    correction_to_orbital_radius_sin: float
     mean_motion_difference_from_computed_value: float
     mean_anomaly_at_reference_time: float
     correction_to_latitude_cos: float
@@ -113,7 +113,24 @@ class NavigationMessageSubframe2(NavigationMessageSubframe):
 
 
 @dataclass
-class Subframe5(NavigationMessageSubframe):
+class NavigationMessageSubframe3(NavigationMessageSubframe):
+    correction_to_inclination_angle_cos: float
+    longitude_of_ascending_node: float
+    correction_to_inclination_angle_sin: float
+    inclination_angle: float
+    correction_to_orbital_radius_cos: float
+    argument_of_perigee: float
+    rate_of_right_ascension: float
+    rate_of_inclination_angle: float
+    issue_of_data_ephemeris: list[int]
+
+    @property
+    def subframe_id(self) -> GpsSubframeId:
+        return GpsSubframeId.THREE
+
+
+@dataclass
+class NavigationMessageSubframe5(NavigationMessageSubframe):
     data_id: list[int]
     satellite_id: list[int]
     eccentricity: float
@@ -336,7 +353,7 @@ class NavigationMessageSubframeParser:
         #
         # Word 3
         issue_of_data_ephemeris = self.get_bits(8)
-        correction_to_radius_sin = self.get_num(bit_count=16, scale_factor_exp2=-5, twos_complement=True)
+        correction_to_orbital_radius_sin = self.get_num(bit_count=16, scale_factor_exp2=-5, twos_complement=True)
         self.validate_parity()
 
         # Word 4
@@ -392,7 +409,7 @@ class NavigationMessageSubframeParser:
         # TODO(PT): Add units to each of these
         return NavigationMessageSubframe2(
             issue_of_data_ephemeris=issue_of_data_ephemeris,
-            correction_to_radius_sin=correction_to_radius_sin,
+            correction_to_orbital_radius_sin=correction_to_orbital_radius_sin,
             mean_motion_difference_from_computed_value=mean_motion_difference_from_computed_value,
             mean_anomaly_at_reference_time=mean_anomaly_at_reference_time,
             correction_to_latitude_cos=correction_to_latitude_cos,
@@ -404,7 +421,75 @@ class NavigationMessageSubframeParser:
             age_of_data_offset=age_of_data_offset,
         )
 
-    def parse_subframe_5(self) -> Subframe5:
+    def parse_subframe_3(self) -> NavigationMessageSubframe3:
+        # Ref: IS-GPS-200L, Figure 20-1. Data Format (sheet 3 of 11)
+        # Ref: IS-GPS-200L, 20.3.3.4.1 Content of Subframes 2 and 3
+        #
+        # Word 3
+        correction_to_inclination_angle_cos = self.get_num(bit_count=16, scale_factor_exp2=-29, twos_complement=True)
+        longitude_of_ascending_node_high = self.get_bits(8)
+        self.validate_parity()
+
+        # Word 4
+        longitude_of_ascending_node_low = self.get_bits(24)
+        longitude_of_ascending_node = self.get_num_from_bits(
+            bits=[*longitude_of_ascending_node_high, *longitude_of_ascending_node_low],
+            scale_factor_exp2=-31,
+            twos_complement=True,
+        )
+        self.validate_parity()
+
+        # Word 5
+        correction_to_inclination_angle_sin = self.get_num(bit_count=16, scale_factor_exp2=-29, twos_complement=True)
+        inclination_angle_high = self.get_bits(8)
+        self.validate_parity()
+
+        # Word 6
+        inclination_angle_low = self.get_bits(24)
+        inclination_angle = self.get_num_from_bits(
+            bits=[*inclination_angle_high, *inclination_angle_low],
+            scale_factor_exp2=-31,
+            twos_complement=True,
+        )
+        self.validate_parity()
+
+        # Word 7
+        correction_to_orbital_radius_cos = self.get_num(bit_count=16, scale_factor_exp2=-5, twos_complement=True)
+        argument_of_perigee_high = self.get_bits(8)
+        self.validate_parity()
+
+        # Word 8
+        argument_of_perigee_low = self.get_bits(24)
+        argument_of_perigee = self.get_num_from_bits(
+            bits=[*argument_of_perigee_high, *argument_of_perigee_low],
+            scale_factor_exp2=-31,
+            twos_complement=True,
+        )
+        self.validate_parity()
+
+        # Word 9
+        rate_of_right_ascension = self.get_num(bit_count=24, scale_factor_exp2=-43, twos_complement=True)
+        self.validate_parity()
+
+        # Word 10
+        issue_of_data_ephemeris = self.get_bits(8)
+        rate_of_inclination_angle = self.get_num(bit_count=14, scale_factor_exp2=-43, twos_complement=True)
+        _to_be_solved = self.get_bits(2)
+        self.validate_parity()
+
+        return NavigationMessageSubframe3(
+            correction_to_inclination_angle_cos=correction_to_inclination_angle_cos,
+            longitude_of_ascending_node=longitude_of_ascending_node,
+            correction_to_inclination_angle_sin=correction_to_inclination_angle_sin,
+            inclination_angle=inclination_angle,
+            correction_to_orbital_radius_cos=correction_to_orbital_radius_cos,
+            argument_of_perigee=argument_of_perigee,
+            rate_of_right_ascension=rate_of_right_ascension,
+            issue_of_data_ephemeris=issue_of_data_ephemeris,
+            rate_of_inclination_angle=rate_of_inclination_angle,
+        )
+
+    def parse_subframe_5(self) -> NavigationMessageSubframe5:
         # Ref: IS-GPS-200L, 20.3.3.5 Subframes 4 and 5
         # TODO(PT): The below is only valid for pages 1 through 24!
         # TODO(PT): Validate page ID?!
@@ -451,7 +536,7 @@ class NavigationMessageSubframeParser:
         _to_be_solved = self.get_bits(2)
         self.validate_parity()
 
-        return Subframe5(
+        return NavigationMessageSubframe5(
             data_id=data_id,
             satellite_id=satellite_id,
             eccentricity=eccentricity,

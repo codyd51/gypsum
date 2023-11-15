@@ -152,6 +152,8 @@ class NavigationMessageDecoder:
             subframe = subframe_parser.parse_subframe_1()
         elif subframe_id == GpsSubframeId.TWO:
             subframe = subframe_parser.parse_subframe_2()
+        elif subframe_id == GpsSubframeId.THREE:
+            subframe = subframe_parser.parse_subframe_2()
         elif subframe_id == GpsSubframeId.FIVE:
             subframe = subframe_parser.parse_subframe_5()
         else:
