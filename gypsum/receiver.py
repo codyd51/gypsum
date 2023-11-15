@@ -1,5 +1,6 @@
 import collections
 import logging
+from copy import deepcopy
 from enum import Enum
 from enum import auto
 from typing import Callable
@@ -9,6 +10,8 @@ import numpy as np
 
 from gypsum.acquisition import GpsSatelliteDetector
 from gypsum.acquisition import SatelliteAcquisitionAttemptResult
+from gypsum.config import PRIMARY_PLL_BANDWIDTH
+from gypsum.config import SECONDARY_PLL_BANDWIDTH
 from gypsum.events import UnknownEventError
 from gypsum.gps_ca_prn_codes import GpsSatelliteId
 from gypsum.gps_ca_prn_codes import generate_replica_prn_signals
@@ -24,6 +27,7 @@ from gypsum.navigation_message_decoder import CannotDetermineSubframePhaseEvent
 from gypsum.navigation_message_decoder import DeterminedSubframePhaseEvent
 from gypsum.navigation_message_decoder import EmitSubframeEvent
 from gypsum.navigation_message_decoder import NavigationMessageDecoder
+from gypsum.satellite import ALL_SATELLITE_IDS
 from gypsum.satellite import GpsSatellite
 from gypsum.antenna_sample_provider import AntennaSampleProvider
 from gypsum.config import ACQUISITION_INTEGRATION_PERIOD_MS
@@ -69,7 +73,7 @@ class GpsSatelliteSignalProcessingPipeline:
             carrier_wave_phase_errors=[],
             navigation_bit_pseudosymbols=[],
         )
-        self.tracker = GpsSatelliteTracker(tracking_params)
+        self.tracker = GpsSatelliteTracker(tracking_params, SECONDARY_PLL_BANDWIDTH)
         self.pseudosymbol_integrator = NavigationBitIntegrator()
         self.navigation_message_decoder = NavigationMessageDecoder()
         self.sample_index = 0
@@ -197,6 +201,7 @@ class GpsReceiver:
         self.rolling_samples_buffer = collections.deque(maxlen=ACQUISITION_INTEGRATION_PERIOD_MS)
 
         self.tracked_satellite_ids_to_processing_pipelines: dict[GpsSatelliteId, GpsSatelliteSignalProcessingPipeline] = {}
+        self.subframe_count = 0
 
     def step(self):
         """Run one 'iteration' of the GPS receiver. This consumes one millisecond of antenna data."""
@@ -210,7 +215,10 @@ class GpsReceiver:
         if len(self.tracked_satellite_ids_to_processing_pipelines) < 1:
             _logger.info(
                 f"Will perform acquisition search because we're only "
-                f"tracking {len(self.tracked_satellite_ids_to_processing_pipelines)} satellites"
+                f"tracking {len(self.tracked_satellite_ids_to_processing_pipelines)} satellites."
+            )
+            _logger.info(
+                f"{self.antenna_samples_provider.cursor}: Subframe count: {self.subframe_count}"
             )
             self._perform_acquisition()
 
@@ -218,6 +226,11 @@ class GpsReceiver:
         satellite_ids_to_subframes = self._track_acquired_satellites(samples, sample_index)
         if satellite_ids_to_subframes:
             print(satellite_ids_to_subframes)
+        for _, subframes in satellite_ids_to_subframes.items():
+            for subframe in subframes:
+                subframe: EmitSubframeEvent = subframe
+                print(f'Got subframe {subframe}')
+            self.subframe_count += len(subframes)
 
     def decode_nav_bits(self, sat: GpsSatelliteTrackingParameters):
         navigation_bit_pseudosymbols = sat.navigation_bit_pseudosymbols
@@ -278,7 +291,7 @@ class GpsReceiver:
             return
 
         _logger.info(
-            f"Performing acquisition search over {len(self.satellite_ids_eligible_for_acquisition)} satellites."
+            f"{self.antenna_samples_provider.cursor}: Performing acquisition search over {len(satellite_ids)} satellites ({self.subframe_count} subframes so far)."
         )
 
         samples_for_integration_period = np.concatenate(self.rolling_samples_buffer)
