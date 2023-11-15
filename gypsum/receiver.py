@@ -68,8 +68,10 @@ class GpsSatelliteSignalProcessingPipeline:
         self.tracker = GpsSatelliteTracker(tracking_params)
         self.pseudosymbol_integrator = NavigationBitIntegrator()
         self.navigation_message_decoder = NavigationMessageDecoder()
+        self.sample_index = 0
 
     def process_samples(self, samples: AntennaSamplesSpanningOneMs, sample_index: int) -> list[Event]:
+        self.sample_index = sample_index
         pseudosymbol = self.tracker.process_samples(samples, sample_index)
         integrator_events = self.pseudosymbol_integrator.process_pseudosymbol(pseudosymbol)
 
@@ -97,7 +99,7 @@ class GpsSatelliteSignalProcessingPipeline:
     def _handle_integrator_cannot_determine_bit_phase(self, event: CannotDetermineBitPhaseEvent) -> None:
         satellite_id = self.satellite.satellite_id.id
         _logger.info(
-            f'Integrator for SV({satellite_id} could not determine bit phase. Confidence: {int(event.confidence*100)}%'
+            f'{self.sample_index}: Integrator for SV({satellite_id} could not determine bit phase. Confidence: {int(event.confidence*100)}%'
         )
         # TODO(PT): Untrack this satellite (as the bits are low confidence)
         print(f'*** found ***')
@@ -118,7 +120,7 @@ class GpsSatelliteSignalProcessingPipeline:
     def _handle_integrator_lost_bit_coherence(self, event: LostBitCoherenceEvent) -> None:
         satellite_id = self.satellite.satellite_id.id
         _logger.info(
-            f'Integrator for SV({satellite_id} lost bit coherence. '
+            f'{self.sample_index}: Integrator for SV({satellite_id}) lost bit coherence. '
             f'Confidence for bit {self.pseudosymbol_integrator.bit_index}: {event.confidence}%'
         )
         # The integrator will need to determine a new bit phase?
