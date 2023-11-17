@@ -9,6 +9,9 @@ from gypsum.config import GPS_EPOCH_BASE_WEEK_NUMBER
 _DATA_BIT_COUNT_PER_WORD = 24
 _PARITY_BIT_COUNT_PER_WORD = 6
 
+# The parity calculation uses two bits from the previous word
+_BIT_COUNT_PER_PARITY_CHECK = 2 + _DATA_BIT_COUNT_PER_WORD
+
 
 def _get_twos_complement(num: int, bit_count: int) -> int:
     # Check whether the high sign bit is set
@@ -80,7 +83,8 @@ class NavigationMessageSubframe1(NavigationMessageSubframe):
     ca_or_p_on_l2: list[int]
     ura_index: list[int]
     sv_health: list[int]
-    iodc: int
+    # Ref: 20.3.3.3.1.5 Issue of Data, Clock (IODC)
+    issue_of_data_clock: list[int]
     l2_p_data_flag: int
     estimated_group_delay_differential: float
     t_oc: float
@@ -164,7 +168,10 @@ class NavigationMessageSubframeParser:
     def __init__(self, bits: list[int]) -> None:
         self.bits = bits
         self.cursor = 0
-        self.word_bits = collections.deque(maxlen=_DATA_BIT_COUNT_PER_WORD)
+        self.word_bits = collections.deque(maxlen=_BIT_COUNT_PER_PARITY_CHECK)
+        # Every parity check relies on the last two bits from the previous word
+        # For the first word, we prime the buffer with 00.
+        self.word_bits.extend([0, 0])
 
     def peek_bit_count(self, n: int) -> list[int]:
         return self.bits[self.cursor : self.cursor + n]
@@ -284,12 +291,84 @@ class NavigationMessageSubframeParser:
             )
         )
 
-    def validate_parity(self):
-        parity_bits = self.get_bits(_PARITY_BIT_COUNT_PER_WORD)
+    @staticmethod
+    def _validate_parity_bit(
+        complemented_data_bits: list[int],
+        actual_parity_bit: int,
+        bit_from_previous_parity_word: int,
+        spec_bit_indexes_to_use_as_xor_inputs: list[int],
+    ):
+        data_bits_to_use_for_xor_inputs = [complemented_data_bits[i - 1] for i in spec_bit_indexes_to_use_as_xor_inputs]
+        bits_to_use_for_xor_inputs = [bit_from_previous_parity_word, *data_bits_to_use_for_xor_inputs]
+        accumulator = 0
+        for bit in bits_to_use_for_xor_inputs:
+            accumulator = (accumulator + bit) % 2
+        if accumulator != actual_parity_bit:
+            raise ValueError(f'Failed parity check: {complemented_data_bits}, {actual_parity_bit}, {bit_from_previous_parity_word}, {spec_bit_indexes_to_use_as_xor_inputs}')
+
+    def validate_parity(self) -> list[int]:
+        #if len(self.word_bits) != _BIT_COUNT_PER_PARITY_CHECK:
+        #    raise ValueError(f'Expected exactly {_BIT_COUNT_PER_PARITY_CHECK} in parity check, but found {len(self.word_bits)}')
+        extras_needed = _BIT_COUNT_PER_PARITY_CHECK - len(self.word_bits)
+        self.get_bits(extras_needed)
+
+        prev_d29 = self.word_bits[0]
+        prev_d30 = self.word_bits[1]
+        data_bits = list(self.word_bits)[2:]
+
+        complemented_data_bits = []
+        for i, data_bit in enumerate(data_bits):
+            complemented_bit = (data_bit + prev_d30) % 2
+            complemented_data_bits.append(complemented_bit)
+
+        actual_parity_bits = self.get_bits(_PARITY_BIT_COUNT_PER_WORD)
+        # Validate each parity bit
+        # The bit indexes are written out to match the equation as-written in Table 20-XIV. Parity Encoding Equations,
+        # for reader clarity. This means we need to do a bit of post-processing on the bit indexes.
+        self._validate_parity_bit(
+            complemented_data_bits,
+            actual_parity_bits[0],
+            prev_d29,
+            [1, 2, 3, 5, 6, 10, 11, 12, 13, 14, 17, 18, 20, 23],
+        )
+        self._validate_parity_bit(
+            complemented_data_bits,
+            actual_parity_bits[1],
+            prev_d30,
+            [2, 3, 4, 6, 7, 11, 12, 13, 14, 15, 18, 19, 21, 24],
+        )
+        self._validate_parity_bit(
+            complemented_data_bits,
+            actual_parity_bits[2],
+            prev_d29,
+            [1, 3, 4, 5, 7, 8, 12, 13, 14, 15, 16, 19, 20, 22],
+        )
+        self._validate_parity_bit(
+            complemented_data_bits,
+            actual_parity_bits[3],
+            prev_d30,
+            [2, 4, 5, 6, 8, 9, 13, 14, 15, 16, 17, 20, 21, 23],
+        )
+        self._validate_parity_bit(
+            complemented_data_bits,
+            actual_parity_bits[4],
+            prev_d30,
+            [1, 3, 5, 6, 7, 9, 10, 14, 15, 16, 17, 18, 21, 22, 24],
+        )
+        self._validate_parity_bit(
+            complemented_data_bits,
+            actual_parity_bits[5],
+            prev_d29,
+            [3, 5, 6, 8, 9, 10, 11, 13, 15, 19, 22, 23, 24],
+        )
+
         # TODO(PT): Verify we have exactly 24 bits in the buffer?
         data_bits = list(self.word_bits)
+        # Keep the last two parity bits for the next word
         self.word_bits.clear()
+        self.word_bits.extend(actual_parity_bits[-2:])
         #print(f"TODO: Validate parity bits {parity_bits} for {data_bits}")
+        return complemented_data_bits
 
     def parse_subframe_1(self) -> NavigationMessageSubframe1:
         # Ref: IS-GPS-200L, 20.3.3.5 Subframes 1, Figure 20-1. Data Format (sheet 1 of 11)

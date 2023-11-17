@@ -39,6 +39,7 @@ class LostSatelliteLockError(Exception):
 
 
 class TrackingState(Enum):
+    # TODO(PT): Used?
     PROVISIONAL_PROBE = auto()
     LOCKED = auto()
 
@@ -185,7 +186,7 @@ class GpsReceiver:
         }
         # TODO(PT): Perhaps this state should belong to the detector.
         # The receiver can remove satellites from the pool when it decides a satellite has been acquired
-        # self.satellite_ids_eligible_for_acquisition = deepcopy(ALL_SATELLITE_IDS)
+        #self.satellite_ids_eligible_for_acquisition = deepcopy(ALL_SATELLITE_IDS)
         self.satellite_ids_eligible_for_acquisition = [GpsSatelliteId(id=32)]
         self.satellite_detector = GpsSatelliteDetector(self.satellites_by_id)
         # Used during acquisition to integrate correlation over a longer period than a millisecond.
@@ -217,11 +218,11 @@ class GpsReceiver:
         satellite_ids_to_subframes = self._track_acquired_satellites(samples, sample_index)
         if satellite_ids_to_subframes:
             print(satellite_ids_to_subframes)
-        for _, emit_subframe_events in satellite_ids_to_subframes.items():
+        for satellite_id, emit_subframe_events in satellite_ids_to_subframes.items():
             for emit_subframe_event in emit_subframe_events:
                 emit_subframe_event: EmitSubframeEvent = emit_subframe_event
                 subframe = emit_subframe_event.subframe
-                print(f'*** Subframe {subframe.subframe_id}:')
+                print(f'*** Subframe {subframe.subframe_id.name} from {satellite_id}:')
                 from dataclasses import fields
                 for field in fields(subframe):
                     print(f'\t{field.name}: {getattr(subframe, field.name)}')
