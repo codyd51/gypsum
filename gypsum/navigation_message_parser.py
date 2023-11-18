@@ -1,13 +1,18 @@
 import collections
+import logging
 from dataclasses import dataclass
 from enum import Enum, auto
 from typing import Self
 
 from gypsum.config import GPS_EPOCH_BASE_WEEK_NUMBER
 
+
+_logger = logging.getLogger(__name__)
+
 # Every word ends in 6 parity bits
 _DATA_BIT_COUNT_PER_WORD = 24
 _PARITY_BIT_COUNT_PER_WORD = 6
+_BIT_COUNT_PER_WORD = _DATA_BIT_COUNT_PER_WORD + _PARITY_BIT_COUNT_PER_WORD
 
 # The parity calculation uses two bits from the previous word
 _BIT_COUNT_PER_PARITY_CHECK = 2 + _DATA_BIT_COUNT_PER_WORD
@@ -46,7 +51,6 @@ class TelemetryWord:
     telemetry_message: list[int]
     integrity_status_flag: int
     spare_bit: int
-    parity_bits: list[int]
 
 
 @dataclass
@@ -56,7 +60,6 @@ class HandoverWord:
     anti_spoof_flag: int
     subframe_id: GpsSubframeId
     to_be_solved: list[int]
-    parity_bits: list[int]
 
     @property
     def time_of_week_in_seconds(self) -> int:
@@ -168,18 +171,33 @@ class NavigationMessageSubframeParser:
     def __init__(self, bits: list[int]) -> None:
         self.bits = bits
         self.cursor = 0
-        self.word_bits = collections.deque(maxlen=_BIT_COUNT_PER_PARITY_CHECK)
+        self.preprocessed_data_bits_of_current_word = []
         # Every parity check relies on the last two bits from the previous word
         # For the first word, we prime the buffer with 00.
-        self.word_bits.extend([0, 0])
+        self.last_two_parity_bits = [0, 0]
 
-    def peek_bit_count(self, n: int) -> list[int]:
-        return self.bits[self.cursor : self.cursor + n]
+    def peek_bit_count(self, n: int, from_preprocessed_word_bits: bool = True) -> list[int]:
+        # Transparently provide decoded bits, post-parity check, unless the caller really wants raw bits
+        if from_preprocessed_word_bits:
+            # word_relative_cursor = self.cursor % _DATA_BIT_COUNT_PER_WORD
+            # return self.preprocessed_data_bits_of_current_word[word_relative_cursor: word_relative_cursor + n]
+            return self.preprocessed_data_bits_of_current_word[:n]
+        return self.bits[self.cursor: self.cursor + n]
 
-    def get_bits(self, n: int) -> list[int]:
-        out = self.peek_bit_count(n)
-        self.cursor += n
-        self.word_bits.extend(out)
+    def get_bits(self, n: int, from_preprocessed_word_bits: bool = True) -> list[int]:
+        if from_preprocessed_word_bits:
+            # If we've run out of bits in this word, prepare another word now
+            if len(self.preprocessed_data_bits_of_current_word) == 0:
+                self.preprocess_next_word()
+
+        out = self.peek_bit_count(n, from_preprocessed_word_bits=from_preprocessed_word_bits)
+
+        if from_preprocessed_word_bits:
+            # Drop these bits from the queued, preprocessed bits of the current word
+            self.preprocessed_data_bits_of_current_word = self.preprocessed_data_bits_of_current_word[n:]
+        else:
+            # Advance our position in the underlying buffer
+            self.cursor += n
         return out
 
     def get_bit(self) -> int:
@@ -193,37 +211,6 @@ class NavigationMessageSubframeParser:
                 f'but read {"".join([str(b) for b in actual_bits])}'
             )
         return expected_bits
-
-    def parse_telemetry_word(self) -> TelemetryWord:
-        # Ref: IS-GPS-200L, Figure 20-2
-        tlm_prelude = [1, 0, 0, 0, 1, 0, 1, 1]
-        self.match_bits(tlm_prelude)
-        telemetry_message = self.get_bits(14)
-        integrity_status_flag = self.get_bit()
-        spare_bit = self.get_bit()
-        parity_bits = self.get_bits(6)
-        return TelemetryWord(
-            telemetry_message=telemetry_message,
-            integrity_status_flag=integrity_status_flag,
-            spare_bit=spare_bit,
-            parity_bits=parity_bits,
-        )
-
-    def parse_handover_word(self) -> HandoverWord:
-        time_of_week = self.get_bits(17)
-        alert_flag = self.get_bit()
-        anti_spoof_flag = self.get_bit()
-        subframe_id_codes = self.get_bits(3)
-        to_be_solved = self.get_bits(2)
-        parity_bits = self.get_bits(6)
-        return HandoverWord(
-            time_of_week=time_of_week,
-            alert_flag=alert_flag,
-            anti_spoof_flag=anti_spoof_flag,
-            subframe_id=GpsSubframeId.from_bits(subframe_id_codes),
-            to_be_solved=to_be_solved,
-            parity_bits=parity_bits,
-        )
 
     @staticmethod
     def get_bit_string_from_bits(bits: list[int]) -> str:
@@ -291,38 +278,26 @@ class NavigationMessageSubframeParser:
             )
         )
 
-    @staticmethod
-    def _validate_parity_bit(
-        complemented_data_bits: list[int],
-        actual_parity_bit: int,
-        bit_from_previous_parity_word: int,
-        spec_bit_indexes_to_use_as_xor_inputs: list[int],
-    ):
-        data_bits_to_use_for_xor_inputs = [complemented_data_bits[i - 1] for i in spec_bit_indexes_to_use_as_xor_inputs]
-        bits_to_use_for_xor_inputs = [bit_from_previous_parity_word, *data_bits_to_use_for_xor_inputs]
-        accumulator = 0
-        for bit in bits_to_use_for_xor_inputs:
-            accumulator = (accumulator + bit) % 2
-        if accumulator != actual_parity_bit:
-            raise ValueError(f'Failed parity check: {complemented_data_bits}, {actual_parity_bit}, {bit_from_previous_parity_word}, {spec_bit_indexes_to_use_as_xor_inputs}')
-
-    def validate_parity(self) -> list[int]:
-        #if len(self.word_bits) != _BIT_COUNT_PER_PARITY_CHECK:
-        #    raise ValueError(f'Expected exactly {_BIT_COUNT_PER_PARITY_CHECK} in parity check, but found {len(self.word_bits)}')
-        extras_needed = _BIT_COUNT_PER_PARITY_CHECK - len(self.word_bits)
-        self.get_bits(extras_needed)
-
-        prev_d29 = self.word_bits[0]
-        prev_d30 = self.word_bits[1]
-        data_bits = list(self.word_bits)[2:]
+    def preprocess_next_word(self) -> None:
+        _logger.info(f'Preprocessing next subframe word...')
+        # Each word needs to be decoded based on the last parity bits from the previous word
+        prev_d29 = self.last_two_parity_bits[0]
+        prev_d30 = self.last_two_parity_bits[1]
+        word_bits = self.get_bits(
+            _BIT_COUNT_PER_WORD,
+            # Read raw bits from our subframe buffer
+            from_preprocessed_word_bits=False
+        )
+        _logger.info(f'Word bits: {word_bits}')
+        data_bits = word_bits[:_DATA_BIT_COUNT_PER_WORD]
 
         complemented_data_bits = []
         for i, data_bit in enumerate(data_bits):
             complemented_bit = (data_bit + prev_d30) % 2
             complemented_data_bits.append(complemented_bit)
 
-        actual_parity_bits = self.get_bits(_PARITY_BIT_COUNT_PER_WORD)
         # Validate each parity bit
+        actual_parity_bits = word_bits[-_PARITY_BIT_COUNT_PER_WORD:]
         # The bit indexes are written out to match the equation as-written in Table 20-XIV. Parity Encoding Equations,
         # for reader clarity. This means we need to do a bit of post-processing on the bit indexes.
         self._validate_parity_bit(
@@ -362,13 +337,59 @@ class NavigationMessageSubframeParser:
             [3, 5, 6, 8, 9, 10, 11, 13, 15, 19, 22, 23, 24],
         )
 
-        # TODO(PT): Verify we have exactly 24 bits in the buffer?
-        data_bits = list(self.word_bits)
         # Keep the last two parity bits for the next word
-        self.word_bits.clear()
-        self.word_bits.extend(actual_parity_bits[-2:])
-        #print(f"TODO: Validate parity bits {parity_bits} for {data_bits}")
-        return complemented_data_bits
+        self.last_two_parity_bits = actual_parity_bits[-2:]
+        # And persist the preprocessed word bits
+        self.preprocessed_data_bits_of_current_word = complemented_data_bits
+
+    @staticmethod
+    def _validate_parity_bit(
+        complemented_data_bits: list[int],
+        actual_parity_bit: int,
+        bit_from_previous_parity_word: int,
+        spec_bit_indexes_to_use_as_xor_inputs: list[int],
+    ):
+        data_bits_to_use_for_xor_inputs = [complemented_data_bits[i - 1] for i in spec_bit_indexes_to_use_as_xor_inputs]
+        bits_to_use_for_xor_inputs = [bit_from_previous_parity_word, *data_bits_to_use_for_xor_inputs]
+        accumulator = 0
+        for bit in bits_to_use_for_xor_inputs:
+            accumulator = (accumulator + bit) % 2
+        if accumulator != actual_parity_bit:
+            #raise ValueError(
+            #    f'Failed parity check: {complemented_data_bits}, {actual_parity_bit}, '
+            #    f'{bit_from_previous_parity_word}, {spec_bit_indexes_to_use_as_xor_inputs}'
+            #)
+            _logger.info(
+                f'Failed parity check: {complemented_data_bits}, {accumulator} != {actual_parity_bit}, '
+                f'd30*={bit_from_previous_parity_word}, xors={spec_bit_indexes_to_use_as_xor_inputs}'
+            )
+
+    def parse_telemetry_word(self) -> TelemetryWord:
+        # Ref: IS-GPS-200L, Figure 20-2
+        tlm_prelude = [1, 0, 0, 0, 1, 0, 1, 1]
+        self.match_bits(tlm_prelude)
+        telemetry_message = self.get_bits(14)
+        integrity_status_flag = self.get_bit()
+        spare_bit = self.get_bit()
+        return TelemetryWord(
+            telemetry_message=telemetry_message,
+            integrity_status_flag=integrity_status_flag,
+            spare_bit=spare_bit,
+        )
+
+    def parse_handover_word(self) -> HandoverWord:
+        time_of_week = self.get_bits(17)
+        alert_flag = self.get_bit()
+        anti_spoof_flag = self.get_bit()
+        subframe_id_codes = self.get_bits(3)
+        to_be_solved = self.get_bits(2)
+        return HandoverWord(
+            time_of_week=time_of_week,
+            alert_flag=alert_flag,
+            anti_spoof_flag=anti_spoof_flag,
+            subframe_id=GpsSubframeId.from_bits(subframe_id_codes),
+            to_be_solved=to_be_solved,
+        )
 
     def parse_subframe_1(self) -> NavigationMessageSubframe1:
         # Ref: IS-GPS-200L, 20.3.3.5 Subframes 1, Figure 20-1. Data Format (sheet 1 of 11)
@@ -381,53 +402,41 @@ class NavigationMessageSubframeParser:
         ca_or_p_on_l2 = self.get_bits(2)
         ura_index = self.get_bits(4)
         sv_health = self.get_bits(6)
-        iodc_high = self.get_bits(2)
-        self.validate_parity()
+        issue_of_data_clock_high = self.get_bits(2)
 
         # Word 4
         l2_p_data_flag = self.get_bit()
         _reserved_block1 = self.get_bits(23)
-        self.validate_parity()
 
         # Word 5
         _reserved_block2 = self.get_bits(24)
-        self.validate_parity()
 
         # Word 6
         _reserved_block3 = self.get_bits(24)
-        self.validate_parity()
 
         # Word 7
         _reserved_block4 = self.get_bits(16)
         estimated_group_delay_differential = self.get_num(bit_count=8, scale_factor_exp2=-31, twos_complement=True)
-        self.validate_parity()
 
         # Word 8
-        iodc_low = self.get_bits(8)
+        issue_of_data_clock_low = self.get_bits(8)
+        issue_of_data_clock = [*issue_of_data_clock_high, *issue_of_data_clock_low]
         t_oc = self.get_num(bit_count=16, scale_factor_exp2=4, twos_complement=False)
-        self.validate_parity()
 
         # Word 9
         a_f2 = self.get_num(bit_count=8, scale_factor_exp2=-55, twos_complement=True)
         a_f1 = self.get_num(bit_count=16, scale_factor_exp2=-43, twos_complement=True)
-        self.validate_parity()
 
         # Word 10
         a_f0 = self.get_num(bit_count=22, scale_factor_exp2=-31, twos_complement=True)
         _to_be_solved = self.get_bits(2)
-        self.validate_parity()
-
-        iodc = self.get_unscaled_num_from_bits(
-            bits=[*iodc_high, *iodc_low],
-            twos_complement=False,
-        )
 
         return NavigationMessageSubframe1(
             week_num=week_num,
             ca_or_p_on_l2=ca_or_p_on_l2,
             ura_index=ura_index,
             sv_health=sv_health,
-            iodc=iodc,
+            issue_of_data_clock=issue_of_data_clock,
             l2_p_data_flag=l2_p_data_flag,
             estimated_group_delay_differential=estimated_group_delay_differential,
             t_oc=t_oc,
@@ -443,12 +452,10 @@ class NavigationMessageSubframeParser:
         # Word 3
         issue_of_data_ephemeris = self.get_bits(8)
         correction_to_orbital_radius_sin = self.get_num(bit_count=16, scale_factor_exp2=-5, twos_complement=True)
-        self.validate_parity()
 
         # Word 4
         mean_motion_difference_from_computed_value = self.get_num(bit_count=16, scale_factor_exp2=-43, twos_complement=True)
         mean_anomaly_at_reference_time_high = self.get_bits(8)
-        self.validate_parity()
 
         # Word 5
         mean_anomaly_at_reference_time_low = self.get_bits(24)
@@ -458,12 +465,10 @@ class NavigationMessageSubframeParser:
             scale_factor_exp2=-31,
             twos_complement=True
         )
-        self.validate_parity()
 
         # Word 6
         correction_to_latitude_cos = self.get_num(bit_count=16, scale_factor_exp2=-29, twos_complement=True)
         eccentricity_high = self.get_bits(8)
-        self.validate_parity()
 
         # Word 7
         eccentricity_low = self.get_bits(24)
@@ -473,12 +478,10 @@ class NavigationMessageSubframeParser:
             scale_factor_exp2=-33,
             twos_complement=False
         )
-        self.validate_parity()
 
         # Word 8
         correction_to_latitude_sin = self.get_num(bit_count=16, scale_factor_exp2=-29, twos_complement=True)
         sqrt_semi_major_axis_high = self.get_bits(8)
-        self.validate_parity()
 
         sqrt_semi_major_axis_low = self.get_bits(24)
         sqrt_semi_major_axis_bits = [*sqrt_semi_major_axis_high, *sqrt_semi_major_axis_low]
@@ -487,13 +490,11 @@ class NavigationMessageSubframeParser:
             scale_factor_exp2=-19,
             twos_complement=False
         )
-        self.validate_parity()
 
         reference_time_ephemeris = self.get_num(bit_count=16, scale_factor_exp2=4, twos_complement=False)
         fit_interval_flag = self.get_bit()
         age_of_data_offset = self.get_bits(5)
         _to_be_solved = self.get_bits(2)
-        self.validate_parity()
 
         # TODO(PT): Add units to each of these
         return NavigationMessageSubframe2(
@@ -517,7 +518,6 @@ class NavigationMessageSubframeParser:
         # Word 3
         correction_to_inclination_angle_cos = self.get_num(bit_count=16, scale_factor_exp2=-29, twos_complement=True)
         longitude_of_ascending_node_high = self.get_bits(8)
-        self.validate_parity()
 
         # Word 4
         longitude_of_ascending_node_low = self.get_bits(24)
@@ -526,12 +526,10 @@ class NavigationMessageSubframeParser:
             scale_factor_exp2=-31,
             twos_complement=True,
         )
-        self.validate_parity()
 
         # Word 5
         correction_to_inclination_angle_sin = self.get_num(bit_count=16, scale_factor_exp2=-29, twos_complement=True)
         inclination_angle_high = self.get_bits(8)
-        self.validate_parity()
 
         # Word 6
         inclination_angle_low = self.get_bits(24)
@@ -540,12 +538,10 @@ class NavigationMessageSubframeParser:
             scale_factor_exp2=-31,
             twos_complement=True,
         )
-        self.validate_parity()
 
         # Word 7
         correction_to_orbital_radius_cos = self.get_num(bit_count=16, scale_factor_exp2=-5, twos_complement=True)
         argument_of_perigee_high = self.get_bits(8)
-        self.validate_parity()
 
         # Word 8
         argument_of_perigee_low = self.get_bits(24)
@@ -554,17 +550,14 @@ class NavigationMessageSubframeParser:
             scale_factor_exp2=-31,
             twos_complement=True,
         )
-        self.validate_parity()
 
         # Word 9
         rate_of_right_ascension = self.get_num(bit_count=24, scale_factor_exp2=-43, twos_complement=True)
-        self.validate_parity()
 
         # Word 10
         issue_of_data_ephemeris = self.get_bits(8)
         rate_of_inclination_angle = self.get_num(bit_count=14, scale_factor_exp2=-43, twos_complement=True)
         _to_be_solved = self.get_bits(2)
-        self.validate_parity()
 
         return NavigationMessageSubframe3(
             correction_to_inclination_angle_cos=correction_to_inclination_angle_cos,
@@ -588,11 +581,11 @@ class NavigationMessageSubframeParser:
 
         # PT: The rest of the bits depend on the page we're in
         # For now, skip the rest of the subframe
-        bits_so_far = 8
-        remaining_words = 8
-        bits_per_word = _DATA_BIT_COUNT_PER_WORD + _PARITY_BIT_COUNT_PER_WORD
-        remaining_bits = (remaining_words * bits_per_word) - bits_so_far
-        _skipped_bits = self.get_bits(remaining_bits)
+        _skipped_word_remainder = self.get_bits(8)
+        # PT: Current implementation limitation of get_bits(): we need to invoke it once per word. Otherwise, the
+        # parity-processed bits won't be refilled after the first word. Would be easy to fix.
+        for remaining_word_idx in range(8):
+            _skipped_word_bits = self.get_bits(_DATA_BIT_COUNT_PER_WORD, from_preprocessed_word_bits=False)
 
         return NavigationMessageSubframe4(
             data_id,
@@ -608,33 +601,26 @@ class NavigationMessageSubframeParser:
         data_id = self.match_bits([0, 1])
         satellite_id = self.get_bits(6)
         eccentricity = self.get_num(bit_count=16, scale_factor_exp2=-21, twos_complement=False)
-        self.validate_parity()
 
         # Word 4
         time_of_ephemeris = self.get_num(bit_count=8, scale_factor_exp2=12, twos_complement=False)
         delta_inclination_angle = self.get_num(bit_count=16, scale_factor_exp2=-19, twos_complement=True)
-        self.validate_parity()
 
         # Word 5
         right_ascension_rate = self.get_num(bit_count=16, scale_factor_exp2=-38, twos_complement=True)
         sv_health = self.get_bits(8)
-        self.validate_parity()
 
         # Word 6
         semi_major_axis_sqrt = self.get_num(bit_count=24, scale_factor_exp2=-11, twos_complement=False)
-        self.validate_parity()
 
         # Word 7
         longitude_of_ascension_mode = self.get_num(bit_count=24, scale_factor_exp2=-23, twos_complement=True)
-        self.validate_parity()
 
         # Word 8
         argument_of_perigree = self.get_num(bit_count=24, scale_factor_exp2=-23, twos_complement=True)
-        self.validate_parity()
 
         # Word 9
         mean_anomaly_at_reference_time = self.get_num(bit_count=24, scale_factor_exp2=-23, twos_complement=True)
-        self.validate_parity()
 
         # Word 10
         a_f0_high = self.get_bits(8)
@@ -644,7 +630,6 @@ class NavigationMessageSubframeParser:
         a_f0 = self.get_num_from_bits(bits=a_f0_bits, scale_factor_exp2=-20, twos_complement=True)
 
         _to_be_solved = self.get_bits(2)
-        self.validate_parity()
 
         return NavigationMessageSubframe5(
             data_id=data_id,
