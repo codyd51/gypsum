@@ -1,5 +1,6 @@
 import collections
 import logging
+from copy import deepcopy
 
 import numpy as np
 
@@ -10,11 +11,12 @@ from gypsum.constants import SAMPLES_PER_PRN_TRANSMISSION
 from gypsum.gps_ca_prn_codes import GpsSatelliteId, generate_replica_prn_signals
 from gypsum.navigation_bit_intergrator import Event
 from gypsum.navigation_message_decoder import EmitSubframeEvent
+from gypsum.satellite import ALL_SATELLITE_IDS
 from gypsum.satellite import GpsSatellite
 from gypsum.satellite_signal_processing_pipeline import GpsSatelliteSignalProcessingPipeline
 from gypsum.satellite_signal_processing_pipeline import LostSatelliteLockError
-from gypsum.tracker import GpsSatelliteTrackingParameters
-from gypsum.utils import AntennaSamplesSpanningOneMs, chunks, does_list_contain_sublist
+from gypsum.utils import AntennaSamplesSpanningOneMs
+from gypsum.world_model import DeterminedSatelliteOrbitEvent
 from gypsum.world_model import GpsWorldModel
 
 _logger = logging.getLogger(__name__)
@@ -67,8 +69,10 @@ class GpsReceiver:
             self._perform_acquisition()
 
         # Continue tracking each acquired satellite
-        satellite_ids_to_events = self._track_acquired_satellites(samples, sample_index)
-        for satellite_id, events in satellite_ids_to_events.items():
+        satellite_ids_to_tracker_events = self._track_acquired_satellites(samples, sample_index)
+        # And keep track of updates to our world model
+        satellite_ids_to_world_model_events = {}
+        for satellite_id, events in satellite_ids_to_tracker_events.items():
             for event in events:
                 if isinstance(event, EmitSubframeEvent):
                     self.subframe_count += 1
@@ -79,10 +83,20 @@ class GpsReceiver:
                     for field in fields(subframe):
                         print(f'\t{field.name}: {getattr(subframe, field.name)}')
 
-                    self.world_model.handle_subframe_emitted(satellite_id, emit_subframe_event)
+                    world_model_events_from_this_satellite = self.world_model.handle_subframe_emitted(
+                        satellite_id,
+                        emit_subframe_event
+                    )
+                    satellite_ids_to_world_model_events[satellite_id] = world_model_events_from_this_satellite
                 else:
                     raise NotImplementedError(f'Unhandled event type: {type(event)}')
 
+        # Process updates to our world model
+        for satellite_id, world_model_events in satellite_ids_to_world_model_events.items():
+            for world_model_event in world_model_events:
+                if isinstance(world_model_event, DeterminedSatelliteOrbitEvent):
+                    print(f'Determined the orbit of {satellite_id}! {world_model_event.orbital_parameters}')
+                    orbit_params = world_model_event.orbital_parameters
     def _perform_acquisition(self) -> None:
         self._perform_acquisition_on_satellite_ids(self.satellite_ids_eligible_for_acquisition)
 
