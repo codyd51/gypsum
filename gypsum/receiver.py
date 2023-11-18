@@ -15,6 +15,7 @@ from gypsum.satellite_signal_processing_pipeline import GpsSatelliteSignalProces
 from gypsum.satellite_signal_processing_pipeline import LostSatelliteLockError
 from gypsum.tracker import GpsSatelliteTrackingParameters
 from gypsum.utils import AntennaSamplesSpanningOneMs, chunks, does_list_contain_sublist
+from gypsum.world_model import GpsWorldModel
 
 _logger = logging.getLogger(__name__)
 
@@ -32,6 +33,10 @@ class GpsReceiver:
         # TODO(PT): Perhaps this state should belong to the detector.
         # The receiver can remove satellites from the pool when it decides a satellite has been acquired
         #self.satellite_ids_eligible_for_acquisition = deepcopy(ALL_SATELLITE_IDS)
+        # PT: The phase isn't about the chip offset, it's about "the timestamp of where the PRN starts"
+        # Literally they're the same, but the latter makes more sense conceptually in terms of 'measuring the delay' -
+        # you look at the timestamp where the PRN starts.
+        # Example: timestamped HOW and we receive it 7 milliseconds later (for 20km distance)
         self.satellite_ids_eligible_for_acquisition = [GpsSatelliteId(id=32)]
         self.satellite_detector = GpsSatelliteDetector(self.satellites_by_id)
         # Used during acquisition to integrate correlation over a longer period than a millisecond.
@@ -41,6 +46,8 @@ class GpsReceiver:
             GpsSatelliteId, GpsSatelliteSignalProcessingPipeline
         ] = {}
         self.subframe_count = 0
+
+        self.world_model = GpsWorldModel()
 
     def step(self):
         """Run one 'iteration' of the GPS receiver. This consumes one millisecond of antenna data."""
@@ -60,19 +67,21 @@ class GpsReceiver:
             self._perform_acquisition()
 
         # Continue tracking each acquired satellite
-        satellite_ids_to_subframes = self._track_acquired_satellites(samples, sample_index)
-        if satellite_ids_to_subframes:
-            print(satellite_ids_to_subframes)
-        for satellite_id, emit_subframe_events in satellite_ids_to_subframes.items():
-            for emit_subframe_event in emit_subframe_events:
-                emit_subframe_event: EmitSubframeEvent = emit_subframe_event
-                subframe = emit_subframe_event.subframe
-                print(f'*** Subframe {subframe.subframe_id.name} from {satellite_id}:')
-                from dataclasses import fields
-                for field in fields(subframe):
-                    print(f'\t{field.name}: {getattr(subframe, field.name)}')
+        satellite_ids_to_events = self._track_acquired_satellites(samples, sample_index)
+        for satellite_id, events in satellite_ids_to_events.items():
+            for event in events:
+                if isinstance(event, EmitSubframeEvent):
+                    self.subframe_count += 1
+                    emit_subframe_event: EmitSubframeEvent = event
+                    subframe = emit_subframe_event.subframe
+                    print(f'*** Subframe {subframe.subframe_id.name} from {satellite_id}:')
+                    from dataclasses import fields
+                    for field in fields(subframe):
+                        print(f'\t{field.name}: {getattr(subframe, field.name)}')
 
-            self.subframe_count += len(emit_subframe_events)
+                    self.world_model.handle_subframe_emitted(satellite_id, emit_subframe_event)
+                else:
+                    raise NotImplementedError(f'Unhandled event type: {type(event)}')
 
     def _perform_acquisition(self) -> None:
         self._perform_acquisition_on_satellite_ids(self.satellite_ids_eligible_for_acquisition)
