@@ -94,24 +94,8 @@ class GpsSatelliteSignalProcessingPipeline:
         _logger.info(
             f"{self.sample_index}: Integrator for SV({satellite_id} could not determine bit phase. Confidence: {int(event.confidence*100)}%"
         )
-        # TODO(PT): Untrack this satellite (as the bits are low confidence)
+        # Untrack this satellite as the bits are low confidence
         raise LostSatelliteLockError()
-        print(f"*** found ***")
-        from matplotlib import pyplot as plt
-
-        plt.plot(self.tracker.tracking_params.doppler_shifts[-2000:])
-        plt.title(f"Doppler shift")
-        plt.show()
-        plt.plot(self.tracker.tracking_params.carrier_wave_phases[-2000:])
-        plt.title(f"Carrier wave phase")
-        plt.show()
-        plt.plot(self.tracker.tracking_params.carrier_wave_phase_errors[-2000:])
-        plt.title(f"Carrier wave phase error")
-        plt.show()
-        import sys
-
-        sys.exit(0)
-        raise NotImplementedError(f"Satellite should be removed from the tracking pool")
 
     def _handle_integrator_lost_bit_coherence(self, event: LostBitCoherenceEvent) -> None:
         satellite_id = self.satellite.satellite_id.id
@@ -120,14 +104,6 @@ class GpsSatelliteSignalProcessingPipeline:
             f"Confidence for bit {self.pseudosymbol_integrator.bit_index}: {event.confidence}%"
         )
         raise LostSatelliteLockError()
-        # The integrator will need to determine a new bit phase?
-        self.pseudosymbol_integrator.determined_bit_phase = None
-        self.pseudosymbol_integrator.queued_pseudosymbols = []
-        # The decoder will need to re-acquire the bit polarity and subframe phase. Clear it now.
-        # TODO(PT): Put this in a method
-        self.navigation_message_decoder.determined_polarity = None
-        self.navigation_message_decoder.determined_subframe_phase = None
-        self.navigation_message_decoder.queued_bits = []
 
     def _handle_integrator_emitted_bit(self, event: EmitNavigationBitEvent) -> list[Event]:
         satellite_id = self.satellite.satellite_id.id
@@ -164,6 +140,5 @@ class GpsSatelliteSignalProcessingPipeline:
         _logger.info(f"\tTelemetry word: {event.telemetry_word}")
         _logger.info(f"\tHandover word: {event.handover_word}")
         return [event]
-        # _logger.info(f'Emitted when integrator was at bit {self.pseudosymbol_integrator.bit_index-1}')
 
 
