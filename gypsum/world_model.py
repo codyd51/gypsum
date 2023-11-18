@@ -1,8 +1,10 @@
+from collections import defaultdict
 from enum import Enum
 from enum import auto
 from typing import Type
 from typing import cast
 
+from gypsum.events import Event
 from gypsum.gps_ca_prn_codes import GpsSatelliteId
 from gypsum.navigation_message_decoder import EmitSubframeEvent
 from gypsum.navigation_message_parser import GpsSubframeId
@@ -86,17 +88,32 @@ class OrbitalParameters:
         return self._get_parameter_infallibly(OrbitalParameterType.MEAN_ANOMALY_AT_REFERENCE_TIME)
 
 
+# TODO(PT): We should probably have a base class for "decoder events", "world model events", etc., for better typing
+class DeterminedSatelliteOrbitEvent(Event):
+    def __init__(
+        self,
+        satellite_id: GpsSatelliteId,
+        orbital_parameters: OrbitalParameters,
+    ) -> None:
+        self.satellite_id = satellite_id
+        self.orbital_parameters = orbital_parameters
+
 
 class GpsWorldModel:
     """Integrates satellite subframes to maintain a model of satellite orbits around Earth"""
     def __init__(self) -> None:
-        self.satellite_ids_to_orbital_parameters: dict[GpsSatelliteId, OrbitalParameters] = {}
+        self.satellite_ids_to_orbital_parameters: dict[GpsSatelliteId, OrbitalParameters] = defaultdict(OrbitalParameters)
 
-    def handle_subframe_emitted(self, satellite_id: GpsSatelliteId, emit_subframe_event: EmitSubframeEvent) -> None:
+    def handle_subframe_emitted(self, satellite_id: GpsSatelliteId, emit_subframe_event: EmitSubframeEvent) -> list[Event]:
+        events_to_return = []
         subframe = emit_subframe_event.subframe
         subframe_id = subframe.subframe_id
 
         orbital_params_for_this_satellite = self.satellite_ids_to_orbital_parameters[satellite_id]
+        # Keep track of whether we already had all the orbital parameters for this satellite, so we know whether
+        # we've just completed a full set.
+        were_orbit_params_already_complete = orbital_params_for_this_satellite.is_complete()
+
         # Casts because the subframe is currently typed as the subframe base class
         if subframe_id == GpsSubframeId.ONE:
             self._process_subframe1(orbital_params_for_this_satellite, cast(NavigationMessageSubframe1, subframe))
@@ -109,6 +126,18 @@ class GpsWorldModel:
         elif subframe_id == GpsSubframeId.FIVE:
             self._process_subframe5(orbital_params_for_this_satellite, cast(NavigationMessageSubframe5, subframe))
 
+        # Check whether we've just completed the set of orbital parameters for this satellite
+        if not were_orbit_params_already_complete:
+            if orbital_params_for_this_satellite.is_complete():
+                events_to_return.append(
+                    DeterminedSatelliteOrbitEvent(
+                        satellite_id=satellite_id,
+                        orbital_parameters=orbital_params_for_this_satellite,
+                    )
+                )
+
+        return events_to_return
+
     def _process_subframe1(self, orbital_parameters: OrbitalParameters, subframe: NavigationMessageSubframe1) -> None:
         pass
 
@@ -119,6 +148,7 @@ class GpsWorldModel:
         orbital_parameters.parameter_type_to_value[OrbitalParameterType.SEMI_MAJOR_AXIS] = subframe.sqrt_semi_major_axis ** 2
 
     def _process_subframe3(self, orbital_parameters: OrbitalParameters, subframe: NavigationMessageSubframe3) -> None:
+        orbital_parameters.parameter_type_to_value[OrbitalParameterType.INCLINATION] = subframe.inclination_angle
         orbital_parameters.parameter_type_to_value[OrbitalParameterType.ARGUMENT_OF_PERIGEE] = subframe.argument_of_perigee
         orbital_parameters.parameter_type_to_value[OrbitalParameterType.RATE_OF_ASCENSION_TO_ASCENDING_NODE] = subframe.rate_of_right_ascension
 
