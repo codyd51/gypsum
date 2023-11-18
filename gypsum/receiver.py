@@ -74,53 +74,6 @@ class GpsReceiver:
 
             self.subframe_count += len(emit_subframe_events)
 
-    def decode_nav_bits(self, sat: GpsSatelliteTrackingParameters):
-        navigation_bit_pseudosymbols = sat.navigation_bit_pseudosymbols
-        confidence_scores = []
-        for roll in range(0, 20):
-            phase_shifted_bits = navigation_bit_pseudosymbols[roll:]
-            confidences = []
-            for twenty_pseudosymbols in chunks(phase_shifted_bits, 20):
-                integrated_value = sum(twenty_pseudosymbols)
-                confidences.append(abs(integrated_value))
-            # Compute an overall confidence score for this offset
-            confidence_scores.append(np.mean(confidences))
-
-        # print(f"Confidence scores: {confidence_scores}")
-        best_offset = np.argmax(confidence_scores)
-        print(f"Best Offset: {best_offset} ({confidence_scores[best_offset]})")
-
-        bit_phase = best_offset
-        phase_shifted_bits = navigation_bit_pseudosymbols[bit_phase:]
-        bits = []
-        for twenty_pseudosymbols in chunks(phase_shifted_bits, 20):
-            integrated_value = sum(twenty_pseudosymbols)
-            bit_value = np.sign(integrated_value)
-            bits.append(bit_value)
-
-        digital_bits = [1 if b == 1.0 else 0 for b in bits]
-        inverted_bits = [0 if b == 1.0 else 1 for b in bits]
-        print(f"Bit count: {len(digital_bits)}")
-        print(f"Bits:          {digital_bits}")
-        print(f"Inverted bits: {inverted_bits}")
-
-        preamble = [1, 0, 0, 0, 1, 0, 1, 1]
-        inverted = [0, 1, 1, 1, 0, 1, 0, 0]
-        print(f"Preamble {preamble} found in bits? {does_list_contain_sublist(digital_bits, preamble)}")
-        print(f"Preamble {preamble} found in inverted bits? {does_list_contain_sublist(inverted_bits, preamble)}")
-
-        def get_matches(l, sub):
-            return [l[pos : pos + len(sub)] == sub for pos in range(0, len(l) - len(sub) + 1)]
-
-        preamble_starts_in_digital_bits = [
-            x[0] for x in (np.argwhere(np.array(get_matches(digital_bits, preamble)) == True))
-        ]
-        print(f"Preamble starts in bits:          {preamble_starts_in_digital_bits}")
-        preamble_starts_in_inverted_bits = [
-            x[0] for x in (np.argwhere(np.array(get_matches(inverted_bits, preamble)) == True))
-        ]
-        print(f"Preamble starts in inverted bits: {preamble_starts_in_inverted_bits}")
-
     def _perform_acquisition(self) -> None:
         self._perform_acquisition_on_satellite_ids(self.satellite_ids_eligible_for_acquisition)
 
