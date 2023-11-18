@@ -7,6 +7,14 @@ from typing import Self
 from gypsum.config import GPS_EPOCH_BASE_WEEK_NUMBER
 
 
+Meters = float
+SemiCirclesPerSecond = float
+SemiCircles = float
+Radians = float
+Seconds = float
+SecondsPerSecond = float
+
+
 _logger = logging.getLogger(__name__)
 
 # Every word ends in 6 parity bits
@@ -82,7 +90,7 @@ class NavigationMessageSubframe:
 
 @dataclass
 class NavigationMessageSubframe1(NavigationMessageSubframe):
-    week_num: list[int]
+    week_num_mod_1024_bits: list[int]
     ca_or_p_on_l2: list[int]
     ura_index: list[int]
     sv_health: list[int]
@@ -99,18 +107,25 @@ class NavigationMessageSubframe1(NavigationMessageSubframe):
     def subframe_id(self) -> GpsSubframeId:
         return GpsSubframeId.ONE
 
+    @property
+    def week_num(self) -> int:
+        # PT: This field stores the week number, mod 1024 weeks. See the comment on GPS_EPOCH_BASE_WEEK_NUMBER.
+        # **This means that this field rolls over to zero every 19.6 years**.
+        # See the comment on GPS_EPOCH_BASE_WEEK_NUMBER.
+        return self.week_num_mod_1024_bits + GPS_EPOCH_BASE_WEEK_NUMBER
+
 
 @dataclass
 class NavigationMessageSubframe2(NavigationMessageSubframe):
     issue_of_data_ephemeris: list[int]
-    correction_to_orbital_radius_sin: float
-    mean_motion_difference_from_computed_value: float
-    mean_anomaly_at_reference_time: float
-    correction_to_latitude_cos: float
+    correction_to_orbital_radius_sin: Meters
+    mean_motion_difference_from_computed_value: SemiCirclesPerSecond
+    mean_anomaly_at_reference_time: SemiCircles
+    correction_to_latitude_cos: Radians
     eccentricity: float
-    correction_to_latitude_sin: float
-    sqrt_semi_major_axis: float
-    reference_time_ephemeris: float
+    correction_to_latitude_sin: Radians
+    sqrt_semi_major_axis: Meters
+    reference_time_ephemeris: Seconds
     fit_interval_flag: bool
     age_of_data_offset: list[int]
 
@@ -121,14 +136,14 @@ class NavigationMessageSubframe2(NavigationMessageSubframe):
 
 @dataclass
 class NavigationMessageSubframe3(NavigationMessageSubframe):
-    correction_to_inclination_angle_cos: float
-    longitude_of_ascending_node: float
-    correction_to_inclination_angle_sin: float
-    inclination_angle: float
-    correction_to_orbital_radius_cos: float
-    argument_of_perigee: float
-    rate_of_right_ascension: float
-    rate_of_inclination_angle: float
+    correction_to_inclination_angle_cos: Radians
+    longitude_of_ascending_node: SemiCircles
+    correction_to_inclination_angle_sin: Radians
+    inclination_angle: SemiCircles
+    correction_to_orbital_radius_cos: Meters
+    argument_of_perigee: SemiCircles
+    rate_of_right_ascension: SemiCirclesPerSecond
+    rate_of_inclination_angle: SemiCirclesPerSecond
     issue_of_data_ephemeris: list[int]
 
     @property
@@ -151,16 +166,16 @@ class NavigationMessageSubframe5(NavigationMessageSubframe):
     data_id: list[int]
     satellite_id: list[int]
     eccentricity: float
-    time_of_ephemeris: float
-    delta_inclination_angle: float
-    right_ascension_rate: float
+    time_of_ephemeris: Seconds
+    delta_inclination_angle: SemiCircles
+    right_ascension_rate: SemiCirclesPerSecond
     sv_health: list[int]
-    semi_major_axis_sqrt: float
-    longitude_of_ascension_mode: float
-    argument_of_perigree: float
-    mean_anomaly_at_reference_time: float
-    a_f0: float
-    a_f1: float
+    semi_major_axis_sqrt: Meters
+    longitude_of_ascension_mode: SemiCircles
+    argument_of_perigree: SemiCircles
+    mean_anomaly_at_reference_time: SemiCircles
+    a_f0: Seconds
+    a_f1: SecondsPerSecond
 
     @property
     def subframe_id(self) -> GpsSubframeId:
@@ -394,11 +409,7 @@ class NavigationMessageSubframeParser:
     def parse_subframe_1(self) -> NavigationMessageSubframe1:
         # Ref: IS-GPS-200L, 20.3.3.5 Subframes 1, Figure 20-1. Data Format (sheet 1 of 11)
         # Word 3
-        # PT: This field stores the week number, mod 1024 weeks. See the comment on GPS_EPOCH_BASE_WEEK_NUMBER.
-        # **This means that this field rolls over to zero every 19.6 years**.
-        # See the comment on GPS_EPOCH_BASE_WEEK_NUMBER.
         week_num_mod_1024 = self.get_unscaled_num(10, twos_complement=False)
-        week_num = week_num_mod_1024 + GPS_EPOCH_BASE_WEEK_NUMBER
         ca_or_p_on_l2 = self.get_bits(2)
         ura_index = self.get_bits(4)
         sv_health = self.get_bits(6)
@@ -432,7 +443,7 @@ class NavigationMessageSubframeParser:
         _to_be_solved = self.get_bits(2)
 
         return NavigationMessageSubframe1(
-            week_num=week_num,
+            week_num_mod_1024_bits=week_num_mod_1024,
             ca_or_p_on_l2=ca_or_p_on_l2,
             ura_index=ura_index,
             sv_health=sv_health,
