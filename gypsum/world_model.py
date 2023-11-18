@@ -41,9 +41,50 @@ class OrbitalParameterType(Enum):
         }[self]
 
 
+_OrbitalParameterType = Meters | float | SemiCircles
+
+
 class OrbitalParameters:
+    """Tracks a 'set' of orbital parameters for a classical 2-body orbit."""
     def __init__(self) -> None:
         self.parameter_type_to_value = {t: None for t in OrbitalParameterType}
+
+    def is_complete(self) -> bool:
+        """Returns whether we have a 'full set' of parameters to describe a body's orbit."""
+        return not any(x is None for x in self.parameter_type_to_value.values())
+
+    # PT: For caller convenience, provide infallible accessors to orbital parameters
+
+    def _get_parameter_infallibly(self, param_type: OrbitalParameterType) -> _OrbitalParameterType:
+        maybe_param = self.parameter_type_to_value[param_type]
+        if maybe_param is None:
+            raise RuntimeError(f'Expected {param_type.name} to be available')
+        return maybe_param
+
+    @property
+    def semi_major_axis(self) -> Meters:
+        return self._get_parameter_infallibly(OrbitalParameterType.SEMI_MAJOR_AXIS)
+
+    @property
+    def eccentricity(self) -> float:
+        return self._get_parameter_infallibly(OrbitalParameterType.ECCENTRICITY)
+
+    @property
+    def inclination(self) -> Meters:
+        return self._get_parameter_infallibly(OrbitalParameterType.INCLINATION)
+
+    @property
+    def rate_of_ascension_to_ascending_node(self) -> Meters:
+        return self._get_parameter_infallibly(OrbitalParameterType.RATE_OF_ASCENSION_TO_ASCENDING_NODE)
+
+    @property
+    def argument_of_perigee(self) -> Meters:
+        return self._get_parameter_infallibly(OrbitalParameterType.ARGUMENT_OF_PERIGEE)
+
+    @property
+    def mean_anomaly_at_reference_time(self) -> Meters:
+        return self._get_parameter_infallibly(OrbitalParameterType.MEAN_ANOMALY_AT_REFERENCE_TIME)
+
 
 
 class GpsWorldModel:
