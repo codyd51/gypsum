@@ -25,7 +25,7 @@ class OrbitalParameterType(Enum):
     # Also called 'i'
     INCLINATION = auto()
     # Also called 'Omega' or Ω
-    RATE_OF_ASCENSION_TO_ASCENDING_NODE = auto()
+    LONGITUDE_OF_ASCENDING_NODE = auto()
     # Also called 'omega' or 
     ARGUMENT_OF_PERIGEE = auto()
     # Also called 'M'
@@ -37,7 +37,7 @@ class OrbitalParameterType(Enum):
             self.SEMI_MAJOR_AXIS: Meters,
             self.ECCENTRICITY: float,
             self.INCLINATION: SemiCircles,
-            self.RATE_OF_ASCENSION_TO_ASCENDING_NODE: SemiCircles,
+            self.LONGITUDE_OF_ASCENDING_NODE: SemiCircles,
             self.ARGUMENT_OF_PERIGEE: SemiCircles,
             self.MEAN_ANOMALY_AT_REFERENCE_TIME: SemiCircles,
         }[self]
@@ -76,8 +76,8 @@ class OrbitalParameters:
         return self._get_parameter_infallibly(OrbitalParameterType.INCLINATION)
 
     @property
-    def rate_of_ascension_to_ascending_node(self) -> Meters:
-        return self._get_parameter_infallibly(OrbitalParameterType.RATE_OF_ASCENSION_TO_ASCENDING_NODE)
+    def longitude_of_ascending_node(self) -> Meters:
+        return self._get_parameter_infallibly(OrbitalParameterType.LONGITUDE_OF_ASCENDING_NODE)
 
     @property
     def argument_of_perigee(self) -> Meters:
@@ -150,7 +150,7 @@ class GpsWorldModel:
     def _process_subframe3(self, orbital_parameters: OrbitalParameters, subframe: NavigationMessageSubframe3) -> None:
         orbital_parameters.parameter_type_to_value[OrbitalParameterType.INCLINATION] = subframe.inclination_angle
         orbital_parameters.parameter_type_to_value[OrbitalParameterType.ARGUMENT_OF_PERIGEE] = subframe.argument_of_perigee
-        orbital_parameters.parameter_type_to_value[OrbitalParameterType.RATE_OF_ASCENSION_TO_ASCENDING_NODE] = subframe.rate_of_right_ascension
+        orbital_parameters.parameter_type_to_value[OrbitalParameterType.LONGITUDE_OF_ASCENDING_NODE] = subframe.longitude_of_ascending_node
 
     def _process_subframe4(self, orbital_parameters: OrbitalParameters, subframe: NavigationMessageSubframe4) -> None:
         pass
