@@ -69,7 +69,7 @@ class GpsSatelliteSignalProcessingPipeline:
     def process_samples(self, receiver_timestamp: ReceiverTimestampSeconds, samples: AntennaSamplesSpanningOneMs) -> list[Event]:
         self.current_receiver_timestamp = receiver_timestamp
         pseudosymbol = self.tracker.process_samples(receiver_timestamp, samples)
-        integrator_events = self.pseudosymbol_integrator.process_pseudosymbol(pseudosymbol)
+        integrator_events = self.pseudosymbol_integrator.process_pseudosymbol(receiver_timestamp, pseudosymbol)
 
         integrator_event_type_to_callback: dict[Type[Event], Callable[[Event], list[Event] | None]] = {  # type: ignore
             DeterminedBitPhaseEvent: self._handle_integrator_determined_bit_phase,
@@ -93,7 +93,7 @@ class GpsSatelliteSignalProcessingPipeline:
     def _handle_integrator_cannot_determine_bit_phase(self, event: CannotDetermineBitPhaseEvent) -> None:
         satellite_id = self.satellite.satellite_id.id
         _logger.info(
-            f"{self.current_receiver_timestamp}: Integrator for SV({satellite_id} could not determine bit phase. Confidence: {int(event.confidence*100)}%"
+            f"{self.current_receiver_timestamp}: Integrator for SV({satellite_id}) could not determine bit phase. Confidence: {int(event.confidence*100)}%"
         )
         # Untrack this satellite as the bits are low confidence
         raise LostSatelliteLockError()
@@ -107,9 +107,8 @@ class GpsSatelliteSignalProcessingPipeline:
         raise LostSatelliteLockError()
 
     def _handle_integrator_emitted_bit(self, event: EmitNavigationBitEvent) -> list[Event]:
-        satellite_id = self.satellite.satellite_id.id
         # _logger.info(f'handling bit {self.pseudosymbol_integrator.bit_index-1}')
-        decoder_events = self.navigation_message_decoder.process_bit_from_satellite(event.bit_value)
+        decoder_events = self.navigation_message_decoder.process_bit_from_satellite(event)
 
         decoder_event_type_to_callback: dict[Type[Event], Callable[[Event], list[Event] | None]] = {  # type: ignore
             DeterminedSubframePhaseEvent: self._handle_decoder_determined_subframe_phase,

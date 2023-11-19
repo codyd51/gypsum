@@ -1,7 +1,9 @@
 import logging
 from enum import Enum, auto
 
+from gypsum.antenna_sample_provider import ReceiverTimestampSeconds
 from gypsum.events import Event
+from gypsum.navigation_bit_intergrator import EmitNavigationBitEvent
 from gypsum.navigation_message_parser import (
     GpsSubframeId,
     HandoverWord,
@@ -47,6 +49,7 @@ class DeterminedSubframePhaseEvent(Event):
 class EmitSubframeEvent(Event):
     def __init__(
         self,
+        receiver_timestamp: ReceiverTimestampSeconds,
         telemetry_word: TelemetryWord,
         handover_word: HandoverWord,
         subframe: NavigationMessageSubframe,
@@ -58,7 +61,7 @@ class EmitSubframeEvent(Event):
 
 class NavigationMessageDecoder:
     def __init__(self):
-        self.queued_bits = []
+        self.queued_bits: list[EmitNavigationBitEvent] = []
         self.determined_subframe_phase: int | None = None
         self.determined_polarity: BitPolarity | None = None
 
@@ -89,10 +92,9 @@ class NavigationMessageDecoder:
         # TODO(PT): Maybe we could just keep waiting for a better lock?
         return None
 
-    def process_bit_from_satellite(self, bit: BitValue) -> list[Event]:
+    def process_bit_from_satellite(self, bit_event: EmitNavigationBitEvent) -> list[Event]:
         events = []
-        self.queued_bits.append(bit)
-        # _logger.info(f'Queued bits: {"".join([str(b.as_val()) for b in self.queued_bits])}')
+        self.queued_bits.append(bit_event)
 
         # Try to identify subframe phase once we have enough bits to see a few subframes
         if len(self.queued_bits) == BITS_PER_SUBFRAME * 4:
@@ -106,7 +108,6 @@ class NavigationMessageDecoder:
                 ([b.inverted() for b in TELEMETRY_WORD_PREAMBLE], BitPolarity.NEGATIVE),
             ]
             for preamble, polarity in preamble_and_polarity:
-                print(f"try polarity {polarity}")
                 first_identified_preamble_index = self._identify_preamble_in_queued_bits(preamble)
                 if first_identified_preamble_index:
                     events.append(DeterminedSubframePhaseEvent(first_identified_preamble_index, polarity))
@@ -114,7 +115,7 @@ class NavigationMessageDecoder:
                     self.determined_polarity = polarity
                     # Discard queued bits from the first partial subframe
                     self.queued_bits = self.queued_bits[self.determined_subframe_phase :]
-                    print("found")
+                    _logger.info(f'Identified preamble at bit phase {self.determined_subframe_phase} when probing with bit polarity: {polarity.name}')
                     break
             else:
                 # Didn't find the preamble phase in either polarity
@@ -132,13 +133,14 @@ class NavigationMessageDecoder:
         return events
 
     def parse_subframe(self) -> EmitSubframeEvent:
-        _logger.info(f"Emitting subframe")
         subframe_bits = self.queued_bits[:BITS_PER_SUBFRAME]
+        subframe_receiver_timestamp = subframe_bits[0].receiver_timestamp
+        _logger.info(f"Emitting subframe timestamped at receiver at {subframe_receiver_timestamp}")
         # Consume these bits by removing them from the queue
         self.queued_bits = self.queued_bits[BITS_PER_SUBFRAME:]
 
         # Flip the bit polarity so everything looks upright
-        preprocessed_bits = subframe_bits
+        preprocessed_bits = [b.bit_value for b in subframe_bits]
         if self.determined_polarity == BitPolarity.NEGATIVE:
             preprocessed_bits = [b.inverted() for b in preprocessed_bits]
         bits_as_ints = [b.as_val() for b in preprocessed_bits]
@@ -162,7 +164,8 @@ class NavigationMessageDecoder:
             raise NotImplementedError(subframe_id)
 
         return EmitSubframeEvent(
-            telemetry_word,
-            handover_word,
+            receiver_timestamp=subframe_receiver_timestamp,
+            telemetry_word=telemetry_word,
+            handover_word=handover_word,
             subframe=subframe,
         )

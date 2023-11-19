@@ -1,7 +1,7 @@
 import logging
+from dataclasses import dataclass
 
-import numpy as np
-
+from gypsum.antenna_sample_provider import ReceiverTimestampSeconds
 from gypsum.constants import PSEUDOSYMBOLS_PER_NAVIGATION_BIT
 from gypsum.events import Event
 from gypsum.tracker import BitValue, NavigationBitPseudosymbol
@@ -14,7 +14,12 @@ Percentage = float
 
 
 class EmitNavigationBitEvent(Event):
-    def __init__(self, bit_value: BitValue) -> None:
+    def __init__(
+        self,
+        receiver_timestamp: ReceiverTimestampSeconds,
+        bit_value: BitValue
+    ) -> None:
+        self.receiver_timestamp = receiver_timestamp
         self.bit_value = bit_value
 
 
@@ -37,15 +42,24 @@ class LostBitPhaseCoherenceError(Exception):
     pass
 
 
+@dataclass
+class EmittedPseudosymbol:
+    receiver_timestamp: ReceiverTimestampSeconds
+    pseudosymbol: NavigationBitPseudosymbol
+
+
 class NavigationBitIntegrator:
     def __init__(self):
-        self.queued_pseudosymbols: list[NavigationBitPseudosymbol] = []
+        self.queued_pseudosymbols: list[EmittedPseudosymbol] = []
         self.determined_bit_phase: int | None = None
         self.bit_index = 0
 
-    def process_pseudosymbol(self, pseudosymbol: NavigationBitPseudosymbol) -> list[Event]:
+    def process_pseudosymbol(self, receiver_timestamp: ReceiverTimestampSeconds, pseudosymbol: NavigationBitPseudosymbol) -> list[Event]:
         events = []
-        self.queued_pseudosymbols.append(pseudosymbol)
+        self.queued_pseudosymbols.append(EmittedPseudosymbol(
+            receiver_timestamp=receiver_timestamp,
+            pseudosymbol=pseudosymbol,
+        ))
 
         if self.determined_bit_phase is None:
             # Have we seen enough bits to determine the navigation bit phase?
@@ -63,12 +77,8 @@ class NavigationBitIntegrator:
 
                 # TODO(PT): This only considers one bit! Perhaps we should do multiple bits again
                 symbols_considered_for_phase_selection = self.queued_pseudosymbols[
-                    PSEUDOSYMBOLS_PER_NAVIGATION_BIT * 4 :
+                    PSEUDOSYMBOLS_PER_NAVIGATION_BIT * 4:
                 ]
-                bits_in_symbols_considered_for_phase_selection = (
-                    len(symbols_considered_for_phase_selection) / PSEUDOSYMBOLS_PER_NAVIGATION_BIT
-                )
-                confidence_scores = []
                 phase_guess_to_confidence_score = {}
                 for phase_guess in range(0, PSEUDOSYMBOLS_PER_NAVIGATION_BIT):
                     phase_guess_confidence = 0
@@ -76,14 +86,12 @@ class NavigationBitIntegrator:
                         chunks(symbols_considered_for_phase_selection[phase_guess:], PSEUDOSYMBOLS_PER_NAVIGATION_BIT)
                     )
                     for symbols_in_bit in symbols_grouped_into_bits:
-                        bit_confidence = abs(sum([symbol.as_val() for symbol in symbols_in_bit]))
+                        bit_confidence = abs(sum([symbol.pseudosymbol.as_val() for symbol in symbols_in_bit]))
                         phase_guess_confidence += bit_confidence
                     # Normalize based on the number of bit groups we looked at
                     phase_guess_to_confidence_score[phase_guess] = phase_guess_confidence / len(
                         symbols_grouped_into_bits
                     )
-                    # phase_shifted_symbols = symbols_considered_for_phase_selection[phase_guess:phase_guess + PSEUDOSYMBOLS_PER_NAVIGATION_BIT]
-                    # confidence_scores.append(abs(sum([s.as_val() for s in phase_shifted_symbols])))
                     # This could be sensitive to tracking errors in this particular second of processing...
 
                 highest_confidence_phase_offset = max(
@@ -137,7 +145,10 @@ class NavigationBitIntegrator:
                     confidence_score: Percentage = abs(int((pseudosymbol_sum / PSEUDOSYMBOLS_PER_NAVIGATION_BIT) * 100))
                     self.bit_index += 1
                     if confidence_score >= 60:
-                        events.append(EmitNavigationBitEvent(bit_value))
+                        # The timestamp of the bit comes from the receiver timestamp of
+                        # the first pseudosymbol in the bit.
+                        timestamp = bit_pseudosymbols[0].receiver_timestamp
+                        events.append(EmitNavigationBitEvent(receiver_timestamp=timestamp, bit_value=bit_value))
                     else:
                         events.append(LostBitCoherenceEvent(confidence_score))
                         # Stop consuming bits now
