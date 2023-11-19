@@ -62,7 +62,7 @@ class EmitSubframeEvent(Event):
 
 class NavigationMessageDecoder:
     def __init__(self) -> None:
-        self.queued_bits: list[EmitNavigationBitEvent] = []
+        self.queued_bit_events: list[EmitNavigationBitEvent] = []
         self.determined_subframe_phase: int | None = None
         self.determined_polarity: BitPolarity | None = None
 
@@ -70,7 +70,8 @@ class NavigationMessageDecoder:
         self,
         preamble: list[BitValue],
     ) -> int | None:
-        preamble_candidates = get_indexes_of_sublist(self.queued_bits, preamble)
+        queued_bits = [e.bit_value for e in self.queued_bit_events]
+        preamble_candidates = get_indexes_of_sublist(queued_bits, preamble)
         # We need at least two preambles
         if len(preamble_candidates) < 2:
             return None
@@ -95,10 +96,10 @@ class NavigationMessageDecoder:
 
     def process_bit_from_satellite(self, bit_event: EmitNavigationBitEvent) -> list[Event]:
         events: list[Event] = []
-        self.queued_bits.append(bit_event)
+        self.queued_bit_events.append(bit_event)
 
         # Try to identify subframe phase once we have enough bits to see a few subframes
-        if len(self.queued_bits) == BITS_PER_SUBFRAME * 4:
+        if len(self.queued_bit_events) == BITS_PER_SUBFRAME * 4:
             # Depending on the phase of our PRN correlations, our bits could appear either 'upright' or 'inverted'.
             # To determine which, we'll need to search for the preamble both as 'upright' and 'inverted'. Whichever
             # version produces a match will tell us the polarity of our bits.
@@ -115,7 +116,7 @@ class NavigationMessageDecoder:
                     self.determined_subframe_phase = first_identified_preamble_index
                     self.determined_polarity = polarity
                     # Discard queued bits from the first partial subframe
-                    self.queued_bits = self.queued_bits[self.determined_subframe_phase :]
+                    self.queued_bit_events = self.queued_bit_events[self.determined_subframe_phase :]
                     _logger.info(f'Identified preamble at bit phase {self.determined_subframe_phase} when probing with bit polarity: {polarity.name}')
                     break
             else:
@@ -126,7 +127,7 @@ class NavigationMessageDecoder:
         if self.determined_subframe_phase is not None:
             # Drain the bit queue as much as we can
             while True:
-                if len(self.queued_bits) >= BITS_PER_SUBFRAME:
+                if len(self.queued_bit_events) >= BITS_PER_SUBFRAME:
                     events.append(self.parse_subframe())
                 else:
                     break
@@ -134,11 +135,11 @@ class NavigationMessageDecoder:
         return events
 
     def parse_subframe(self) -> EmitSubframeEvent:
-        subframe_bits = self.queued_bits[:BITS_PER_SUBFRAME]
+        subframe_bits = self.queued_bit_events[:BITS_PER_SUBFRAME]
         subframe_receiver_timestamp = subframe_bits[0].receiver_timestamp
         _logger.info(f"Emitting subframe timestamped at receiver at {subframe_receiver_timestamp}")
         # Consume these bits by removing them from the queue
-        self.queued_bits = self.queued_bits[BITS_PER_SUBFRAME:]
+        self.queued_bit_events = self.queued_bit_events[BITS_PER_SUBFRAME:]
 
         # Flip the bit polarity so everything looks upright
         preprocessed_bits = [b.bit_value for b in subframe_bits]
