@@ -1,8 +1,10 @@
 from collections import defaultdict
 from enum import Enum
 from enum import auto
+from typing import Generic
 from typing import Sequence
 from typing import Type
+from typing import TypeVar
 from typing import cast
 
 from gypsum.events import Event
@@ -16,9 +18,9 @@ from gypsum.navigation_message_parser import NavigationMessageSubframe3
 from gypsum.navigation_message_parser import NavigationMessageSubframe4
 from gypsum.navigation_message_parser import NavigationMessageSubframe5
 from gypsum.navigation_message_parser import SemiCircles
+from gypsum.utils import MetersPerSecond
 
-
-_OrbitalParameterType = Meters | float | SemiCircles
+_OrbitalParameterValueType = Meters | float | SemiCircles
 
 
 class OrbitalParameterType(Enum):
@@ -36,7 +38,7 @@ class OrbitalParameterType(Enum):
     MEAN_ANOMALY_AT_REFERENCE_TIME = auto()
 
     @property
-    def unit(self) -> Type[_OrbitalParameterType]:
+    def unit(self) -> Type[_OrbitalParameterValueType]:
         return {
             self.SEMI_MAJOR_AXIS: Meters,
             self.ECCENTRICITY: float,
@@ -47,22 +49,39 @@ class OrbitalParameterType(Enum):
         }[self] # type: ignore
 
 
-class OrbitalParameters:
-    """Tracks a 'set' of orbital parameters for a classical 2-body orbit."""
+_ParameterType = TypeVar("_ParameterType")
+_ParameterValueType = TypeVar("_ParameterValueType")
+
+
+class ParameterSet(Generic[_ParameterType, _ParameterValueType]):
+    """Tracks a 'set' of parameters that are progressively fleshed out"""
+
+    # Must be set by subclasses
+    # PT: It's a lot more convenient to set this explicitly than trying to pull it out of the TypeVar
+    _PARAMETER_TYPE = None
+
+    def __init_subclass__(cls, **kwargs):
+        if cls._PARAMETER_TYPE is None:
+            raise RuntimeError(f'_PARAMETER_TYPE must be set by subclasses')
+
     def __init__(self) -> None:
-        self.parameter_type_to_value: dict[OrbitalParameterType, _OrbitalParameterType | None] = {t: None for t in OrbitalParameterType}
+        self.parameter_type_to_value: dict[_ParameterType, _ParameterValueType | None] = {t: None for t in self._PARAMETER_TYPE}
 
     def is_complete(self) -> bool:
-        """Returns whether we have a 'full set' of parameters to describe a body's orbit."""
+        """Returns whether we have a 'full set' of parameters (i.e. no None values)."""
         return not any(x is None for x in self.parameter_type_to_value.values())
 
-    # PT: For caller convenience, provide infallible accessors to orbital parameters
-
-    def _get_parameter_infallibly(self, param_type: OrbitalParameterType) -> _OrbitalParameterType:
+    def _get_parameter_infallibly(self, param_type: _ParameterType) -> _ParameterValueType:
+        # PT: For caller convenience, provide infallible accessors to parameters
         maybe_param = self.parameter_type_to_value[param_type]
         if maybe_param is None:
             raise RuntimeError(f'Expected {param_type.name} to be available')
         return maybe_param
+
+
+class OrbitalParameters(ParameterSet[OrbitalParameterType, _OrbitalParameterValueType]):
+    """Tracks a 'set' of orbital parameters for a classical 2-body orbit."""
+    _PARAMETER_TYPE = OrbitalParameterType
 
     @property
     def semi_major_axis(self) -> Meters:
