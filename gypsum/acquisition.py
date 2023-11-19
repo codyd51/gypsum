@@ -67,8 +67,8 @@ class GpsSatelliteDetector:
     ) -> SatelliteAcquisitionAttemptResult:
         _logger.info(f"Attempting acquisition of {satellite_id}...")
         best_non_coherent_correlation_profile_across_all_search_space = None
-        center_doppler_shift_estimation = 0
-        doppler_frequency_estimation_spread = 7000
+        center_doppler_shift_estimation = 0.0
+        doppler_frequency_estimation_spread = 7000.0
         # This must be 10 as the search factor divides the spread by 10
         while doppler_frequency_estimation_spread >= 10:
             best_non_coherent_correlation_profile_in_this_search_space = self.get_best_doppler_shift_estimation(
@@ -99,6 +99,10 @@ class GpsSatelliteDetector:
                     f"{best_non_coherent_correlation_profile_across_all_search_space.correlation_strength:.2f}"
                 )
 
+        # PT: For typing
+        if not best_non_coherent_correlation_profile_across_all_search_space:
+            raise RuntimeError(f'Should never happen: Expected at least one correlation profile')
+
         _logger.info(
             f"Best correlation for SV({satellite_id}) at "
             f"Doppler {center_doppler_shift_estimation:.2f} "
@@ -111,7 +115,7 @@ class GpsSatelliteDetector:
             IntegrationType.Coherent,
             samples_for_integration_period,
             best_doppler_shift,
-            self.satellites_by_id[satellite_id].prn_as_complex,
+            self.satellites_by_id[satellite_id].prn_as_complex, # type: ignore
         )
 
         # Rely on the correlation peak index that comes from non-coherent integration, since it'll be stronger and
@@ -157,7 +161,7 @@ class GpsSatelliteDetector:
                 IntegrationType.NonCoherent,
                 antenna_data,
                 doppler_shift,
-                self.satellites_by_id[satellite_id].prn_as_complex,
+                self.satellites_by_id[satellite_id].prn_as_complex, # type: ignore
             )
             doppler_shift_to_correlation_profile[doppler_shift] = correlation_profile
 
@@ -185,7 +189,7 @@ class GpsSatelliteDetector:
         # Ref: https://stackoverflow.com/questions/16589791/most-efficient-property-to-hash-for-numpy-array
         # antenna_data.sum() will have a higher chance of collisions than .tostring(), but it's faster,
         # and I'm willing to take the chance.
-        key = hash((integration_type, hash(antenna_data.sum()), doppler_shift, hash(prn_as_complex.tostring())))
+        key = hash((integration_type, hash(antenna_data.sum()), doppler_shift, hash(prn_as_complex.tostring())))    # type: ignore
         if False and key in self._cached_correlation_profiles:
             _logger.debug(f"Did hit cache for PRN correlation result")
             cached_correlation_profile = self._cached_correlation_profiles[key]

@@ -8,6 +8,8 @@ from gypsum.constants import SAMPLES_PER_PRN_TRANSMISSION, SAMPLES_PER_SECOND
 
 _IterType = TypeVar("_IterType")
 
+Seconds = float
+
 AntennaSamplesSpanningAcquisitionIntegrationPeriodMs = np.ndarray
 AntennaSamplesSpanningOneMs = np.ndarray
 PrnReplicaCodeSamplesSpanningOneMs = np.ndarray
@@ -36,7 +38,7 @@ def chunks(li: Collection[_IterType], chunk_size: int, step: int | None = None) 
         if len(li) - i < chunk_size:
             # print(f'breaking because were on the last chunk, len={len(li)}, chunk_size={chunk_size}, i={i}')
             break
-        yield li[i : i + chunk_size]
+        yield li[i : i + chunk_size]    # type: ignore
 
 
 def round_to_previous_multiple_of(val: int, multiple: int) -> int:
@@ -81,7 +83,7 @@ def integrate_correlation_with_doppler_shifted_prn(
         IntegrationType.Coherent: complex,
         IntegrationType.NonCoherent: np.float64,
     }[integration_type]
-    integrated_correlation_result = np.zeros(SAMPLES_PER_PRN_TRANSMISSION, dtype=correlation_data_type)
+    integrated_correlation_result: np.ndarray = np.zeros(SAMPLES_PER_PRN_TRANSMISSION, dtype=correlation_data_type)
     for i, chunk_that_may_contain_one_prn in enumerate(chunks(antenna_data, SAMPLES_PER_PRN_TRANSMISSION)):
         sample_index = i * SAMPLES_PER_PRN_TRANSMISSION
         integration_time_domain = (np.arange(SAMPLES_PER_PRN_TRANSMISSION) / SAMPLES_PER_SECOND) + (

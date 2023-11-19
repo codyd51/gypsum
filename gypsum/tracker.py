@@ -7,6 +7,7 @@ from typing import Self
 import numpy as np
 
 from gypsum.antenna_sample_provider import ReceiverTimestampSeconds
+from gypsum.antenna_sample_provider import Seconds
 from gypsum.constants import SAMPLES_PER_PRN_TRANSMISSION, SAMPLES_PER_SECOND
 from gypsum.satellite import GpsSatellite
 from gypsum.utils import (
@@ -25,7 +26,7 @@ class BitValue(Enum):
     ONE = auto()
 
     @classmethod
-    def from_val(cls, val: int) -> Self:
+    def from_val(cls, val: int) -> 'BitValue':
         return {
             0: BitValue.ZERO,
             1: BitValue.ONE,
@@ -37,7 +38,7 @@ class BitValue(Enum):
             BitValue.ONE: 1,
         }[self]
 
-    def inverted(self) -> Self:
+    def inverted(self) -> 'BitValue':
         return {
             BitValue.ZERO: BitValue.ONE,
             BitValue.ONE: BitValue.ZERO,
@@ -57,7 +58,7 @@ class NavigationBitPseudosymbol(Enum):
     ONE = auto()
 
     @classmethod
-    def from_val(cls, val: int) -> Self:
+    def from_val(cls, val: int) -> 'NavigationBitPseudosymbol':
         return {
             -1: NavigationBitPseudosymbol.MINUS_ONE,
             1: NavigationBitPseudosymbol.ONE,
@@ -116,7 +117,7 @@ class GpsSatelliteTracker:
 
         # Correlate early, prompt, and late phase versions of the PRN
         unslid_prn = params.satellite.prn_as_complex
-        prompt_prn = np.roll(unslid_prn, params.current_prn_code_phase_shift)
+        prompt_prn = np.roll(unslid_prn, params.current_prn_code_phase_shift)   # type: ignore
 
         coherent_prompt_correlation = frequency_domain_correlation(doppler_shifted_samples, prompt_prn)
         non_coherent_prompt_correlation = np.abs(coherent_prompt_correlation)

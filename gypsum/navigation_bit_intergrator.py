@@ -49,13 +49,13 @@ class EmittedPseudosymbol:
 
 
 class NavigationBitIntegrator:
-    def __init__(self):
+    def __init__(self) -> None:
         self.queued_pseudosymbols: list[EmittedPseudosymbol] = []
         self.determined_bit_phase: int | None = None
         self.bit_index = 0
 
     def process_pseudosymbol(self, receiver_timestamp: ReceiverTimestampSeconds, pseudosymbol: NavigationBitPseudosymbol) -> list[Event]:
-        events = []
+        events: list[Event] = []
         self.queued_pseudosymbols.append(EmittedPseudosymbol(
             receiver_timestamp=receiver_timestamp,
             pseudosymbol=pseudosymbol,
@@ -95,7 +95,7 @@ class NavigationBitIntegrator:
                     # This could be sensitive to tracking errors in this particular second of processing...
 
                 highest_confidence_phase_offset = max(
-                    phase_guess_to_confidence_score, key=phase_guess_to_confidence_score.get
+                    phase_guess_to_confidence_score, key=phase_guess_to_confidence_score.get    # type: ignore
                 )
                 highest_confidence_score = phase_guess_to_confidence_score[highest_confidence_phase_offset]
                 # highest_confidence_phase_offset = int(np.argmax(confidence_scores))
@@ -136,7 +136,7 @@ class NavigationBitIntegrator:
                     bit_pseudosymbols = self.queued_pseudosymbols[:PSEUDOSYMBOLS_PER_NAVIGATION_BIT]
                     # Consume these pseudosymbols by removing them from the queue
                     self.queued_pseudosymbols = self.queued_pseudosymbols[PSEUDOSYMBOLS_PER_NAVIGATION_BIT:]
-                    pseudosymbol_sum = sum([s.as_val() for s in bit_pseudosymbols])
+                    pseudosymbol_sum = sum([s.pseudosymbol.as_val() for s in bit_pseudosymbols])
                     if pseudosymbol_sum > 0:
                         bit_value = BitValue.ONE
                     else:

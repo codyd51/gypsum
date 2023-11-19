@@ -43,7 +43,7 @@ class GpsReceiver:
         self.satellite_ids_eligible_for_acquisition = [GpsSatelliteId(id=32)]
         self.satellite_detector = GpsSatelliteDetector(self.satellites_by_id)
         # Used during acquisition to integrate correlation over a longer period than a millisecond.
-        self.rolling_samples_buffer = collections.deque(maxlen=ACQUISITION_INTEGRATION_PERIOD_MS)
+        self.rolling_samples_buffer: collections.deque = collections.deque(maxlen=ACQUISITION_INTEGRATION_PERIOD_MS)
 
         self.tracked_satellite_ids_to_processing_pipelines: dict[
             GpsSatelliteId, GpsSatelliteSignalProcessingPipeline
@@ -52,7 +52,7 @@ class GpsReceiver:
 
         self.world_model = GpsWorldModel()
 
-    def step(self):
+    def step(self) -> None:
         """Run one 'iteration' of the GPS receiver. This consumes one millisecond of antenna data."""
         receiver_timestamp: ReceiverTimestampSeconds
         samples: AntennaSamplesSpanningOneMs
@@ -135,7 +135,7 @@ class GpsReceiver:
         satellite_ids_to_reacquire = []
         for satellite_id, pipeline in self.tracked_satellite_ids_to_processing_pipelines.items():
             try:
-                if events := pipeline.process_samples(receiver_timestamp, samples):
+                if events := pipeline.process_samples(receiver_timestamp, self.antenna_samples_provider, samples):
                     satellite_ids_to_events[satellite_id] = events
             except LostSatelliteLockError:
                 satellite_ids_to_reacquire.append(satellite_id)

@@ -1,5 +1,6 @@
 import logging
 from enum import Enum, auto
+from typing import Sequence
 
 from gypsum.antenna_sample_provider import ReceiverTimestampSeconds
 from gypsum.events import Event
@@ -60,7 +61,7 @@ class EmitSubframeEvent(Event):
 
 
 class NavigationMessageDecoder:
-    def __init__(self):
+    def __init__(self) -> None:
         self.queued_bits: list[EmitNavigationBitEvent] = []
         self.determined_subframe_phase: int | None = None
         self.determined_polarity: BitPolarity | None = None
@@ -93,7 +94,7 @@ class NavigationMessageDecoder:
         return None
 
     def process_bit_from_satellite(self, bit_event: EmitNavigationBitEvent) -> list[Event]:
-        events = []
+        events: list[Event] = []
         self.queued_bits.append(bit_event)
 
         # Try to identify subframe phase once we have enough bits to see a few subframes
@@ -150,6 +151,7 @@ class NavigationMessageDecoder:
         _logger.info(f"Handover word time of week: {handover_word.time_of_week_in_seconds}")
 
         subframe_id = handover_word.subframe_id
+        subframe: NavigationMessageSubframe
         if subframe_id == GpsSubframeId.ONE:
             subframe = subframe_parser.parse_subframe_1()
         elif subframe_id == GpsSubframeId.TWO:

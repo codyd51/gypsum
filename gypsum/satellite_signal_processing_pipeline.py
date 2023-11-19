@@ -1,6 +1,7 @@
 import logging
 from enum import Enum, auto
 from typing import Callable, Type
+from typing import Sequence
 
 from gypsum.acquisition import SatelliteAcquisitionAttemptResult
 from gypsum.antenna_sample_provider import ReceiverTimestampSeconds
@@ -64,7 +65,7 @@ class GpsSatelliteSignalProcessingPipeline:
         self.tracker = GpsSatelliteTracker(tracking_params, SECONDARY_PLL_BANDWIDTH)
         self.pseudosymbol_integrator = NavigationBitIntegrator()
         self.navigation_message_decoder = NavigationMessageDecoder()
-        self.current_receiver_timestamp = 0
+        self.current_receiver_timestamp = 0.0
 
     def process_samples(self, receiver_timestamp: ReceiverTimestampSeconds, samples: AntennaSamplesSpanningOneMs) -> list[Event]:
         self.current_receiver_timestamp = receiver_timestamp
@@ -72,12 +73,12 @@ class GpsSatelliteSignalProcessingPipeline:
         integrator_events = self.pseudosymbol_integrator.process_pseudosymbol(receiver_timestamp, pseudosymbol)
 
         integrator_event_type_to_callback: dict[Type[Event], Callable[[Event], list[Event] | None]] = {  # type: ignore
-            DeterminedBitPhaseEvent: self._handle_integrator_determined_bit_phase,
-            CannotDetermineBitPhaseEvent: self._handle_integrator_cannot_determine_bit_phase,
-            LostBitCoherenceEvent: self._handle_integrator_lost_bit_coherence,
-            EmitNavigationBitEvent: self._handle_integrator_emitted_bit,
+            DeterminedBitPhaseEvent: self._handle_integrator_determined_bit_phase,  # type: ignore
+            CannotDetermineBitPhaseEvent: self._handle_integrator_cannot_determine_bit_phase,  # type: ignore
+            LostBitCoherenceEvent: self._handle_integrator_lost_bit_coherence,  # type: ignore
+            EmitNavigationBitEvent: self._handle_integrator_emitted_bit,  # type: ignore
         }
-        events_to_return = []
+        events_to_return: list[Event] = []
         for event in integrator_events:
             event_type = type(event)
             if event_type not in integrator_event_type_to_callback:
@@ -106,14 +107,14 @@ class GpsSatelliteSignalProcessingPipeline:
         )
         raise LostSatelliteLockError()
 
-    def _handle_integrator_emitted_bit(self, event: EmitNavigationBitEvent) -> list[Event]:
+    def _handle_integrator_emitted_bit(self, bit_event: EmitNavigationBitEvent) -> list[Event]:
         # _logger.info(f'handling bit {self.pseudosymbol_integrator.bit_index-1}')
-        decoder_events = self.navigation_message_decoder.process_bit_from_satellite(event)
+        decoder_events = self.navigation_message_decoder.process_bit_from_satellite(bit_event)
 
         decoder_event_type_to_callback: dict[Type[Event], Callable[[Event], list[Event] | None]] = {  # type: ignore
-            DeterminedSubframePhaseEvent: self._handle_decoder_determined_subframe_phase,
-            CannotDetermineSubframePhaseEvent: self._handle_decoder_cannot_determine_subframe_phase,
-            EmitSubframeEvent: self._handle_decoder_emitted_subframe,
+            DeterminedSubframePhaseEvent: self._handle_decoder_determined_subframe_phase,   # type: ignore
+            CannotDetermineSubframePhaseEvent: self._handle_decoder_cannot_determine_subframe_phase,   # type: ignore
+            EmitSubframeEvent: self._handle_decoder_emitted_subframe,   # type: ignore
         }
         events_to_return = []
         for event in decoder_events:

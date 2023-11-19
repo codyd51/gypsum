@@ -1,6 +1,7 @@
 from collections import defaultdict
 from enum import Enum
 from enum import auto
+from typing import Sequence
 from typing import Type
 from typing import cast
 
@@ -15,6 +16,9 @@ from gypsum.navigation_message_parser import NavigationMessageSubframe3
 from gypsum.navigation_message_parser import NavigationMessageSubframe4
 from gypsum.navigation_message_parser import NavigationMessageSubframe5
 from gypsum.navigation_message_parser import SemiCircles
+
+
+_OrbitalParameterType = Meters | float | SemiCircles
 
 
 class OrbitalParameterType(Enum):
@@ -32,7 +36,7 @@ class OrbitalParameterType(Enum):
     MEAN_ANOMALY_AT_REFERENCE_TIME = auto()
 
     @property
-    def unit(self) -> Type:
+    def unit(self) -> Type[_OrbitalParameterType]:
         return {
             self.SEMI_MAJOR_AXIS: Meters,
             self.ECCENTRICITY: float,
@@ -40,16 +44,13 @@ class OrbitalParameterType(Enum):
             self.LONGITUDE_OF_ASCENDING_NODE: SemiCircles,
             self.ARGUMENT_OF_PERIGEE: SemiCircles,
             self.MEAN_ANOMALY_AT_REFERENCE_TIME: SemiCircles,
-        }[self]
-
-
-_OrbitalParameterType = Meters | float | SemiCircles
+        }[self] # type: ignore
 
 
 class OrbitalParameters:
     """Tracks a 'set' of orbital parameters for a classical 2-body orbit."""
     def __init__(self) -> None:
-        self.parameter_type_to_value = {t: None for t in OrbitalParameterType}
+        self.parameter_type_to_value: dict[OrbitalParameterType, _OrbitalParameterType | None] = {t: None for t in OrbitalParameterType}
 
     def is_complete(self) -> bool:
         """Returns whether we have a 'full set' of parameters to describe a body's orbit."""
@@ -104,7 +105,7 @@ class GpsWorldModel:
     def __init__(self) -> None:
         self.satellite_ids_to_orbital_parameters: dict[GpsSatelliteId, OrbitalParameters] = defaultdict(OrbitalParameters)
 
-    def handle_subframe_emitted(self, satellite_id: GpsSatelliteId, emit_subframe_event: EmitSubframeEvent) -> list[Event]:
+    def handle_subframe_emitted(self, satellite_id: GpsSatelliteId, emit_subframe_event: EmitSubframeEvent) -> Sequence[Event]:
         events_to_return = []
         subframe = emit_subframe_event.subframe
         subframe_id = subframe.subframe_id

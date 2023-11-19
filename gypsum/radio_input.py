@@ -18,7 +18,7 @@ class InputFileInfo:
     path: Path
     format: InputFileType
     sdr_sample_rate: float
-    utc_start_time: datetime
+    utc_start_time: datetime.datetime
 
     @property
     def samples_in_prn_period(self) -> int:
@@ -141,7 +141,7 @@ def get_samples_from_radio_input_source(input_info: InputFileInfo, sample_count:
 
         data = np.fromfile(input_info.path.as_posix(), dtype=np.int16, count=int(offset + count) * 2)
         # Quantise to 2 bits I and 2 bits Q per sample
-        data = np.clip(np.floor_divide(data, 150), -2, 1) + 0.5
+        data = np.clip(np.floor_divide(data, 150), -2, 1) + 0.5 # type: ignore
         # Convert to complex numpy array
         data = np.reshape(data, (data.shape[0] // 2, 2))
         data = data[offset:, 0] + 1j * data[offset:, 1]

@@ -5,13 +5,12 @@ from enum import Enum, auto
 from typing import Self
 
 from gypsum.config import GPS_EPOCH_BASE_WEEK_NUMBER
-
+from gypsum.utils import Seconds
 
 Meters = float
 SemiCirclesPerSecond = float
 SemiCircles = float
 Radians = float
-Seconds = float
 SecondsPerSecond = float
 
 
@@ -43,14 +42,14 @@ class GpsSubframeId(Enum):
     FIVE = auto()
 
     @classmethod
-    def from_bits(cls, bits: list[int]) -> Self:
+    def from_bits(cls, bits: list[int]) -> 'GpsSubframeId':
         return {
             (0, 0, 1): GpsSubframeId.ONE,
             (0, 1, 0): GpsSubframeId.TWO,
             (0, 1, 1): GpsSubframeId.THREE,
             (1, 0, 0): GpsSubframeId.FOUR,
             (1, 0, 1): GpsSubframeId.FIVE,
-        }[*bits]
+        }[*bits]    # type: ignore
 
 
 @dataclass
@@ -90,7 +89,7 @@ class NavigationMessageSubframe:
 
 @dataclass
 class NavigationMessageSubframe1(NavigationMessageSubframe):
-    week_num_mod_1024_bits: list[int]
+    week_num_mod_1024_bits: int
     ca_or_p_on_l2: list[int]
     ura_index: list[int]
     sv_health: list[int]
@@ -186,7 +185,7 @@ class NavigationMessageSubframeParser:
     def __init__(self, bits: list[int]) -> None:
         self.bits = bits
         self.cursor = 0
-        self.preprocessed_data_bits_of_current_word = []
+        self.preprocessed_data_bits_of_current_word: list[int] = []
         # Every parity check relies on the last two bits from the previous word
         # For the first word, we prime the buffer with 00.
         self.last_two_parity_bits = [0, 0]
