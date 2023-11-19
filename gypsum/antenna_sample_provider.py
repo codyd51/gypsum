@@ -8,9 +8,10 @@ import numpy as np
 
 from gypsum.config import UTC_LEAP_SECONDS_COUNT
 from gypsum.constants import SAMPLES_PER_SECOND
+from gypsum.utils import Seconds
 
 # Expressed as seconds since the UTC epoch, as measured by the local clock (i.e. including the receiver clock bias)
-ReceiverTimestampSeconds = float
+ReceiverTimestampSeconds = Seconds
 
 _logger = logging.getLogger(__name__)
 
@@ -24,17 +25,23 @@ class AntennaSampleProvider(ABC):
     def peek_samples(self, sample_count: int) -> Tuple[ReceiverTimestampSeconds, np.ndarray]:
         ...
 
+    @abstractmethod
+    def seconds_since_start(self) -> Seconds:
+        ...
+
 
 class AntennaSampleProviderBackedByBytes(AntennaSampleProvider):
     def __init__(self, data: np.ndarray) -> None:
-        raise NotImplementedError(f'This provider must be reworked to track the passage of time.')
         self.data = data
         self.cursor = 0
+        raise NotImplementedError(f'This provider must be reworked to track the passage of time.')
 
     def peek_samples(self, sample_count: int) -> Tuple[ReceiverTimestampSeconds, np.ndarray]:
+        raise NotImplementedError(f'This provider must be reworked to track the passage of time.')
         return self.data[self.cursor : self.cursor + sample_count]
 
     def get_samples(self, sample_count: int) -> Tuple[ReceiverTimestampSeconds, np.ndarray]:
+        raise NotImplementedError(f'This provider must be reworked to track the passage of time.')
         data = self.peek_samples(sample_count)
         self.cursor += sample_count
         return data
@@ -46,11 +53,14 @@ class AntennaSampleProviderBackedByFile(AntennaSampleProvider):
         self.cursor = 0
         self.utc_start_time = utc_start_time.timestamp()
 
+    def seconds_since_start(self) -> Seconds:
+        timestamp_in_seconds_since_start = self.cursor / SAMPLES_PER_SECOND
+        return timestamp_in_seconds_since_start
+
     def peek_samples(self, sample_count: int) -> Tuple[ReceiverTimestampSeconds, np.ndarray]:
         # The timestamp is always taken at the start of this set of samples
         # TODO(PT): SAMPLES_PER_SECOND should be an instance attribute
-        timestamp_in_seconds_since_start = self.cursor / SAMPLES_PER_SECOND
-        receiver_utc_timestamp = self.utc_start_time + timestamp_in_seconds_since_start
+        receiver_utc_timestamp = self.utc_start_time + self.seconds_since_start()
         # GPS differs from UTC by an integer number of leap seconds.
         receiver_gps_timestamp = receiver_utc_timestamp + UTC_LEAP_SECONDS_COUNT
 
