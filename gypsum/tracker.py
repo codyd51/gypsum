@@ -6,6 +6,7 @@ from typing import Self
 
 import numpy as np
 
+from gypsum.antenna_sample_provider import ReceiverTimestampSeconds
 from gypsum.constants import SAMPLES_PER_PRN_TRANSMISSION, SAMPLES_PER_SECOND
 from gypsum.satellite import GpsSatellite
 from gypsum.utils import (
@@ -103,13 +104,11 @@ class GpsSatelliteTracker:
             1 + ((2 * damping_factor * natural_freq) + (natural_freq**2))
         )
 
-    def process_samples(self, samples: AntennaSamplesSpanningOneMs, sample_index: int) -> NavigationBitPseudosymbol:
+    def process_samples(self, receiver_timestamp: ReceiverTimestampSeconds, samples: AntennaSamplesSpanningOneMs) -> NavigationBitPseudosymbol:
         params = self.tracking_params
 
         # Generate Doppler-shifted and phase-shifted carrier wave
-        time_domain = (np.arange(SAMPLES_PER_PRN_TRANSMISSION) / SAMPLES_PER_SECOND) + (
-            sample_index / SAMPLES_PER_SECOND
-        )
+        time_domain = (np.arange(SAMPLES_PER_PRN_TRANSMISSION) / SAMPLES_PER_SECOND) + receiver_timestamp
         doppler_shift_carrier = np.exp(
             -1j * ((2 * np.pi * params.current_doppler_shift * time_domain) + params.current_carrier_wave_phase_shift)
         )

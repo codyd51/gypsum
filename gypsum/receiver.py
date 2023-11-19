@@ -6,6 +6,7 @@ import numpy as np
 
 from gypsum.acquisition import GpsSatelliteDetector
 from gypsum.antenna_sample_provider import AntennaSampleProvider
+from gypsum.antenna_sample_provider import ReceiverTimestampSeconds
 from gypsum.config import ACQUISITION_INTEGRATION_PERIOD_MS
 from gypsum.constants import SAMPLES_PER_PRN_TRANSMISSION
 from gypsum.gps_ca_prn_codes import GpsSatelliteId, generate_replica_prn_signals
@@ -53,8 +54,9 @@ class GpsReceiver:
 
     def step(self):
         """Run one 'iteration' of the GPS receiver. This consumes one millisecond of antenna data."""
-        sample_index = self.antenna_samples_provider.cursor
-        samples: AntennaSamplesSpanningOneMs = self.antenna_samples_provider.get_samples(SAMPLES_PER_PRN_TRANSMISSION)
+        receiver_timestamp: ReceiverTimestampSeconds
+        samples: AntennaSamplesSpanningOneMs
+        receiver_timestamp, samples = self.antenna_samples_provider.get_samples(SAMPLES_PER_PRN_TRANSMISSION)
         # Firstly, record this sample in our rolling buffer
         self.rolling_samples_buffer.append(samples)
 
@@ -65,11 +67,11 @@ class GpsReceiver:
                 f"Will perform acquisition search because we're only "
                 f"tracking {len(self.tracked_satellite_ids_to_processing_pipelines)} satellites."
             )
-            _logger.info(f"{self.antenna_samples_provider.cursor}: Subframe count: {self.subframe_count}")
+            _logger.info(f"{receiver_timestamp}: Subframe count: {self.subframe_count}")
             self._perform_acquisition()
 
         # Continue tracking each acquired satellite
-        satellite_ids_to_tracker_events = self._track_acquired_satellites(samples, sample_index)
+        satellite_ids_to_tracker_events = self._track_acquired_satellites(receiver_timestamp, samples)
         # And keep track of updates to our world model
         satellite_ids_to_world_model_events = {}
         for satellite_id, events in satellite_ids_to_tracker_events.items():
@@ -127,13 +129,13 @@ class GpsReceiver:
         return [n.satellite_id for n in newly_acquired_satellites]
 
     def _track_acquired_satellites(
-        self, samples: AntennaSamplesSpanningOneMs, sample_index: int
+        self, receiver_timestamp: ReceiverTimestampSeconds, samples: AntennaSamplesSpanningOneMs,
     ) -> dict[GpsSatelliteId, list[Event]]:
         satellite_ids_to_events = {}
         satellite_ids_to_reacquire = []
         for satellite_id, pipeline in self.tracked_satellite_ids_to_processing_pipelines.items():
             try:
-                if events := pipeline.process_samples(samples, sample_index):
+                if events := pipeline.process_samples(receiver_timestamp, samples):
                     satellite_ids_to_events[satellite_id] = events
             except LostSatelliteLockError:
                 satellite_ids_to_reacquire.append(satellite_id)

@@ -3,6 +3,7 @@ from enum import Enum, auto
 from typing import Callable, Type
 
 from gypsum.acquisition import SatelliteAcquisitionAttemptResult
+from gypsum.antenna_sample_provider import ReceiverTimestampSeconds
 from gypsum.config import SECONDARY_PLL_BANDWIDTH
 from gypsum.events import UnknownEventError
 from gypsum.navigation_bit_intergrator import (
@@ -63,11 +64,11 @@ class GpsSatelliteSignalProcessingPipeline:
         self.tracker = GpsSatelliteTracker(tracking_params, SECONDARY_PLL_BANDWIDTH)
         self.pseudosymbol_integrator = NavigationBitIntegrator()
         self.navigation_message_decoder = NavigationMessageDecoder()
-        self.sample_index = 0
+        self.current_receiver_timestamp = 0
 
-    def process_samples(self, samples: AntennaSamplesSpanningOneMs, sample_index: int) -> list[Event]:
-        self.sample_index = sample_index
-        pseudosymbol = self.tracker.process_samples(samples, sample_index)
+    def process_samples(self, receiver_timestamp: ReceiverTimestampSeconds, samples: AntennaSamplesSpanningOneMs) -> list[Event]:
+        self.current_receiver_timestamp = receiver_timestamp
+        pseudosymbol = self.tracker.process_samples(receiver_timestamp, samples)
         integrator_events = self.pseudosymbol_integrator.process_pseudosymbol(pseudosymbol)
 
         integrator_event_type_to_callback: dict[Type[Event], Callable[[Event], list[Event] | None]] = {  # type: ignore
@@ -92,7 +93,7 @@ class GpsSatelliteSignalProcessingPipeline:
     def _handle_integrator_cannot_determine_bit_phase(self, event: CannotDetermineBitPhaseEvent) -> None:
         satellite_id = self.satellite.satellite_id.id
         _logger.info(
-            f"{self.sample_index}: Integrator for SV({satellite_id} could not determine bit phase. Confidence: {int(event.confidence*100)}%"
+            f"{self.current_receiver_timestamp}: Integrator for SV({satellite_id} could not determine bit phase. Confidence: {int(event.confidence*100)}%"
         )
         # Untrack this satellite as the bits are low confidence
         raise LostSatelliteLockError()
@@ -100,7 +101,7 @@ class GpsSatelliteSignalProcessingPipeline:
     def _handle_integrator_lost_bit_coherence(self, event: LostBitCoherenceEvent) -> None:
         satellite_id = self.satellite.satellite_id.id
         _logger.info(
-            f"{self.sample_index}: Integrator for SV({satellite_id}) lost bit coherence. "
+            f"{self.current_receiver_timestamp}: Integrator for SV({satellite_id}) lost bit coherence. "
             f"Confidence for bit {self.pseudosymbol_integrator.bit_index}: {event.confidence}%"
         )
         raise LostSatelliteLockError()
