@@ -18,7 +18,7 @@ def main():
     logging.basicConfig(level=logging.INFO)
 
     input_source = INPUT_SOURCES[7]
-    antenna_samples_provider = AntennaSampleProviderBackedByFile(input_source.path)
+    antenna_samples_provider = AntennaSampleProviderBackedByFile(input_source.path, input_source.utc_start_time)
     _logger.info(f"Set up antenna sample stream backed by file: {input_source.path.as_posix()}")
 
     receiver = GpsReceiver(antenna_samples_provider)

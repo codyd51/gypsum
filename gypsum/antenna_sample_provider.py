@@ -1,3 +1,4 @@
+import datetime
 import logging
 from abc import ABC, abstractmethod
 from pathlib import Path
@@ -5,8 +6,10 @@ from typing import Tuple
 
 import numpy as np
 
+from gypsum.config import UTC_LEAP_SECONDS_COUNT
 from gypsum.constants import SAMPLES_PER_SECOND
 
+# Expressed as seconds since the UTC epoch, as measured by the local clock (i.e. including the receiver clock bias)
 ReceiverTimestampSeconds = float
 
 _logger = logging.getLogger(__name__)
@@ -38,14 +41,18 @@ class AntennaSampleProviderBackedByBytes(AntennaSampleProvider):
 
 
 class AntennaSampleProviderBackedByFile(AntennaSampleProvider):
-    def __init__(self, path: Path) -> None:
+    def __init__(self, path: Path, utc_start_time: datetime.datetime) -> None:
         self.path = path
         self.cursor = 0
+        self.utc_start_time = utc_start_time.timestamp()
 
     def peek_samples(self, sample_count: int) -> Tuple[ReceiverTimestampSeconds, np.ndarray]:
         # The timestamp is always taken at the start of this set of samples
         # TODO(PT): SAMPLES_PER_SECOND should be an instance attribute
-        receiver_timestamp_seconds = self.cursor / SAMPLES_PER_SECOND
+        timestamp_in_seconds_since_start = self.cursor / SAMPLES_PER_SECOND
+        receiver_utc_timestamp = self.utc_start_time + timestamp_in_seconds_since_start
+        # GPS differs from UTC by an integer number of leap seconds.
+        receiver_gps_timestamp = receiver_utc_timestamp + UTC_LEAP_SECONDS_COUNT
 
         words = np.fromfile(
             self.path.as_posix(),
@@ -57,7 +64,7 @@ class AntennaSampleProviderBackedByFile(AntennaSampleProvider):
         )
         # Recombine the inline IQ samples into complex values
         iq_samples = (words[0::2]) + (1j * words[1::2])
-        return (receiver_timestamp_seconds, iq_samples)
+        return receiver_gps_timestamp, iq_samples
 
     def get_samples(self, sample_count: int) -> Tuple[ReceiverTimestampSeconds, np.ndarray]:
         receiver_timestamp, file_data = self.peek_samples(sample_count)

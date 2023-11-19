@@ -1,6 +1,8 @@
+import datetime
 from dataclasses import dataclass
 from enum import Enum, auto
 from pathlib import Path
+import dateutil.parser
 
 import numpy as np
 
@@ -16,6 +18,7 @@ class InputFileInfo:
     path: Path
     format: InputFileType
     sdr_sample_rate: float
+    utc_start_time: datetime
 
     @property
     def samples_in_prn_period(self) -> int:
@@ -31,16 +34,19 @@ INPUT_SOURCES = [
         path=Path(__file__).parents[1] / "vendored_signals" / "2013_04_04_GNSS_SIGNAL_at_CTTC_SPAIN.dat",
         format=InputFileType.Raw,
         sdr_sample_rate=4e6,
+        utc_start_time=datetime.datetime.utcnow(),
     ),
     InputFileInfo(
         path=Path(__file__).parents[1] / "vendored_signals" / "baseband_1575420000Hz_16-12-07_07-10-2023.wav",
         format=InputFileType.Wav,
         sdr_sample_rate=2.4e6,
+        utc_start_time=datetime.datetime.utcnow(),
     ),
     InputFileInfo(
         path=Path(__file__).parents[1] / "vendored_signals" / "phillip.wav",
         format=InputFileType.Wav,
         sdr_sample_rate=2.4e6,
+        utc_start_time=datetime.datetime.utcnow(),
     ),
     InputFileInfo(
         path=Path(__file__).parents[1]
@@ -48,6 +54,7 @@ INPUT_SOURCES = [
         / "baseband_1575136000Hz_22-52-15_10-10-2023_Int16_BiasT_TunerAGC_IQCorrection_100PPMCorrection.wav",
         format=InputFileType.Wav,
         sdr_sample_rate=2.4e6,
+        utc_start_time=datetime.datetime.utcnow(),
     ),
     InputFileInfo(
         path=Path(__file__).parents[1]
@@ -55,12 +62,14 @@ INPUT_SOURCES = [
         / "baseband_1575420000Hz_23-21-28_10-10-2023_2048mhz_sample_rate.wav",
         format=InputFileType.Wav,
         sdr_sample_rate=2.048e6,
+        utc_start_time=datetime.datetime.utcnow(),
     ),
     InputFileInfo(
         path=Path(__file__).parents[1] / "vendored_signals" / "output_at_seven_wives",
         format=InputFileType.GnuRadioRecording,
         # 2 * C/A PRN chip rate * 1k PRN repetitions per second
         sdr_sample_rate=2 * 1023 * 1000,
+        utc_start_time=datetime.datetime.utcnow(),
     ),
     InputFileInfo(
         # Satellites that should be up now (distances taken a few minutes after recording):
@@ -100,12 +109,14 @@ INPUT_SOURCES = [
         format=InputFileType.GnuRadioRecording,
         # 2 * C/A PRN chip rate * 1k PRN repetitions per second
         sdr_sample_rate=2 * 1023 * 1000,
+        utc_start_time=datetime.datetime.utcnow(),
     ),
     InputFileInfo(
         path=Path(__file__).parents[1] / "vendored_signals" / "nov_3_time_18_48_roof",
         format=InputFileType.GnuRadioRecording,
         # 2 * C/A PRN chip rate * 1k PRN repetitions per second
         sdr_sample_rate=2 * 1023 * 1000,
+        utc_start_time=dateutil.parser.parse("2023-11-03T18:48:00+00:00"),
     ),
 ]
 
