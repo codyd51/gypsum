@@ -55,6 +55,7 @@ class EmitSubframeEvent(Event):
         handover_word: HandoverWord,
         subframe: NavigationMessageSubframe,
     ) -> None:
+        self.receiver_timestamp = receiver_timestamp
         self.telemetry_word = telemetry_word
         self.handover_word = handover_word
         self.subframe = subframe

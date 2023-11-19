@@ -9,6 +9,7 @@ from gypsum.constants import SAMPLES_PER_PRN_TRANSMISSION, SAMPLES_PER_SECOND
 _IterType = TypeVar("_IterType")
 
 Seconds = float
+MetersPerSecond = float
 
 AntennaSamplesSpanningAcquisitionIntegrationPeriodMs = np.ndarray
 AntennaSamplesSpanningOneMs = np.ndarray

@@ -119,10 +119,32 @@ class DeterminedSatelliteOrbitEvent(Event):
         self.orbital_parameters = orbital_parameters
 
 
+_TimeParameterValueType = int
+
+
+class TimeParameterType(Enum):
+    WEEK_NUMBER = auto()
+
+    @property
+    def unit(self) -> Type[_TimeParameterValueType]:
+        return {
+            self.WEEK_NUMBER: int,
+        }[self] # type: ignore
+
+
+class TimeParameters(ParameterSet[TimeParameterType, _TimeParameterValueType]):
+    _PARAMETER_TYPE = TimeParameterType
+
+    @property
+    def week_number(self) -> int:
+        return self._get_parameter_infallibly(TimeParameterType.WEEK_NUMBER)
+
+
 class GpsWorldModel:
     """Integrates satellite subframes to maintain a model of satellite orbits around Earth"""
     def __init__(self) -> None:
         self.satellite_ids_to_orbital_parameters: dict[GpsSatelliteId, OrbitalParameters] = defaultdict(OrbitalParameters)
+        self.satellite_ids_to_time_parameters: dict[GpsSatelliteId, TimeParameters] = defaultdict(TimeParameters)
 
     def handle_subframe_emitted(self, satellite_id: GpsSatelliteId, emit_subframe_event: EmitSubframeEvent) -> Sequence[Event]:
         events_to_return = []
@@ -130,21 +152,22 @@ class GpsWorldModel:
         subframe_id = subframe.subframe_id
 
         orbital_params_for_this_satellite = self.satellite_ids_to_orbital_parameters[satellite_id]
+        time_params_for_this_satellite = self.satellite_ids_to_time_parameters[satellite_id]
         # Keep track of whether we already had all the orbital parameters for this satellite, so we know whether
         # we've just completed a full set.
         were_orbit_params_already_complete = orbital_params_for_this_satellite.is_complete()
 
         # Casts because the subframe is currently typed as the subframe base class
         if subframe_id == GpsSubframeId.ONE:
-            self._process_subframe1(orbital_params_for_this_satellite, cast(NavigationMessageSubframe1, subframe))
+            self._process_subframe1(orbital_params_for_this_satellite, time_params_for_this_satellite, cast(NavigationMessageSubframe1, subframe))
         elif subframe_id == GpsSubframeId.TWO:
-            self._process_subframe2(orbital_params_for_this_satellite, cast(NavigationMessageSubframe2, subframe))
+            self._process_subframe2(orbital_params_for_this_satellite, time_params_for_this_satellite, cast(NavigationMessageSubframe2, subframe))
         elif subframe_id == GpsSubframeId.THREE:
-            self._process_subframe3(orbital_params_for_this_satellite, cast(NavigationMessageSubframe3, subframe))
+            self._process_subframe3(orbital_params_for_this_satellite, time_params_for_this_satellite, cast(NavigationMessageSubframe3, subframe))
         elif subframe_id == GpsSubframeId.FOUR:
-            self._process_subframe4(orbital_params_for_this_satellite, cast(NavigationMessageSubframe4, subframe))
+            self._process_subframe4(orbital_params_for_this_satellite, time_params_for_this_satellite, cast(NavigationMessageSubframe4, subframe))
         elif subframe_id == GpsSubframeId.FIVE:
-            self._process_subframe5(orbital_params_for_this_satellite, cast(NavigationMessageSubframe5, subframe))
+            self._process_subframe5(orbital_params_for_this_satellite, time_params_for_this_satellite, cast(NavigationMessageSubframe5, subframe))
 
         # Check whether we've just completed the set of orbital parameters for this satellite
         if not were_orbit_params_already_complete:
@@ -158,22 +181,22 @@ class GpsWorldModel:
 
         return events_to_return
 
-    def _process_subframe1(self, orbital_parameters: OrbitalParameters, subframe: NavigationMessageSubframe1) -> None:
-        pass
+    def _process_subframe1(self, orbital_parameters: OrbitalParameters, time_parameters: TimeParameters, subframe: NavigationMessageSubframe1) -> None:
+        time_parameters.parameter_type_to_value[TimeParameterType.WEEK_NUMBER] = subframe.week_num
 
-    def _process_subframe2(self, orbital_parameters: OrbitalParameters, subframe: NavigationMessageSubframe2) -> None:
+    def _process_subframe2(self, orbital_parameters: OrbitalParameters, time_parameters: TimeParameters, subframe: NavigationMessageSubframe2) -> None:
         orbital_parameters.parameter_type_to_value[OrbitalParameterType.MEAN_ANOMALY_AT_REFERENCE_TIME] = subframe.mean_anomaly_at_reference_time
         orbital_parameters.parameter_type_to_value[OrbitalParameterType.ECCENTRICITY] = subframe.eccentricity
         # The satellite transmits the square root of the semi-major axis, so square it now.
         orbital_parameters.parameter_type_to_value[OrbitalParameterType.SEMI_MAJOR_AXIS] = subframe.sqrt_semi_major_axis ** 2
 
-    def _process_subframe3(self, orbital_parameters: OrbitalParameters, subframe: NavigationMessageSubframe3) -> None:
+    def _process_subframe3(self, orbital_parameters: OrbitalParameters, time_parameters: TimeParameters, subframe: NavigationMessageSubframe3) -> None:
         orbital_parameters.parameter_type_to_value[OrbitalParameterType.INCLINATION] = subframe.inclination_angle
         orbital_parameters.parameter_type_to_value[OrbitalParameterType.ARGUMENT_OF_PERIGEE] = subframe.argument_of_perigee
         orbital_parameters.parameter_type_to_value[OrbitalParameterType.LONGITUDE_OF_ASCENDING_NODE] = subframe.longitude_of_ascending_node
 
-    def _process_subframe4(self, orbital_parameters: OrbitalParameters, subframe: NavigationMessageSubframe4) -> None:
+    def _process_subframe4(self, orbital_parameters: OrbitalParameters, time_parameters: TimeParameters, subframe: NavigationMessageSubframe4) -> None:
         pass
 
-    def _process_subframe5(self, orbital_parameters: OrbitalParameters, subframe: NavigationMessageSubframe5) -> None:
+    def _process_subframe5(self, orbital_parameters: OrbitalParameters, time_parameters: TimeParameters, subframe: NavigationMessageSubframe5) -> None:
         pass
