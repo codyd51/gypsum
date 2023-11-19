@@ -135,7 +135,11 @@ class GpsReceiver:
         satellite_ids_to_reacquire = []
         for satellite_id, pipeline in self.tracked_satellite_ids_to_processing_pipelines.items():
             try:
-                if events := pipeline.process_samples(receiver_timestamp, self.antenna_samples_provider, samples):
+                if events := pipeline.process_samples(
+                    receiver_timestamp,
+                    self.antenna_samples_provider.seconds_since_start(),
+                    samples,
+                ):
                     satellite_ids_to_events[satellite_id] = events
             except LostSatelliteLockError:
                 satellite_ids_to_reacquire.append(satellite_id)

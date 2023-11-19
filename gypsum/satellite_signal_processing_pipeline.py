@@ -24,7 +24,7 @@ from gypsum.navigation_message_decoder import (
 from gypsum.satellite import GpsSatellite
 from gypsum.tracker import GpsSatelliteTracker, GpsSatelliteTrackingParameters
 from gypsum.utils import AntennaSamplesSpanningOneMs
-
+from gypsum.utils import Seconds
 
 _logger = logging.getLogger(__name__)
 
@@ -67,9 +67,9 @@ class GpsSatelliteSignalProcessingPipeline:
         self.navigation_message_decoder = NavigationMessageDecoder()
         self.current_receiver_timestamp = 0.0
 
-    def process_samples(self, receiver_timestamp: ReceiverTimestampSeconds, samples: AntennaSamplesSpanningOneMs) -> list[Event]:
+    def process_samples(self, receiver_timestamp: ReceiverTimestampSeconds, seconds_since_start: Seconds, samples: AntennaSamplesSpanningOneMs) -> list[Event]:
         self.current_receiver_timestamp = receiver_timestamp
-        pseudosymbol = self.tracker.process_samples(receiver_timestamp, samples)
+        pseudosymbol = self.tracker.process_samples(seconds_since_start, samples)
         integrator_events = self.pseudosymbol_integrator.process_pseudosymbol(receiver_timestamp, pseudosymbol)
 
         integrator_event_type_to_callback: dict[Type[Event], Callable[[Event], list[Event] | None]] = {  # type: ignore

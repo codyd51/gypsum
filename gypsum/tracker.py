@@ -105,11 +105,11 @@ class GpsSatelliteTracker:
             1 + ((2 * damping_factor * natural_freq) + (natural_freq**2))
         )
 
-    def process_samples(self, receiver_timestamp: ReceiverTimestampSeconds, samples: AntennaSamplesSpanningOneMs) -> NavigationBitPseudosymbol:
+    def process_samples(self, seconds_since_start: Seconds, samples: AntennaSamplesSpanningOneMs) -> NavigationBitPseudosymbol:
         params = self.tracking_params
 
         # Generate Doppler-shifted and phase-shifted carrier wave
-        time_domain = (np.arange(SAMPLES_PER_PRN_TRANSMISSION) / SAMPLES_PER_SECOND) + receiver_timestamp
+        time_domain = (np.arange(SAMPLES_PER_PRN_TRANSMISSION) / SAMPLES_PER_SECOND) + seconds_since_start
         doppler_shift_carrier = np.exp(
             -1j * ((2 * np.pi * params.current_doppler_shift * time_domain) + params.current_carrier_wave_phase_shift)
         )
