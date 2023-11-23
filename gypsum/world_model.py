@@ -7,6 +7,9 @@ from typing import Type
 from typing import TypeVar
 from typing import cast
 
+from gypsum.antenna_sample_provider import ReceiverTimestampSeconds
+from gypsum.constants import SECONDS_PER_WEEK
+from gypsum.constants import UNIX_TIMESTAMP_OF_GPS_EPOCH
 from gypsum.events import Event
 from gypsum.gps_ca_prn_codes import GpsSatelliteId
 from gypsum.navigation_message_decoder import EmitSubframeEvent
@@ -18,35 +21,11 @@ from gypsum.navigation_message_parser import NavigationMessageSubframe3
 from gypsum.navigation_message_parser import NavigationMessageSubframe4
 from gypsum.navigation_message_parser import NavigationMessageSubframe5
 from gypsum.navigation_message_parser import SemiCircles
+from gypsum.navigation_message_parser import SemiCirclesPerSecond
 from gypsum.utils import MetersPerSecond
-
-_OrbitalParameterValueType = Meters | float | SemiCircles
-
-
-class OrbitalParameterType(Enum):
-    # Also called 'a'
-    SEMI_MAJOR_AXIS = auto()
-    # Also called 'e'
-    ECCENTRICITY = auto()
-    # Also called 'i'
-    INCLINATION = auto()
-    # Also called 'Omega' or Ω
-    LONGITUDE_OF_ASCENDING_NODE = auto()
-    # Also called 'omega' or 
-    ARGUMENT_OF_PERIGEE = auto()
-    # Also called 'M'
-    MEAN_ANOMALY_AT_REFERENCE_TIME = auto()
-
-    @property
-    def unit(self) -> Type[_OrbitalParameterValueType]:
-        return {
-            self.SEMI_MAJOR_AXIS: Meters,
-            self.ECCENTRICITY: float,
-            self.INCLINATION: SemiCircles,
-            self.LONGITUDE_OF_ASCENDING_NODE: SemiCircles,
-            self.ARGUMENT_OF_PERIGEE: SemiCircles,
-            self.MEAN_ANOMALY_AT_REFERENCE_TIME: SemiCircles,
-        }[self] # type: ignore
+from gypsum.utils import Seconds
+from gypsum.utils import RadiansPerSecond
+from gypsum.utils import Radians
 
 
 _ParameterType = TypeVar("_ParameterType")
@@ -71,12 +50,56 @@ class ParameterSet(Generic[_ParameterType, _ParameterValueType]):
         """Returns whether we have a 'full set' of parameters (i.e. no None values)."""
         return not any(x is None for x in self.parameter_type_to_value.values())
 
+    def set_parameter(self, param_type: _ParameterType, param_value: _ParameterValueType) -> None:
+        self.parameter_type_to_value[param_type] = param_value
+
+    def get_parameter(self, param_type: _ParameterType) -> _ParameterValueType | None:
+        return self.parameter_type_to_value[param_type]
+
+    def is_parameter_set(self, param_type: _ParameterType) -> bool:
+        return self.get_parameter(param_type) is not None
+
     def _get_parameter_infallibly(self, param_type: _ParameterType) -> _ParameterValueType:
         # PT: For caller convenience, provide infallible accessors to parameters
-        maybe_param = self.parameter_type_to_value[param_type]
+        maybe_param = self.get_parameter(param_type)
         if maybe_param is None:
             raise RuntimeError(f'Expected {param_type.name} to be available')
         return maybe_param
+
+
+_OrbitalParameterValueType = Meters | float | SemiCircles | int | Seconds | ReceiverTimestampSeconds
+
+
+class OrbitalParameterType(Enum):
+    # Classical Keplerian orbital parameters
+    #
+    # Also called 'a'
+    SEMI_MAJOR_AXIS = auto()
+    # Also called 'e'
+    ECCENTRICITY = auto()
+    # Also called 'i'
+    INCLINATION = auto()
+    # Also called 'Omega' or Ω
+    LONGITUDE_OF_ASCENDING_NODE = auto()
+    # Also called 'omega' or 
+    ARGUMENT_OF_PERIGEE = auto()
+    # Also called 'M'
+    MEAN_ANOMALY_AT_REFERENCE_TIME = auto()
+
+    # Correction parameters
+    # Also called 'delta n'
+    MEAN_MOTION_DIFFERENCE = auto()
+
+    @property
+    def unit(self) -> Type[_OrbitalParameterValueType]:
+        return {
+            self.SEMI_MAJOR_AXIS: Meters,
+            self.ECCENTRICITY: float,
+            self.INCLINATION: SemiCircles,
+            self.LONGITUDE_OF_ASCENDING_NODE: SemiCircles,
+            self.ARGUMENT_OF_PERIGEE: SemiCircles,
+            self.MEAN_ANOMALY_AT_REFERENCE_TIME: SemiCircles,
+        }[self] # type: ignore
 
 
 class OrbitalParameters(ParameterSet[OrbitalParameterType, _OrbitalParameterValueType]):
