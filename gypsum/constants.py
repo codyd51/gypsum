@@ -1,17 +1,17 @@
-# Length of each PRN, in chips
+# Length of each PRN, in chips.
 PRN_CHIP_COUNT = 1023
 
-# How many times the GPS satellites repeat the PRN codes per second
+# How many times the GPS satellites repeat the PRN codes per second.
 PRN_REPETITIONS_PER_SECOND = 1000
 
-# Assumes Nyquist sample rate
+# Assumes Nyquist sample rate.
 SAMPLES_PER_PRN_TRANSMISSION = 2 * PRN_CHIP_COUNT
 
-# Assumes Nyquist sample rate
+# Assumes Nyquist sample rate.
 SAMPLES_PER_SECOND = SAMPLES_PER_PRN_TRANSMISSION * PRN_REPETITIONS_PER_SECOND
 
 # Center frequency that GPS signals are emitted at.
-# PT: The SDR must be set to this center frequency
+# PT: The SDR must be set to this center frequency.
 GPS_L1_FREQUENCY = 1575.42e6
 
 # One satellite gives a sphere around that satellite.
@@ -20,6 +20,12 @@ GPS_L1_FREQUENCY = 1575.42e6
 # Four satellites give a single point.
 MINIMUM_TRACKED_SATELLITES_FOR_POSITION_FIX = 4
 
-# The navigation message is transmitted at 50 bits per second
-# This means that there are 20 PRN correlations / 20 'pseudosymbols' per navigation message bit
+# The navigation message is transmitted at 50 bits per second.
+# This means that there are 20 PRN correlations / 20 'pseudosymbols' per navigation message bit.
 PSEUDOSYMBOLS_PER_NAVIGATION_BIT = 20
+
+# The Unix epoch is 1970/01/01.
+# The GPS epoch is 1980/01/06.
+# Therefore, the Unix timestamp of the GPS epoch is exactly 10 years and 7 days worth of seconds.
+UNIX_TIMESTAMP_OF_GPS_EPOCH = (60 * 60 * 24) * ((365 * 10) + 7)
+SECONDS_PER_WEEK = 60 * 60 * 24 * 7

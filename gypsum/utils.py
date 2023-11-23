@@ -10,6 +10,8 @@ _IterType = TypeVar("_IterType")
 
 Seconds = float
 MetersPerSecond = float
+RadiansPerSecond = float
+Radians = float
 
 AntennaSamplesSpanningAcquisitionIntegrationPeriodMs = np.ndarray
 AntennaSamplesSpanningOneMs = np.ndarray

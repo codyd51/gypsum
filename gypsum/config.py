@@ -24,5 +24,4 @@ GPS_EPOCH_BASE_WEEK_NUMBER = 2048
 # The GPS timeframe does not add leap seconds to its time frame, while UTC occasionally does.
 # GPS receivers need to maintain an awareness of the current number of leap seconds that have been added to UTC, to
 # synchronize the two time frames.
-#UTC_LEAP_SECONDS_COUNT = 27
-UTC_LEAP_SECONDS_COUNT = 0
+UTC_LEAP_SECONDS_COUNT = 27
