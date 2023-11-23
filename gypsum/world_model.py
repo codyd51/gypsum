@@ -190,6 +190,16 @@ class GpsWorldModel:
         # we've just completed a full set.
         were_orbit_params_already_complete = orbital_params_for_this_satellite.is_complete()
 
+        # Always store the receiver timestamp
+        orbital_params_for_this_satellite.set_parameter(OrbitalParameterType.RECEIVER_TIME_AT_LAST_TIMESTAMP, emit_subframe_event.receiver_timestamp)
+        # If we have enough parameters to know the GPS time, store that too
+        if orbital_params_for_this_satellite.is_parameter_set(OrbitalParameterType.WEEK_NUMBER):
+            gps_week_number = orbital_params_for_this_satellite.week_number
+            satellite_time_of_week_in_seconds = emit_subframe_event.handover_word.time_of_week_in_seconds
+            gps_satellite_time = (gps_week_number * SECONDS_PER_WEEK) + satellite_time_of_week_in_seconds
+            orbital_params_for_this_satellite.set_parameter(OrbitalParameterType.GPS_TIME_AT_LAST_TIMESTAMP, gps_satellite_time)
+
+        # Extract more orbital parameters, discriminating based on the type of subframe we've just seen
         # Casts because the subframe is currently typed as the subframe base class
         if subframe_id == GpsSubframeId.ONE:
             self._process_subframe1(orbital_params_for_this_satellite, cast(NavigationMessageSubframe1, subframe))
