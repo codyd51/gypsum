@@ -133,7 +133,8 @@ class GpsSatelliteSignalProcessingPipeline:
         satellite_id = self.satellite.satellite_id.id
         _logger.info(f"Decoder for SV({satellite_id}) could not determine subframe phase.")
         # TODO(PT): Wait longer for a subframe to appear..?
-        raise NotImplementedError(f"Should wait longer for a subframe to appear..?")
+        #raise NotImplementedError(f"Should wait longer for a subframe to appear..?")
+        raise LostSatelliteLockError()
 
     def _handle_decoder_emitted_subframe(self, event: EmitSubframeEvent) -> list[Event]:
         satellite_id = self.satellite.satellite_id.id
