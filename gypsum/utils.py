@@ -59,6 +59,9 @@ def does_list_contain_sublist(li: list[Any], sub: list[Any]) -> bool:
     return len(indexes_of_sublist) > 0
 
 
+DEBUG = False
+
+
 def frequency_domain_correlation(
     antenna_samples: AntennaSamplesSpanningOneMs, prn_replica: PrnReplicaCodeSamplesSpanningOneMs
 ) -> CorrelationProfile:
@@ -74,6 +77,7 @@ def frequency_domain_correlation(
     # Each value gives the correlation of the antenna data with the PRN at different phase offsets.
     # Therefore, the offset of the peak will give the phase shift of the PRN that gives maximum correlation.
     return np.fft.ifft(correlation_in_frequency_domain)
+    # I notice that the samples returned by this function can directly be used as the input to a Costas tracking loop. I don't have a good intuition for why this works, as my understanding is that the samples returned by this function represent an abstract correlation magnitude.
 
 
 def integrate_correlation_with_doppler_shifted_prn(
