@@ -113,6 +113,21 @@ class GpsSatelliteTracker:
             1 + ((2 * damping_factor * natural_freq) + (natural_freq**2))
         )
 
+        gs = plt.GridSpec(3, 3, figure=self.constellation_fig)
+        self.freq_ax = self.constellation_fig.add_subplot(gs[0], title="Beat Frequency (Hz)")
+        self.constellation_ax = self.constellation_fig.add_subplot(gs[1], title="IQ Constellation")
+        self.samples_ax = self.constellation_fig.add_subplot(gs[2], title="Samples")
+        self.phase_errors_ax = self.constellation_fig.add_subplot(gs[3], title="Carrier Phase Error")
+        self.i_ax = self.constellation_fig.add_subplot(gs[4], title="I")
+        self.q_ax = self.constellation_fig.add_subplot(gs[5], title="Q")
+        self.iq_angle_ax = self.constellation_fig.add_subplot(gs[6], title="IQ Angle")
+        self.carrier_phase_ax = self.constellation_fig.add_subplot(gs[6], title="Carrier Phase")
+        self.constellation_fig.show()
+        self._is = []
+        self._qs = []
+        self.iq_angles = []
+        self.phase_errors = []
+        self.carrier_phases = []
     def _is_locked(self) -> bool:
         # The PLL currently runs at 1000Hz, so each error entry is spaced at 1ms.
         # TODO(PT): Pull this out into a constant.
@@ -257,5 +272,68 @@ class GpsSatelliteTracker:
         params.doppler_shifts.append(params.current_doppler_shift)
         params.carrier_wave_phases.append(params.current_carrier_wave_phase_shift)
         params.carrier_wave_phase_errors.append(carrier_wave_phase_error)
+        if True:
+            import matplotlib.pyplot as plt
+            if seconds_since_start % 5 >= 4.99:
+                self.constellation_ax.clear()
+                self.phase_errors_ax.clear()
+                self.tracking_params.carrier_wave_phase_errors = []
+
+            #if (seconds_since_start % 1) * 1000 >= 996:
+            if (seconds_since_start % 1) == 0:
+                #plt.cla()
+                self.freq_ax.plot(params.doppler_shifts[::10])
+
+                #coords = list(zip(self._is, self._qs))
+                points = list(complex(i, q) for i, q in zip(self._is, self._qs))
+                #lowest = min([x.real for x in points])
+                #highest = max([x.real for x in points])
+                #midpoint = ((highest - lowest) / 2.0) + lowest
+                points_on_left_pole = [p for p in points if p.real < 0]
+                points_on_right_pole = [p for p in points if p.real >= 0]
+                #left_point = np.mean([x.real for x in points_on_left_pole])
+                #right_point = np.mean([x.real for x in points_on_right_pole])
+                left_point = np.mean(points_on_left_pole)
+                right_point = np.mean(points_on_right_pole)
+                #print(f'({left_point.imag:.2f}, {right_point.imag:.2f})')
+                angle = 180 - (((np.arctan2(left_point.imag, left_point.real) / math.tau) * 360) % 180)
+                print(f'Angle: {angle:.2f}')
+                # Don't look 'below' the axis (TODO(PT): Clean all this up)
+                self.constellation_ax.scatter(self._is, self._qs)
+                self.constellation_ax.scatter([left_point.real, right_point.real], [left_point.imag, right_point.imag])
+                self.i_ax.clear()
+                self.i_ax.plot(self._is)
+                self._is = []
+
+                self.q_ax.clear()
+                self.q_ax.plot(self._qs)
+                self._qs = []
+
+                self.iq_angle_ax.clear()
+                self.iq_angle_ax.plot(self.iq_angles)
+                self.iq_angles = []
+
+                self.carrier_phase_ax.clear()
+                self.carrier_phase_ax.plot(self.carrier_phases)
+                self.carrier_phases = []
+
+                #self.samples_ax.plot(samples_with_prn_wiped_off)
+                #filtered = butter_lowpass_filter(samples_with_prn_wiped_off, params.current_doppler_shift * 1.1, SAMPLES_PER_SECOND, 2)
+                #self.samples_ax.plot(self.filtered)
+                #self.filtered = []
+                #doppler_shift_carrier = np.exp(-1j * ((2 * np.pi * params.current_doppler_shift * time_domain) + params.current_carrier_wave_phase_shift)) * 0.005
+                #doppler_shifted_multiplier = np.exp(-1j * ((2 * np.pi * params.current_doppler_shift * time_domain) + params.current_carrier_wave_phase_shift)) * 0.005
+                #self.samples_ax.plot(doppler_shifted_multiplier)
+                self.carrier = []
+                #self.samples_ax.plot(self.mixed)
+                self.mixed = []
+
+                #self.phase_errors_ax.plot(self.phase_errors[::10])
+                self.phase_errors_ax.plot(self.tracking_params.carrier_wave_phase_errors)
+
+            # "The output of an FFT is an array of complex numbers, and each complex number gives you the magnitude and phase, and the index of that number gives you the frequency."
+                # We're already taking the FFT from the correlation profile, maybe we *can* just read the info from that!
+
+                plt.pause(0.001)
 
         return NavigationBitPseudosymbol.from_val(navigation_bit_pseudosymbol_value)
