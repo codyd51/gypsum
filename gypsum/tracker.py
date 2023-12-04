@@ -22,6 +22,7 @@ _logger = logging.getLogger(__name__)
 
 
 class BitValue(Enum):
+    UNKNOWN = auto()
     ZERO = auto()
     ONE = auto()
 
@@ -33,12 +34,18 @@ class BitValue(Enum):
         }[val]
 
     def as_val(self) -> int:
+        if self == BitValue.UNKNOWN:
+            raise ValueError(f'Cannot convert an unknown bit value into an integer')
+
         return {
             BitValue.ZERO: 0,
             BitValue.ONE: 1,
         }[self]
 
     def inverted(self) -> 'BitValue':
+        if self == BitValue.UNKNOWN:
+            raise ValueError(f'Cannot invert an unknown bit value')
+
         return {
             BitValue.ZERO: BitValue.ONE,
             BitValue.ONE: BitValue.ZERO,
@@ -47,7 +54,7 @@ class BitValue(Enum):
     def __eq__(self, other) -> bool:
         if not isinstance(other, BitValue):
             return False
-        return self.as_val() == other.as_val()
+        return self.value == other.value
 
     def __hash__(self) -> int:
         return hash(self.value)
