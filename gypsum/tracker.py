@@ -113,6 +113,58 @@ class GpsSatelliteTracker:
             1 + ((2 * damping_factor * natural_freq) + (natural_freq**2))
         )
 
+    def _is_locked(self) -> bool:
+        # The PLL currently runs at 1000Hz, so each error entry is spaced at 1ms.
+        # TODO(PT): Pull this out into a constant.
+        previous_milliseconds_to_consider = 250
+        if len(self.tracking_params.carrier_wave_phase_errors) < previous_milliseconds_to_consider:
+            # We haven't run our PLL for long enough to determine lock
+            return False
+        last_few_phase_errors = self.tracking_params.carrier_wave_phase_errors[-previous_milliseconds_to_consider:]
+        phase_error_variance = np.var(last_few_phase_errors)
+        # TODO(PT): Pull this out into a constant?
+        is_phase_error_variance_under_threshold = phase_error_variance < 900
+
+        # Default to claiming the I channel is fine if we don't have enough samples to make a proper decision
+        does_i_channel_look_locked = True
+        if len(self._is) > 2:
+            last_few_i_values = self._is[-previous_milliseconds_to_consider:]
+            #import statistics
+            #s = statistics.stdev(last_few_i_values)
+            s = np.var(last_few_i_values)
+            # A locked `I` channel should output values strongly centered around a positive pole and a negative pole.
+            # We don't know the exact values of these poles, as they'll depend on the exact signal, but we can split
+            # our `I` channel into positive and negative components and try to see how strongly values are clustered
+            # around each pole.
+            positive_i_values = [x for x in last_few_i_values if x >= 0]
+            positive_var = np.var(positive_i_values)
+            negative_i_values = [x for x in last_few_i_values if x < 0]
+            negative_var = np.var(negative_i_values)
+            s = (positive_var + negative_var) / 2.0
+            #print(f'stdev: {s:.2f}')
+            # PT: Chosen through experimentation
+            does_i_channel_look_locked = s < 2
+            # Prev 900, 2, 6
+
+        points = list(complex(i, q) for i, q in zip(self._is, self._qs))
+        is_constellation_rotation_acceptable = True
+        if len(points) > 2:
+            points_on_left_pole = [p for p in points if p.real < 0]
+            points_on_right_pole = [p for p in points if p.real >= 0]
+            left_point = np.mean(points_on_left_pole)
+            # right_point = np.mean(points_on_right_pole)
+            angle = 180 - (((np.arctan2(left_point.imag, left_point.real) / math.tau) * 360) % 180)
+            centered_angle = angle if angle < 90 else 180 - angle
+            is_constellation_rotation_acceptable = abs(centered_angle < 6)
+
+        #return is_phase_error_variance_under_threshold
+
+        return (
+            is_phase_error_variance_under_threshold
+            and does_i_channel_look_locked
+            and is_constellation_rotation_acceptable
+        )
+
     @functools.lru_cache
     def _calculate_loop_filter_alpha_and_beta(self, loop_bandwidth: float) -> Tuple[float, float]:
         # Common choice for zeta, considered optimal
