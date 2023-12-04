@@ -1,3 +1,4 @@
+import functools
 import logging
 import math
 from dataclasses import dataclass
@@ -111,6 +112,34 @@ class GpsSatelliteTracker:
         self.loop_gain_freq = (4 * (natural_freq**2)) / (
             1 + ((2 * damping_factor * natural_freq) + (natural_freq**2))
         )
+
+    @functools.lru_cache
+    def _calculate_loop_filter_alpha_and_beta(self, loop_bandwidth: float) -> Tuple[float, float]:
+        # Common choice for zeta, considered optimal
+        damping_factor = math.sqrt(2) / 2.0
+        # Natural frequency
+        natural_freq = loop_bandwidth / (damping_factor * (1 + damping_factor**2) ** 0.5)
+        # This represents the *integrated* error correction,
+        # which applies to the estimate of the Doppler shifted frequency.
+        # Also called 'beta'.
+        loop_gain_freq = (4 * damping_factor * natural_freq) / (
+                1 + ((2 * damping_factor * natural_freq) + (natural_freq**2))
+        )
+        # This represents the gain of *instantaneous* error correction,
+        # which applies to the estimate of the carrier wave phase.
+        # Also called 'alpha'.
+        loop_gain_phase = (4 * (natural_freq**2)) / (
+                1 + ((2 * damping_factor * natural_freq) + (natural_freq**2))
+        )
+
+        time_per_sample = 1.0 / SAMPLES_PER_SECOND
+        zeta = 1.0 / math.sqrt(2)
+        loop_gain_phase = 4 * zeta * loop_bandwidth * time_per_sample
+        loop_gain_freq = 4 * (loop_bandwidth ** 2) * time_per_sample
+
+        #factor = 1.0
+        #return loop_gain_phase / factor, loop_gain_freq / factor
+        return loop_gain_phase, loop_gain_freq
 
     def process_samples(self, seconds_since_start: Seconds, samples: AntennaSamplesSpanningOneMs) -> NavigationBitPseudosymbol:
         params = self.tracking_params
