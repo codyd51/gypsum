@@ -576,6 +576,18 @@ class GpsSatelliteTracker:
         params.carrier_wave_phases.append(params.current_carrier_wave_phase_shift)
         #params.carrier_wave_phase_errors.append(carrier_wave_phase_error)
 
+        points = list(complex(i, q) for i, q in zip(self._is, self._qs))
+        points_on_left_pole = [p for p in points if p.real < 0]
+        if len(points_on_left_pole) > 2:
+            left_point = np.mean(points_on_left_pole)
+            angle = 180 - (((np.arctan2(left_point.imag, left_point.real) / math.tau) * 360) % 180)
+            rotation = angle
+            if angle > 90:
+                rotation = angle - 180
+            if not self._is_locked():
+                filtered_rotation = rotation * 0.00005
+                self.tracking_params.current_doppler_shift -= filtered_rotation
+
         start = 1699037280
         failures = 1699037347
         #          1699037383
@@ -620,6 +632,41 @@ class GpsSatelliteTracker:
                 angle = 180 - (((np.arctan2(left_point.imag, left_point.real) / math.tau) * 360) % 180)
                 print(f'Angle: {angle:.2f}')
                 # Don't look 'below' the axis (TODO(PT): Clean all this up)
+                if True:
+                    # TODO(PT): Add an is_locked condition here
+                    # Actually, it's better if this happens when we're not locked!
+                    # Instead, the lock detector should be improved so that it doesn't say we're locked when there's
+                    # a rotation?
+                    rotation = angle
+                    if angle > 90:
+                        rotation = angle - 180
+                    print(f'Rotation {rotation:.2f} Doppler {self.tracking_params.current_doppler_shift:.2f}')
+                    #if abs(rotation) > 1 and self._is_locked():
+                    #if rotation > 2 and self._is_locked():
+                    #    #rotation = np.sign(rotation) * min(abs(rotation), 2)
+                    #    self.tracking_params.current_doppler_shift -= rotation
+                    #if abs(rotation) > 1 and self._is_locked():
+                    #if abs(rotation) > 1 and not self._is_locked():
+                    #if True:
+                    #if abs(rotation) > 1 and not self._is_locked():
+
+                    if False and not self._is_locked():
+                        #rotation = np.sign(rotation) * min(abs(rotation), 1)
+                        #filtered_rotation = rotation * 3.0
+                        filtered_rotation = rotation * 0.4
+                        self.tracking_params.current_doppler_shift -= filtered_rotation
+                        #if rotation > 0:
+                        #    self.tracking_params.current_doppler_shift -= min(rotation, 2)
+                        #else:
+                        #    self.tracking_params.current_doppler_shift -= max(rotation, -2)
+
+                if False:
+                    if angle < 90:
+                        if angle > 1:
+                            #print(f'Angle > 2! Dropping Doppler from {self.tracking_params.current_doppler_shift}')
+                            #self.tracking_params.current_doppler_shift -= 40
+                            #self.tracking_params.current_doppler_shift -= (angle * 20)
+                            self.tracking_params.current_doppler_shift -= 30
                 self.constellation_ax.scatter(self._is, self._qs)
                 self.constellation_ax.scatter([left_point.real, right_point.real], [left_point.imag, right_point.imag])
                 self.i_ax.clear()
