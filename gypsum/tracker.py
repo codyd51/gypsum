@@ -5,6 +5,7 @@ from typing import Tuple
 import math
 from dataclasses import dataclass
 from enum import Enum, auto
+import matplotlib.pyplot as plt
 
 import numpy as np
 
@@ -18,7 +19,6 @@ from gypsum.utils import (
     PrnCodePhaseInSamples,
     frequency_domain_correlation,
 )
-from gypsum.utils import CorrelationProfile
 
 _logger = logging.getLogger(__name__)
 
@@ -62,9 +62,6 @@ class BitValue(Enum):
         return hash(self.value)
 
 
-import matplotlib.pyplot as plt
-
-
 class NavigationBitPseudosymbol(Enum):
     MINUS_ONE = auto()
     ONE = auto()
@@ -94,25 +91,6 @@ class GpsSatelliteTrackingParameters:
     carrier_wave_phases: list[CarrierWavePhaseInRadians]
     carrier_wave_phase_errors: list[float]
     navigation_bit_pseudosymbols: list[int]
-
-
-def butter_filter(cutoff, fs, filter_type: str, order=5):
-    from scipy.signal import butter
-    return butter(order, cutoff, fs=fs, btype=filter_type, analog=False)
-
-
-def butter_lowpass_filter(data, cutoff, fs, order=5):
-    b, a = butter_filter(cutoff, fs, "lowpass", order=order)
-    from scipy.signal import lfilter
-    y = lfilter(b, a, data)
-    return y
-
-
-def butter_highpass_filter(data, cutoff, fs, order=5):
-    b, a = butter_filter(cutoff, fs, "highpass", order=order)
-    from scipy.signal import lfilter
-    y = lfilter(b, a, data)
-    return y
 
 
 class GpsSatelliteTracker:
@@ -164,184 +142,6 @@ class GpsSatelliteTracker:
         # TODO(PT): Perhaps the carrier phase estimate that comes from acquisition is way off?
 
         self.time_domain_for_1ms = np.arange(SAMPLES_PER_PRN_TRANSMISSION) / SAMPLES_PER_SECOND
-
-    def _run_tracking_loop(
-        self,
-        seconds_since_start: Seconds,
-        samples_mixed_with_prn: AntennaSamplesSpanningOneMs
-    ) -> None:
-        params = self.tracking_params
-
-        # Calculate average power of the signal
-        avg_power = np.mean(np.abs(samples_mixed_with_prn) ** 2)
-        desired_power = 1 ** 2  # Set your desired power level
-        gain = np.sqrt(desired_power / avg_power)  # Calculate AGC gain
-
-        # Apply AGC
-        #agc_applied_samples = samples_mixed_with_prn * gain
-        agc_applied_samples = samples_mixed_with_prn
-
-        filtered = butter_lowpass_filter(agc_applied_samples, params.current_doppler_shift * 1.1, SAMPLES_PER_SECOND, 1)
-        self.filtered = filtered
-        duration_per_sample = 1.0 / SAMPLES_PER_SECOND
-        for i, sample in enumerate(samples_mixed_with_prn):
-            #timestamp = seconds_since_start + (i / SAMPLES_PER_SECOND)
-            timestamp = seconds_since_start + (duration_per_sample * i)
-            #doppler_shifted_multiplier = np.exp(-1j * ((2 * np.pi * params.current_doppler_shift) + params.current_carrier_wave_phase_shift))
-            doppler_shifted_multiplier = np.exp(-1j * ((2 * np.pi * params.current_doppler_shift * timestamp) + params.current_carrier_wave_phase_shift))
-            #self.carrier = doppler_shifted_multiplier
-            # TODO(PT): Ask how to relate the amplitude of the replica carrier wave to the amplitude of the received signal?
-            #doppler_shifted_multiplier = np.exp(-1j * ((2 * np.pi * params.current_doppler_shift) + params.current_carrier_wave_phase_shift))
-            #doppler_shifted_multiplier = np.exp(-1j * params.current_carrier_wave_phase_shift)
-            #doppler_shifted_multiplier = np.square(doppler_shifted_multiplier)
-            #sample = np.square(sample)
-            mixed_sample = sample * doppler_shifted_multiplier
-            self.mixed = mixed_sample
-
-            I = mixed_sample.real
-            Q = mixed_sample.imag
-            #self._is.append(I)
-            #self._qs.append(Q)
-            carrier_wave_phase_error = I * Q
-            #frequency_error = np.arctan2(Q, I)
-
-            # TODO(PT): To properly convert from radians to Hz 2π×frequency (Hz)×time interval (s).
-            # Update me!
-            # params.current_doppler_shift += (carrier_wave_phase_error / math.tau) * 0.1
-            params.current_doppler_shift += carrier_wave_phase_error * 0.5
-            #params.current_doppler_shift += (frequency_error / math.tau) * 0.01
-            params.current_carrier_wave_phase_shift += carrier_wave_phase_error * 0.2
-            #params.current_carrier_wave_phase_shift += ((params.current_doppler_shift * math.tau) / (1.0/SAMPLES_PER_SECOND)) + (carrier_wave_phase_error * 0.009)
-            #params.current_carrier_wave_phase_shift += params.current_doppler_shift + (carrier_wave_phase_error * 0.1)
-            params.current_carrier_wave_phase_shift %= math.tau
-
-    def _run_tracking_loop2(
-        self,
-        seconds_since_start: Seconds,
-        samples_mixed_with_prn: AntennaSamplesSpanningOneMs
-    ) -> None:
-        params = self.tracking_params
-        carrier_wave_replica = np.exp(-1j * ((2 * np.pi * params.current_doppler_shift * (self.time_domain_for_1ms + seconds_since_start)) + params.current_carrier_wave_phase_shift))
-        samples_mixed_with_carrier_wave = samples_mixed_with_prn * carrier_wave_replica
-        filtered = butter_lowpass_filter(samples_mixed_with_carrier_wave, params.current_doppler_shift * 1.1, SAMPLES_PER_SECOND, 1)
-        #error = np.arctan2(filtered.imag, filtered.real)
-        error = filtered.real * filtered.imag
-        #error = butter_lowpass_filter(error, 20, SAMPLES_PER_SECOND, 1)
-        #plt.ioff()
-        #plt.plot(np.fft.fft(error))
-        #plt.show()
-        #error = np.max(error)
-        #error = np.mean(error[20:])
-        error = np.sum(error)
-        if True:
-            params.current_doppler_shift += error * 0.1
-            params.current_carrier_wave_phase_shift += error * 0.4
-            params.current_carrier_wave_phase_shift %= math.tau
-
-    def _adjust_tracking_parameters_via_correlation_profile(
-        self,
-        correlation_peak_value: complex,
-    ) -> None:
-        params = self.tracking_params
-        I = correlation_peak_value.real
-        Q = correlation_peak_value.imag
-        carrier_wave_phase_error = I * Q
-        #carrier_wave_phase_error = np.arctan2(Q, I)
-
-        params.current_doppler_shift += (carrier_wave_phase_error / math.tau) * self.loop_gain_freq
-        params.current_carrier_wave_phase_shift += carrier_wave_phase_error * self.loop_gain_phase
-        params.current_carrier_wave_phase_shift %= math.tau
-
-    def _adjust_tracking_parameters_via_correlation_profile_all(
-        self,
-        correlation_profile: CorrelationProfile,
-    ) -> None:
-        params = self.tracking_params
-        filtered = butter_lowpass_filter(correlation_profile, params.current_doppler_shift * 1.1, SAMPLES_PER_SECOND, 1)
-
-        for i, sample in enumerate(filtered):
-            I = sample.real
-            Q = sample.imag
-            carrier_wave_phase_error = I * Q
-            #carrier_wave_phase_error = np.arctan2(Q, I)
-
-            params.current_doppler_shift += (carrier_wave_phase_error / math.tau) * self.loop_gain_freq
-            params.current_carrier_wave_phase_shift += carrier_wave_phase_error * self.loop_gain_phase
-            params.current_carrier_wave_phase_shift %= math.tau
-
-    def _follow_carrier_via_correlation_profile(
-        self,
-        correlation_profile: CorrelationProfile,
-        peak: complex,
-    ) -> None:
-        params = self.tracking_params
-
-        #phase_error = np.arctan2(correlation_profile.imag, correlation_profile.real)
-        #peak = np.max(correlation_profile)
-        #phase_error = correlation_profile.real * correlation_profile.imag
-        #phase_error = peak.real * peak.imag
-        #phase_error %= math.tau
-        phase_error = np.angle(peak)
-        #phase_error_sum = np.sum(phase_error)
-        #phase_error_sum %= math.tau
-        print(f'Phase error {phase_error}')
-        self.phase_errors.append(phase_error)
-        params.current_doppler_shift += ((phase_error / math.tau) * 0.5)
-        params.current_carrier_wave_phase_shift += (phase_error * 0.1)
-        params.current_carrier_wave_phase_shift %= math.tau
-
-    def _test(self, seconds_since_start: Seconds, samples_with_prn_wiped_off: AntennaSamplesSpanningOneMs) -> None:
-        params = self.tracking_params
-        time_domain = self.time_domain_for_1ms + seconds_since_start
-        doppler_shift_carrier = np.exp(
-            -1j * ((2 * np.pi * params.current_doppler_shift * time_domain) + params.current_carrier_wave_phase_shift)
-        )
-        #coherent_prompt_correlation = frequency_domain_correlation(samples_with_prn_wiped_off, doppler_shift_carrier)
-        #fft_freq = fftfreq(len(carrier_wave), 1 / SAMPLE_RATE)
-        from scipy.fft import fft, fftfreq
-        coherent_prompt_correlation = fft(samples_with_prn_wiped_off)
-        fft_freq = fftfreq(len(samples_with_prn_wiped_off), 1/SAMPLES_PER_SECOND)
-        non_coherent_prompt_correlation = np.abs(coherent_prompt_correlation)
-        non_coherent_prompt_peak_offset = np.argmax(non_coherent_prompt_correlation)
-
-        peak_frequency = fft_freq[non_coherent_prompt_peak_offset]
-        peak_phase = np.angle(coherent_prompt_correlation[non_coherent_prompt_peak_offset])
-
-        print(f'Peak offset {non_coherent_prompt_peak_offset:.2f}')
-        print(f'Peak freq {peak_frequency:.2f}')
-        print(f'Peak phase {peak_phase:.2f}')
-
-        offset_in_rad = peak_phase
-
-        #offset_in_rad = (non_coherent_prompt_peak_offset / 2046) * math.pi
-        print(f'offset_in_rad {offset_in_rad:.2f}')
-
-        params.current_carrier_wave_phase_shift += peak_phase
-        params.current_doppler_shift += peak_phase
-        if False:
-            plt.ioff()
-            plt.title("Carrier wave correlation")
-            plt.plot(coherent_prompt_correlation, label="Coherent")
-            plt.plot(non_coherent_prompt_correlation, label="Non-coherent")
-            plt.legend()
-            plt.show()
-            plt.ion()
-
-    def _test2(self, samples_with_carrier_and_prn_wipeoff: AntennaSamplesSpanningOneMs, sample_offset: int) -> None:
-        sample = samples_with_carrier_and_prn_wipeoff[sample_offset]
-        #error = np.arctan(sample.imag, sample.real)
-        #error = np.angle(sample)
-        error = sample.real * sample.imag
-        #alpha = 0.005
-        #beta = 0.0001
-        alpha = 0.01
-        beta = 0.0001
-        self.tracking_params.current_carrier_wave_phase_shift += error * alpha
-        self.tracking_params.current_carrier_wave_phase_shift %= math.tau
-        self.tracking_params.current_doppler_shift += error * beta
-        self.tracking_params.carrier_wave_phase_errors.append(error)
-        self.iq_angles.append(np.angle(sample))
-        # _logger.info(f'Error {error:.2f}, freq {self.tracking_params.current_doppler_shift:.2f}, phase {self.tracking_params.current_carrier_wave_phase_shift:.2f}')
 
     def _is_locked(self) -> bool:
         # The PLL currently runs at 1000Hz, so each error entry is spaced at 1ms.
@@ -441,59 +241,6 @@ class GpsSatelliteTracker:
         self.tracking_params.carrier_wave_phase_errors.append(error)
         self.iq_angles.append(np.angle(sample))
 
-    def _test3(self, samples_with_carrier_and_prn_wipeoff: AntennaSamplesSpanningOneMs) -> None:
-        for i, sample in enumerate(samples_with_carrier_and_prn_wipeoff):
-            error = sample.real * sample.imag
-            alpha = 0.001
-            beta = 0.00001
-            self.tracking_params.current_carrier_wave_phase_shift += error * alpha
-            self.tracking_params.current_carrier_wave_phase_shift %= math.tau
-            self.tracking_params.current_doppler_shift += error * beta
-            if i == 0:
-                self.tracking_params.carrier_wave_phase_errors.append(error)
-                self.iq_angles.append(np.angle(sample))
-
-    def _test4(self, samples_with_carrier_and_prn_wipeoff: AntennaSamplesSpanningOneMs) -> None:
-        for i, sample in enumerate(samples_with_carrier_and_prn_wipeoff):
-            error = sample.real * sample.imag
-            alpha = 0.001
-            beta = 0.00001
-            self.tracking_params.current_carrier_wave_phase_shift += error * alpha
-            self.tracking_params.current_carrier_wave_phase_shift %= math.tau
-            self.tracking_params.current_doppler_shift += error * beta
-            if i == 0:
-                self.tracking_params.carrier_wave_phase_errors.append(error)
-                self.iq_angles.append(np.angle(sample))
-
-    def _test6(self, seconds_since_start, samples_with_prn_wipeoff: AntennaSamplesSpanningOneMs) -> None:
-        params = self.tracking_params
-        time_domain = self.time_domain_for_1ms + seconds_since_start
-        doppler_shift_carrier = np.exp(
-            -1j * ((2 * np.pi * params.current_doppler_shift * time_domain) + params.current_carrier_wave_phase_shift)
-        )
-        i_t = samples_with_prn_wipeoff * doppler_shift_carrier.real
-        q_t = samples_with_prn_wipeoff * doppler_shift_carrier.imag
-
-        i_filt = butter_lowpass_filter(i_t, params.current_doppler_shift * 1.1, SAMPLES_PER_SECOND, 1)
-        q_filt = butter_lowpass_filter(q_t, params.current_doppler_shift * 1.1, SAMPLES_PER_SECOND, 1)
-
-        phase_error = (i_t * q_filt) - (q_t * i_filt)
-
-        print(phase_error)
-        for error in phase_error:
-            error = float(error)
-            alpha = 0.001
-            beta = 0.00001
-            self.tracking_params.current_carrier_wave_phase_shift += error * alpha
-            self.tracking_params.current_carrier_wave_phase_shift %= math.tau
-            self.tracking_params.current_doppler_shift += error * beta
-
-        if False:
-            plt.ioff()
-            plt.plot(phase_error)
-            plt.show()
-            plt.ion()
-
     def process_samples(self, seconds_since_start: Seconds, samples: AntennaSamplesSpanningOneMs) -> NavigationBitPseudosymbol:
         if (seconds_since_start % 1) == 0:
             locked_state = "Locked" if self._is_locked() else "Unlocked"
@@ -550,23 +297,9 @@ class GpsSatelliteTracker:
         # If I'm doing the error on the whole set of samples at once, how would I integrate the error?
 
         samples_with_prn_wiped_off = samples * prompt_prn
-        #self._test(seconds_since_start, samples_with_prn_wiped_off)
-        #self._follow_carrier_via_correlation_profile(coherent_prompt_correlation, coherent_prompt_prn_correlation_peak)
-        # self._run_tracking_loop(seconds_since_start, samples_with_prn_wiped_off)
-        #self._run_tracking_loop2(seconds_since_start, samples_with_prn_wiped_off)
-        #self._adjust_tracking_parameters_via_correlation_profile(coherent_prompt_prn_correlation_peak)
-        #self._adjust_tracking_parameters_via_correlation_profile_all(coherent_prompt_correlation)
-        #self._run_tracking_loop(seconds_since_start, samples * prompt_prn)
-        x = doppler_shifted_samples * prompt_prn
         self._is.append(coherent_prompt_prn_correlation_peak.real)
         self._qs.append(coherent_prompt_prn_correlation_peak.imag)
-        #self.iq_angles.append(np.angle(coherent_prompt_prn_correlation_peak))
-        #self._is.append(x[non_coherent_prompt_peak_offset].real)
-        #self._qs.append(x[non_coherent_prompt_peak_offset].imag)
-        #self._test2(doppler_shifted_samples * prompt_prn, non_coherent_prompt_peak_offset)
-        #self._test2(coherent_prompt_correlation, non_coherent_prompt_peak_offset)
         self._test5(coherent_prompt_correlation, coherent_prompt_prn_correlation_peak)
-        #self._test6(seconds_since_start, samples_with_prn_wiped_off)
         self.carrier_phases.append(params.current_carrier_wave_phase_shift)
 
         # logging.info(f"Doppler shift {params.current_doppler_shift:.2f}, Carrier phase {params.current_carrier_wave_phase_shift:.8f}")
