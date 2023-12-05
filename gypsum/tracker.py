@@ -94,25 +94,8 @@ class GpsSatelliteTrackingParameters:
 
 
 class GpsSatelliteTracker:
-    def __init__(self, tracking_params: GpsSatelliteTrackingParameters, loop_bandwidth: float) -> None:
+    def __init__(self, tracking_params: GpsSatelliteTrackingParameters) -> None:
         self.tracking_params = tracking_params
-        self.loop_bandwidth = loop_bandwidth
-        # Common choice for zeta, considered optimal
-        damping_factor = math.sqrt(2) / 2.0
-        # Natural frequency
-        natural_freq = loop_bandwidth / (damping_factor * (1 + damping_factor**2) ** 0.5)
-        # This represents the gain of *instantaneous* error correction,
-        # which applies to the estimate of the carrier wave phase.
-        # Also called 'alpha'.
-        self.loop_gain_phase = (4 * damping_factor * natural_freq) / (
-            1 + ((2 * damping_factor * natural_freq) + (natural_freq**2))
-        )
-        # This represents the *integrated* error correction,
-        # which applies to the estimate of the Doppler shifted frequency.
-        # Also called 'beta'.
-        self.loop_gain_freq = (4 * (natural_freq**2)) / (
-            1 + ((2 * damping_factor * natural_freq) + (natural_freq**2))
-        )
 
         plt.ion()
         plt.autoscale(enable=True)
@@ -159,9 +142,6 @@ class GpsSatelliteTracker:
         does_i_channel_look_locked = True
         if len(self._is) > 2:
             last_few_i_values = self._is[-previous_milliseconds_to_consider:]
-            #import statistics
-            #s = statistics.stdev(last_few_i_values)
-            s = np.var(last_few_i_values)
             # A locked `I` channel should output values strongly centered around a positive pole and a negative pole.
             # We don't know the exact values of these poles, as they'll depend on the exact signal, but we can split
             # our `I` channel into positive and negative components and try to see how strongly values are clustered
@@ -174,20 +154,15 @@ class GpsSatelliteTracker:
             #print(f'stdev: {s:.2f}')
             # PT: Chosen through experimentation
             does_i_channel_look_locked = s < 2
-            # Prev 900, 2, 6
 
         points = list(complex(i, q) for i, q in zip(self._is, self._qs))
         is_constellation_rotation_acceptable = True
         if len(points) > 2:
             points_on_left_pole = [p for p in points if p.real < 0]
-            points_on_right_pole = [p for p in points if p.real >= 0]
             left_point = np.mean(points_on_left_pole)
-            # right_point = np.mean(points_on_right_pole)
             angle = 180 - (((np.arctan2(left_point.imag, left_point.real) / math.tau) * 360) % 180)
             centered_angle = angle if angle < 90 else 180 - angle
             is_constellation_rotation_acceptable = abs(centered_angle < 6)
-
-        #return is_phase_error_variance_under_threshold
 
         return (
             is_phase_error_variance_under_threshold
@@ -197,30 +172,20 @@ class GpsSatelliteTracker:
 
     @functools.lru_cache
     def _calculate_loop_filter_alpha_and_beta(self, loop_bandwidth: float) -> Tuple[float, float]:
+        time_per_sample = 1.0 / SAMPLES_PER_SECOND
         # Common choice for zeta, considered optimal
-        damping_factor = math.sqrt(2) / 2.0
-        # Natural frequency
-        natural_freq = loop_bandwidth / (damping_factor * (1 + damping_factor**2) ** 0.5)
-        # This represents the *integrated* error correction,
-        # which applies to the estimate of the Doppler shifted frequency.
-        # Also called 'beta'.
-        loop_gain_freq = (4 * damping_factor * natural_freq) / (
-                1 + ((2 * damping_factor * natural_freq) + (natural_freq**2))
-        )
+        damping_factor = 1.0 / math.sqrt(2)
         # This represents the gain of *instantaneous* error correction,
         # which applies to the estimate of the carrier wave phase.
         # Also called 'alpha'.
-        loop_gain_phase = (4 * (natural_freq**2)) / (
-                1 + ((2 * damping_factor * natural_freq) + (natural_freq**2))
-        )
-
-        time_per_sample = 1.0 / SAMPLES_PER_SECOND
-        zeta = 1.0 / math.sqrt(2)
-        loop_gain_phase = 4 * zeta * loop_bandwidth * time_per_sample
+        # This is the 'first order' of the loop.
+        loop_gain_phase = 4 * damping_factor * loop_bandwidth * time_per_sample
+        # This represents the *integrated* error correction,
+        # which applies to the estimate of the Doppler shifted frequency.
+        # Also called 'beta'.
+        # This is the 'second order' of the loop (as frequency is the derivative of phase).
         loop_gain_freq = 4 * (loop_bandwidth ** 2) * time_per_sample
 
-        #factor = 1.0
-        #return loop_gain_phase / factor, loop_gain_freq / factor
         return loop_gain_phase, loop_gain_freq
 
     def _test5(self, samples_with_carrier_and_prn_wipeoff: AntennaSamplesSpanningOneMs, sample) -> None:
@@ -228,13 +193,8 @@ class GpsSatelliteTracker:
 
         if self._is_locked():
             alpha, beta = self._calculate_loop_filter_alpha_and_beta(3)
-            #alpha = 0.0005
-            #beta = 0.00005
         else:
-            #alpha = 0.001
-            #beta = 0.0001
             alpha, beta = self._calculate_loop_filter_alpha_and_beta(6)
-        #print(f'{alpha:f}, {beta:f}')
         self.tracking_params.current_carrier_wave_phase_shift += error * alpha
         self.tracking_params.current_carrier_wave_phase_shift %= math.tau
         self.tracking_params.current_doppler_shift += error * beta
@@ -252,16 +212,9 @@ class GpsSatelliteTracker:
         # Generate Doppler-shifted and phase-shifted carrier wave
         # Adjust the time domain based on our current time
         time_domain = self.time_domain_for_1ms + seconds_since_start
-        #time_domain = self.time_domain_for_1ms
         doppler_shift_carrier = np.exp(
             -1j * ((2 * np.pi * params.current_doppler_shift * time_domain) + params.current_carrier_wave_phase_shift)
         )
-        if False:
-            import matplotlib.pyplot as plt
-            plt.cla()
-            plt.plot(doppler_shift_carrier)
-            plt.show()
-            plt.pause(0.1)
         doppler_shifted_samples = samples * doppler_shift_carrier
 
         # Correlate early, prompt, and late phase versions of the PRN
@@ -296,7 +249,6 @@ class GpsSatelliteTracker:
         # If I'm running an LPF on the carrier loop discriminator, what would be the cutoff?
         # If I'm doing the error on the whole set of samples at once, how would I integrate the error?
 
-        samples_with_prn_wiped_off = samples * prompt_prn
         self._is.append(coherent_prompt_prn_correlation_peak.real)
         self._qs.append(coherent_prompt_prn_correlation_peak.imag)
         self._test5(coherent_prompt_correlation, coherent_prompt_prn_correlation_peak)
@@ -321,21 +273,6 @@ class GpsSatelliteTracker:
                 filtered_rotation = rotation * 0.00005
                 self.tracking_params.current_doppler_shift -= filtered_rotation
 
-        start = 1699037280
-        failures = 1699037347
-        #          1699037383
-        #          1699037347
-        #          1699037377
-        #          1699037389
-        #          1699037455 (1.0, 0.2, had some unknown bits but recovered, only stopped because we flipped polarity)
-        #          1699037437 (0.1, 0.01)
-        #          1699037449 (still going!)
-        #          1699037497 (wow! 0.3, 0.1)
-        #          1699037515 (0.5, 0.2, only stopped because we flipped polarity)
-        #          1699037515 (0.5, 0.5, only stopped because we flipped polarity)
-        #          1699037515 (0.5, 1, only stopped because we flipped polarity)
-        duration_till_failures = failures - start
-
         #print(f'Doppler {self.tracking_params.current_doppler_shift} Phase {self.tracking_params.current_carrier_wave_phase_shift}')
 
         if True:
@@ -345,23 +282,14 @@ class GpsSatelliteTracker:
                 self.phase_errors_ax.clear()
                 self.tracking_params.carrier_wave_phase_errors = []
 
-            #if (seconds_since_start % 1) * 1000 >= 996:
             if (seconds_since_start % 1) == 0:
-                #plt.cla()
                 self.freq_ax.plot(params.doppler_shifts[::10])
 
-                #coords = list(zip(self._is, self._qs))
                 points = list(complex(i, q) for i, q in zip(self._is, self._qs))
-                #lowest = min([x.real for x in points])
-                #highest = max([x.real for x in points])
-                #midpoint = ((highest - lowest) / 2.0) + lowest
                 points_on_left_pole = [p for p in points if p.real < 0]
                 points_on_right_pole = [p for p in points if p.real >= 0]
-                #left_point = np.mean([x.real for x in points_on_left_pole])
-                #right_point = np.mean([x.real for x in points_on_right_pole])
                 left_point = np.mean(points_on_left_pole)
                 right_point = np.mean(points_on_right_pole)
-                #print(f'({left_point.imag:.2f}, {right_point.imag:.2f})')
                 angle = 180 - (((np.arctan2(left_point.imag, left_point.real) / math.tau) * 360) % 180)
                 print(f'Angle: {angle:.2f}')
                 # Don't look 'below' the axis (TODO(PT): Clean all this up)
@@ -374,32 +302,7 @@ class GpsSatelliteTracker:
                     if angle > 90:
                         rotation = angle - 180
                     print(f'Rotation {rotation:.2f} Doppler {self.tracking_params.current_doppler_shift:.2f}')
-                    #if abs(rotation) > 1 and self._is_locked():
-                    #if rotation > 2 and self._is_locked():
-                    #    #rotation = np.sign(rotation) * min(abs(rotation), 2)
-                    #    self.tracking_params.current_doppler_shift -= rotation
-                    #if abs(rotation) > 1 and self._is_locked():
-                    #if abs(rotation) > 1 and not self._is_locked():
-                    #if True:
-                    #if abs(rotation) > 1 and not self._is_locked():
 
-                    if False and not self._is_locked():
-                        #rotation = np.sign(rotation) * min(abs(rotation), 1)
-                        #filtered_rotation = rotation * 3.0
-                        filtered_rotation = rotation * 0.4
-                        self.tracking_params.current_doppler_shift -= filtered_rotation
-                        #if rotation > 0:
-                        #    self.tracking_params.current_doppler_shift -= min(rotation, 2)
-                        #else:
-                        #    self.tracking_params.current_doppler_shift -= max(rotation, -2)
-
-                if False:
-                    if angle < 90:
-                        if angle > 1:
-                            #print(f'Angle > 2! Dropping Doppler from {self.tracking_params.current_doppler_shift}')
-                            #self.tracking_params.current_doppler_shift -= 40
-                            #self.tracking_params.current_doppler_shift -= (angle * 20)
-                            self.tracking_params.current_doppler_shift -= 30
                 self.constellation_ax.scatter(self._is, self._qs)
                 self.constellation_ax.scatter([left_point.real, right_point.real], [left_point.imag, right_point.imag])
                 self.i_ax.clear()
@@ -418,38 +321,11 @@ class GpsSatelliteTracker:
                 self.carrier_phase_ax.plot(self.carrier_phases)
                 self.carrier_phases = []
 
-                #self.samples_ax.plot(samples_with_prn_wiped_off)
-                #filtered = butter_lowpass_filter(samples_with_prn_wiped_off, params.current_doppler_shift * 1.1, SAMPLES_PER_SECOND, 2)
-                #self.samples_ax.plot(self.filtered)
-                #self.filtered = []
-                #doppler_shift_carrier = np.exp(-1j * ((2 * np.pi * params.current_doppler_shift * time_domain) + params.current_carrier_wave_phase_shift)) * 0.005
-                #doppler_shifted_multiplier = np.exp(-1j * ((2 * np.pi * params.current_doppler_shift * time_domain) + params.current_carrier_wave_phase_shift)) * 0.005
-                #self.samples_ax.plot(doppler_shifted_multiplier)
                 self.carrier = []
-                #self.samples_ax.plot(self.mixed)
                 self.mixed = []
 
-                #self.phase_errors_ax.plot(self.phase_errors[::10])
                 self.phase_errors_ax.plot(self.tracking_params.carrier_wave_phase_errors)
 
-            # "The output of an FFT is an array of complex numbers, and each complex number gives you the magnitude and phase, and the index of that number gives you the frequency."
-                # We're already taking the FFT from the correlation profile, maybe we *can* just read the info from that!
-
                 plt.pause(0.001)
-            #if seconds_since_start % 5 ==0:
-            #    self.constellation_fig.clear()
-
-        if False and seconds_since_start >= duration_till_failures:
-            import matplotlib.pyplot as plt
-            print(f'shwoing extras...')
-            self.errors_ax.plot(params.carrier_wave_phase_errors[::2046])
-            self.phase_ax.plot(params.carrier_wave_phases[::2046])
-            plt.pause(0.0000000000001)
 
         return NavigationBitPseudosymbol.from_val(navigation_bit_pseudosymbol_value)
-
-# TODO(PT): Is the Costas loop meant to track the phase wave-by-wave, or is that meant to be taken care of by the `time_domain` offset?!
-"The carrier phase measurement is actually a measurement of the beat frequency between the received carrier of the satellite signal and a receiver-generated reference frequency."
-# Could we just do a 'correlation profile' with the carrier wave?! Maybe no because we don't know the exact frequency...
-# DO THE SAME kind of correlation where we correlate with the conjugate of the carrier wave & look at the offset of the peak?!?!?!?!
-# https://gnss-sdr.org/docs/sp-blocks/tracking/ this shows the *same* correlation result being used for the phase discriminator?!?!?!

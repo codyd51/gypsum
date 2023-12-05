@@ -1,11 +1,9 @@
 import logging
 from enum import Enum, auto
 from typing import Callable, Type
-from typing import Sequence
 
 from gypsum.acquisition import SatelliteAcquisitionAttemptResult
 from gypsum.antenna_sample_provider import ReceiverTimestampSeconds
-from gypsum.config import SECONDARY_PLL_BANDWIDTH
 from gypsum.events import UnknownEventError
 from gypsum.navigation_bit_intergrator import (
     CannotDetermineBitPhaseEvent,
@@ -62,7 +60,7 @@ class GpsSatelliteSignalProcessingPipeline:
             carrier_wave_phase_errors=[],
             navigation_bit_pseudosymbols=[],
         )
-        self.tracker = GpsSatelliteTracker(tracking_params, SECONDARY_PLL_BANDWIDTH)
+        self.tracker = GpsSatelliteTracker(tracking_params)
         self.pseudosymbol_integrator = NavigationBitIntegrator()
         self.navigation_message_decoder = NavigationMessageDecoder()
         self.current_receiver_timestamp = 0.0
