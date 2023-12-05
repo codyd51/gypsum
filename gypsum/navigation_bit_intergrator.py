@@ -127,6 +127,10 @@ class NavigationBitIntegrator:
             events.append(CannotDetermineBitPhaseEvent(highest_confidence_as_percentage))
         return events
 
+    def _reset_selected_bit_phase(self):
+        _logger.info(f"Resetting selected bit phase...")
+        self.determined_bit_phase = None
+
     def process_pseudosymbol(self, receiver_timestamp: ReceiverTimestampSeconds, pseudosymbol: NavigationBitPseudosymbol) -> list[Event]:
         events: list[Event] = []
         self.queued_pseudosymbols.append(EmittedPseudosymbol(
