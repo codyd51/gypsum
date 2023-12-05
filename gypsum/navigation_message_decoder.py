@@ -78,6 +78,7 @@ class NavigationMessageDecoder:
         preamble: list[BitValue],
     ) -> int | None:
         queued_bits = [e.bit_value for e in self.queued_bit_events]
+        # print(queued_bits)
         preamble_candidates = get_indexes_of_sublist(queued_bits, preamble)
         # We need at least two preambles
         if len(preamble_candidates) < 2:
@@ -106,29 +107,8 @@ class NavigationMessageDecoder:
         self.queued_bit_events.append(bit_event)
 
         # Try to identify subframe phase once we have enough bits to see a few subframes
-        if len(self.queued_bit_events) == BITS_PER_SUBFRAME * 4:
-            # Depending on the phase of our PRN correlations, our bits could appear either 'upright' or 'inverted'.
-            # To determine which, we'll need to search for the preamble both as 'upright' and 'inverted'. Whichever
-            # version produces a match will tell us the polarity of our bits.
-            #
-            # Search our bits for the subframe preamble
-            preamble_and_polarity = [
-                (TELEMETRY_WORD_PREAMBLE, BitPolarity.POSITIVE),
-                ([b.inverted() for b in TELEMETRY_WORD_PREAMBLE], BitPolarity.NEGATIVE),
-            ]
-            for preamble, polarity in preamble_and_polarity:
-                first_identified_preamble_index = self._identify_preamble_in_queued_bits(preamble)
-                if first_identified_preamble_index:
-                    events.append(DeterminedSubframePhaseEvent(first_identified_preamble_index, polarity))
-                    self.determined_subframe_phase = first_identified_preamble_index
-                    self.determined_polarity = polarity
-                    # Discard queued bits from the first partial subframe
-                    self.queued_bit_events = self.queued_bit_events[self.determined_subframe_phase :]
-                    _logger.info(f'Identified preamble at bit phase {self.determined_subframe_phase} when probing with bit polarity: {polarity.name}')
-                    break
-            else:
-                # Didn't find the preamble phase in either polarity
-                events.append(CannotDetermineSubframePhaseEvent())
+        if self.determined_subframe_phase is None:
+            events.extend(self._determine_subframe_phase_from_queued_bits())
 
         # We may have just determined the subframe phase above, so check again
         if self.determined_subframe_phase is not None:
