@@ -88,6 +88,8 @@ _TRACKER_ITERATIONS_PER_SECOND = 1000
 
 @dataclass
 class GpsSatelliteTrackingParameters:
+    """This also maintains state about the tracking history / various tracking metrics.
+    This is used both as part of the tracker's fundamental work, and for data visualization."""
     satellite: GpsSatellite
     current_doppler_shift: DopplerShiftHz
     current_carrier_wave_phase_shift: CarrierWavePhaseInRadians
@@ -147,40 +149,48 @@ class GpsSatelliteTracker:
         self.time_domain_for_1ms = np.arange(SAMPLES_PER_PRN_TRANSMISSION) / SAMPLES_PER_SECOND
 
     def _is_locked(self) -> bool:
+    def is_locked(self) -> bool:
+        """Apply heuristics to the recorded tracking metrics history to give an answer whether the tracker is 'locked'.
+        'Locked' means we feel confident we're accurately tracking the carrier wave frequency and phase.
+        """
+        # TODO(PT): This should be cached for each loop iteration somehow...
         # The PLL currently runs at 1000Hz, so each error entry is spaced at 1ms.
         # TODO(PT): Pull this out into a constant.
         previous_milliseconds_to_consider = 250
-        if len(self.tracking_params.carrier_wave_phase_errors) < previous_milliseconds_to_consider:
+        if len(self.carrier_wave_phase_errors) < previous_milliseconds_to_consider:
             # We haven't run our PLL for long enough to determine lock
+            _logger.info(f'Not enough errors to determine variance')
             return False
-        last_few_phase_errors = self.tracking_params.carrier_wave_phase_errors[-previous_milliseconds_to_consider:]
+
+        last_few_phase_errors = self.carrier_wave_phase_errors[-previous_milliseconds_to_consider:]
         phase_error_variance = np.var(last_few_phase_errors)
         # TODO(PT): Pull this out into a constant?
         is_phase_error_variance_under_threshold = phase_error_variance < 900
 
         # Default to claiming the I channel is fine if we don't have enough samples to make a proper decision
         does_i_channel_look_locked = True
-        if len(self._is) > 2:
-            last_few_i_values = self._is[-previous_milliseconds_to_consider:]
+        # Same with the constellation rotation
+        is_constellation_rotation_acceptable = True
+
+        last_few_peaks = np.array(list(self.correlation_peaks_rolling_buffer)[-previous_milliseconds_to_consider:])
+        if len(self.correlation_peaks_rolling_buffer) > 2:
             # A locked `I` channel should output values strongly centered around a positive pole and a negative pole.
             # We don't know the exact values of these poles, as they'll depend on the exact signal, but we can split
             # our `I` channel into positive and negative components and try to see how strongly values are clustered
             # around each pole.
-            positive_i_values = [x for x in last_few_i_values if x >= 0]
-            positive_var = np.var(positive_i_values)
-            negative_i_values = [x for x in last_few_i_values if x < 0]
-            negative_var = np.var(negative_i_values)
-            s = (positive_var + negative_var) / 2.0
-            #print(f'stdev: {s:.2f}')
-            # PT: Chosen through experimentation
-            does_i_channel_look_locked = s < 2
+            peaks_on_negative_pole = last_few_peaks[last_few_peaks.real < 0]
+            peaks_on_positive_pole = last_few_peaks[last_few_peaks.real >= 0]
+            mean_negative_peak = np.mean(peaks_on_negative_pole)
+            # mean_positive_peak = np.mean(peaks_on_positive_pole)
 
-        points = list(complex(i, q) for i, q in zip(self._is, self._qs))
-        is_constellation_rotation_acceptable = True
-        if len(points) > 2:
-            points_on_left_pole = [p for p in points if p.real < 0]
-            left_point = np.mean(points_on_left_pole)
-            angle = 180 - (((np.arctan2(left_point.imag, left_point.real) / math.tau) * 360) % 180)
+            negative_i_peak_variance = np.var(peaks_on_negative_pole.real)
+            positive_i_peak_variance = np.var(peaks_on_positive_pole.real)
+            mean_i_peak_variance = (negative_i_peak_variance + positive_i_peak_variance) / 2.0
+            # PT: Chosen through experimentation
+            does_i_channel_look_locked = mean_i_peak_variance < 2
+
+            # Interrogate the constellation rotation
+            angle = 180 - (((np.arctan2(mean_negative_peak.imag, mean_negative_peak.real) / math.tau) * 360) % 180)
             centered_angle = angle if angle < 90 else 180 - angle
             is_constellation_rotation_acceptable = abs(centered_angle < 6)
 
@@ -213,7 +223,7 @@ class GpsSatelliteTracker:
         # since it's not sensitive to a 180 degree phase rotation.
         error = correlation_peak.real * correlation_peak.imag
 
-        if self._is_locked():
+        if self.tracking_params.is_locked():
             # When we detect our PLL is locked, use a 'fine-grained'/'track' mode with a low loop bandwidth.
             alpha, beta = self._calculate_loop_filter_alpha_and_beta(3)
         else:
