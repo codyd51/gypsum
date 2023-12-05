@@ -190,6 +190,26 @@ class NavigationMessageDecoder:
         # Consume these bits by removing them from the queue
         self.queued_bit_events = self.queued_bit_events[BITS_PER_SUBFRAME:]
 
+        # First, discard the subframe entirely if any bits couldn't be resolved
+        # print(subframe_bits)
+
+        has_failed_bits = any(bit.bit_value == BitValue.UNKNOWN for bit in subframe_bits)
+        if has_failed_bits:
+            failed_bit_count = len([b for b in subframe_bits if b.bit_value == BitValue.UNKNOWN])
+            # TODO(PT): It'd be pretty neat to be able to parse a subframe that contained unknown bits. Perhaps just
+            # a few fields in the subframe could be unreadable due to bad bits, while the rest of the subframe can be
+            # kept.
+            _logger.info(f'Skipping subframe that has at least one unknown bit: {failed_bit_count} / {len(subframe_bits)} bits failed')
+            # We will need to recalculate our polarity.
+            # Currently this also involves re-determining the subframe phase, but doesn't need to
+            # This is because an unknown bit corresponds to a slip - we're no longer tracking the cycle exactly and there may have been an inversion due to the slip
+            self._reset_selected_subframe_phase()
+
+            if failed_bit_count > 150:
+                import gypsum.utils
+                gypsum.utils.DEBUG = True
+            return None
+
         # Flip the bit polarity so everything looks upright
         preprocessed_bits = [b.bit_value for b in subframe_bits]
         if self.determined_polarity == BitPolarity.NEGATIVE:
