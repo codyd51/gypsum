@@ -102,6 +102,54 @@ class NavigationMessageDecoder:
         # TODO(PT): Maybe we could just keep waiting for a better lock?
         return None
 
+    def _determine_subframe_phase_from_queued_bits(self) -> list[Event]:
+        # We'll need at least two preambles to identify a subframe phase
+        if len(self.queued_bit_events) < BITS_PER_SUBFRAME * 2:
+            return []
+
+        events = []
+        # Depending on the phase of our PRN correlations, our bits could appear either 'upright' or 'inverted'.
+        # To determine which, we'll need to search for the preamble both as 'upright' and 'inverted'. Whichever
+        # version produces a match will tell us the polarity of our bits.
+        #
+        # Search our bits for the subframe preamble
+        preamble_and_polarity = [
+            (TELEMETRY_WORD_PREAMBLE, BitPolarity.POSITIVE),
+            ([b.inverted() for b in TELEMETRY_WORD_PREAMBLE], BitPolarity.NEGATIVE),
+        ]
+        for preamble, polarity in preamble_and_polarity:
+            first_identified_preamble_index = self._identify_preamble_in_queued_bits(preamble)
+            if first_identified_preamble_index:
+                events.append(DeterminedSubframePhaseEvent(first_identified_preamble_index, polarity))
+                self.determined_subframe_phase = first_identified_preamble_index
+                self.determined_polarity = polarity
+                # Discard queued bits from the first partial subframe
+                bit_count_outside_first_subframe_to_discard = self.determined_subframe_phase % BITS_PER_SUBFRAME
+                self.queued_bit_events = self.queued_bit_events[bit_count_outside_first_subframe_to_discard:]
+                _logger.info(
+                    f'Identified preamble at bit phase {self.determined_subframe_phase} '
+                    f'when probing with bit polarity: {polarity.name}'
+                )
+                break
+        else:
+            # Didn't find the preamble phase in either polarity
+            # Keep waiting for more bits to come in, up to a maximum allowance.
+            if len(self.queued_bit_events) < BITS_PER_SUBFRAME * 12:
+                # Continue to allow the tracker to operate, although we haven't been able to identify a subframe
+                # phase so far.
+                # (This could be because the tracker is trying to recover lock
+                # and currently has some messy bits in the data)
+                pass
+            else:
+                unknown_bit_indexes = [i for i, b in enumerate(self.queued_bit_events) if b.bit_value == BitValue.UNKNOWN]
+                unknown_count = len(unknown_bit_indexes)
+                _logger.info(
+                    f'Failed to identify subframe phase in a generous tracking span. '
+                    f'({len(self.queued_bit_events)} bits ({unknown_count} unknown, unknown bit indexes: {unknown_bit_indexes})'
+                )
+                events.append(CannotDetermineSubframePhaseEvent())
+        return events
+
     def process_bit_from_satellite(self, bit_event: EmitNavigationBitEvent) -> list[Event]:
         events: list[Event] = []
         self.queued_bit_events.append(bit_event)
