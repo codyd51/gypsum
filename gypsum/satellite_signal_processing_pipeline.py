@@ -21,6 +21,7 @@ from gypsum.navigation_message_decoder import (
 )
 from gypsum.satellite import GpsSatellite
 from gypsum.tracker import GpsSatelliteTracker, GpsSatelliteTrackingParameters
+from gypsum.tracker_visualizer import GpsSatelliteTrackerVisualizer
 from gypsum.utils import AntennaSamplesSpanningOneMs
 from gypsum.utils import Seconds
 
@@ -43,6 +44,7 @@ class GpsSatelliteSignalProcessingPipeline:
 
     # Tracks PRN code phase shift, carrier wave Doppler shift, and carrier wave phase
     tracker: GpsSatelliteTracker
+    tracker_visualizer: GpsSatelliteTrackerVisualizer
 
     pseudosymbol_integrator: NavigationBitIntegrator
     navigation_message_decoder: NavigationMessageDecoder
@@ -61,6 +63,7 @@ class GpsSatelliteSignalProcessingPipeline:
             navigation_bit_pseudosymbols=[],
         )
         self.tracker = GpsSatelliteTracker(tracking_params)
+        self.tracker_visualizer = GpsSatelliteTrackerVisualizer(satellite.satellite_id)
         self.pseudosymbol_integrator = NavigationBitIntegrator()
         self.navigation_message_decoder = NavigationMessageDecoder()
         self.current_receiver_timestamp = 0.0
@@ -68,6 +71,9 @@ class GpsSatelliteSignalProcessingPipeline:
     def process_samples(self, receiver_timestamp: ReceiverTimestampSeconds, seconds_since_start: Seconds, samples: AntennaSamplesSpanningOneMs) -> list[Event]:
         self.current_receiver_timestamp = receiver_timestamp
         pseudosymbol = self.tracker.process_samples(seconds_since_start, samples)
+        # Now that the tracker has run an iteration, allow the visualizer to display the characteristics
+        self.tracker_visualizer.step(seconds_since_start, self.tracker.tracking_params)
+
         integrator_events = self.pseudosymbol_integrator.process_pseudosymbol(receiver_timestamp, pseudosymbol)
 
         integrator_event_type_to_callback: dict[Type[Event], Callable[[Event], list[Event] | None]] = {  # type: ignore
@@ -103,10 +109,10 @@ class GpsSatelliteSignalProcessingPipeline:
             f"{self.current_receiver_timestamp}: Integrator for SV({satellite_id}) lost bit coherence. "
             f"Confidence for bit {self.pseudosymbol_integrator.bit_index}: {event.confidence}%"
         )
+        # Untrack this satellite as our bit quality went too far downhill
         raise LostSatelliteLockError()
 
     def _handle_integrator_emitted_bit(self, bit_event: EmitNavigationBitEvent) -> list[Event]:
-        # _logger.info(f'handling bit {self.pseudosymbol_integrator.bit_index-1}')
         decoder_events = self.navigation_message_decoder.process_bit_from_satellite(bit_event)
 
         decoder_event_type_to_callback: dict[Type[Event], Callable[[Event], list[Event] | None]] = {  # type: ignore
@@ -130,8 +136,8 @@ class GpsSatelliteSignalProcessingPipeline:
     def _handle_decoder_cannot_determine_subframe_phase(self, event: CannotDetermineSubframePhaseEvent) -> None:
         satellite_id = self.satellite.satellite_id.id
         _logger.info(f"Decoder for SV({satellite_id}) could not determine subframe phase.")
-        # TODO(PT): Wait longer for a subframe to appear..?
-        #raise NotImplementedError(f"Should wait longer for a subframe to appear..?")
+        # Untrack this satellite as we weren't able to identify subframe boundaries
+        # (as our bit quality must be too low).
         raise LostSatelliteLockError()
 
     def _handle_decoder_emitted_subframe(self, event: EmitSubframeEvent) -> list[Event]:
@@ -140,5 +146,3 @@ class GpsSatelliteSignalProcessingPipeline:
         _logger.info(f"\tTelemetry word: {event.telemetry_word}")
         _logger.info(f"\tHandover word: {event.handover_word}")
         return [event]
-
-
