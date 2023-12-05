@@ -118,6 +118,62 @@ INPUT_SOURCES = [
         sdr_sample_rate=2 * 1023 * 1000,
         utc_start_time=dateutil.parser.parse("2023-11-03T18:48:00+00:00"),
     ),
+    InputFileInfo(
+        path=Path(__file__).parents[1] / "vendored_signals" / "nov_30_15_00_30",
+        format=InputFileType.GnuRadioRecording,
+        # 2 * C/A PRN chip rate * 1k PRN repetitions per second
+        sdr_sample_rate=2 * 1023 * 1000,
+        utc_start_time=datetime.datetime.fromtimestamp(1701356430.648076714),
+        # 10 @ 1224Hz
+        # 12 @ 4569Hz
+        # 15 @ -1159Hz
+        # 19 @ 2376Hz
+        # 24 @ 1198Hz
+        # 25 @ 6305Hz
+        # 32 @ 5740Hz
+    ),
+    InputFileInfo(
+        path=Path(__file__).parents[1] / "vendored_signals" / "nov_30_15_04_10",
+        format=InputFileType.GnuRadioRecording,
+        # 2 * C/A PRN chip rate * 1k PRN repetitions per second
+        sdr_sample_rate=2 * 1023 * 1000,
+        utc_start_time=datetime.datetime.fromtimestamp(1701356651.195427381),
+        # Visible sats appear to be:
+        # 10 @ 1087Hz?
+        # 12 @ 4478Hz
+        # 15 @ -1101Hz
+        # 19 @ 2271Hz
+        # 24 @ 1134Hz
+        # 25 @ 6261Hz
+        # 32 @ 5667Hz
+    ),
+    InputFileInfo(
+        path=Path(__file__).parents[1] / "vendored_signals" / "nov_30_15_34_10",
+        format=InputFileType.GnuRadioRecording,
+        # 2 * C/A PRN chip rate * 1k PRN repetitions per second
+        sdr_sample_rate=2 * 1023 * 1000,
+        utc_start_time=datetime.datetime.fromtimestamp(1701358453.379840235),
+        # Visible sats appear to be:
+        # 10 @ 287Hz
+        # 12 @ 3386Hz
+        # 25 @ 5613Hz
+        # 28 @ 6242Hz
+        # 32 @ 4943Hz
+    ),
+    InputFileInfo(
+        path=Path(__file__).parents[1] / "vendored_signals" / "dec_01_09_12_30",
+        format=InputFileType.GnuRadioRecording,
+        sdr_sample_rate=2 * 1023 * 1000,
+        utc_start_time=datetime.datetime.fromtimestamp(1701421949.998035396),
+        # Visible sats appear to be:
+        # 29 @ 973Hz, 97 -- maybe too low? Appears to be lost in short order
+        # 7 @ 2248Hz, 121
+        # 11 @ -37Hz, 159
+        # 20 @ 2959Hz, 181
+        # 30 @ 4387Hz, 210
+        # 5 @ 5313Hz, 224
+        # 13 @ 5943Hz, 294
+    ),
 ]
 
 

@@ -112,7 +112,7 @@ class GpsReceiver:
 
         # TODO(PT): Properly model the cursor field
         _logger.info(
-            f"{self.antenna_samples_provider.cursor}: Performing acquisition search over {len(satellite_ids)} satellites ({self.subframe_count} subframes so far)."
+            f"{self.antenna_samples_provider.seconds_since_start() + self.antenna_samples_provider.utc_start_time}: Performing acquisition search over {len(satellite_ids)} satellites ({self.subframe_count} subframes so far)."
         )
 
         samples_for_integration_period = np.concatenate(self.rolling_samples_buffer)
