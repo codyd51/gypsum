@@ -54,6 +54,8 @@ class NavigationBitIntegrator:
         self.queued_pseudosymbols: list[EmittedPseudosymbol] = []
         self.determined_bit_phase: int | None = None
         self.bit_index = 0
+        self.sequential_unknown_bit_value_counter = 0
+
     def _determine_bit_phase_from_queued_bits(self) -> list[Event]:
         # Have we seen enough bits to determine the navigation bit phase?
         # (The bound here can probably be lowered if useful)
@@ -158,15 +160,32 @@ class NavigationBitIntegrator:
 
                     confidence_score: Percentage = abs(int((pseudosymbol_sum / PSEUDOSYMBOLS_PER_NAVIGATION_BIT) * 100))
                     self.bit_index += 1
-                    if confidence_score >= 60:
-                        # The timestamp of the bit comes from the receiver timestamp of
-                        # the first pseudosymbol in the bit.
-                        timestamp = bit_pseudosymbols[0].receiver_timestamp
-                        events.append(EmitNavigationBitEvent(receiver_timestamp=timestamp, bit_value=bit_value))
+                    if confidence_score <= 50:
+                        # TODO(PT): Could it be because the symbol phase has shifted?
+                        bit_value = BitValue.UNKNOWN
+                        self.sequential_unknown_bit_value_counter += 1
+                        if self.sequential_unknown_bit_value_counter >= 30:
+                            # TODO(PT): This might cause issues because it throws our subframe phase out of alignment?
+                            # We might need to emit an event to tell the subframe decoder to select a new phase now
+                            _logger.info(f'Resetting bit phase because we failed to resolve too many bits in a row...')
+                            self._reset_selected_bit_phase()
                     else:
-                        events.append(LostBitCoherenceEvent(confidence_score))
-                        # Stop consuming bits now
-                        break
+                        self.sequential_unknown_bit_value_counter = 0
+
+                    # The timestamp of the bit comes from the receiver timestamp of
+                    # the first pseudosymbol in the bit.
+                    timestamp = bit_pseudosymbols[0].receiver_timestamp
+                    events.append(EmitNavigationBitEvent(receiver_timestamp=timestamp, bit_value=bit_value))
+
+                    # TODO(PT): It looks as though our Doppler shift isn't following nearly fast enough (30Hz off on a re-acquire)
+                    # Should check the timestamps on this to get a feel for how fast it drops over time?
+
+                    # TODO(PT): Come up with some condition to emit a LostBitCoherenceEvent (i.e. X% unknown bits
+                    # emitted in the last Y seconds).
+                    #else:
+                    #    events.append(LostBitCoherenceEvent(confidence_score))
+                    #    # Stop consuming bits now
+                    #    break
                 else:
                     # Not enough pseudosymbols to emit a bit
                     break
