@@ -169,13 +169,21 @@ class NavigationMessageDecoder:
             # Drain the bit queue as much as we can
             while True:
                 if len(self.queued_bit_events) >= BITS_PER_SUBFRAME:
-                    events.append(self.parse_subframe())
+                    try:
+                        maybe_subframe = self.parse_subframe()
+                        if maybe_subframe:
+                            events.append(maybe_subframe)
+                    except Exception as e:
+                        # TODO(PT): This will probably break everything because we stop parsing in the middle of a frame...
+                        raise
+                        #print(f'*** swallowing exception {e}')
+                        #continue
                 else:
                     break
 
         return events
 
-    def parse_subframe(self) -> EmitSubframeEvent:
+    def parse_subframe(self) -> EmitSubframeEvent | None:
         subframe_bits = self.queued_bit_events[:BITS_PER_SUBFRAME]
         subframe_receiver_timestamp = subframe_bits[0].receiver_timestamp
         _logger.info(f"Emitting subframe timestamped at receiver at {subframe_receiver_timestamp}")
