@@ -36,6 +36,12 @@ class BitPolarity(Enum):
     POSITIVE = auto()
     NEGATIVE = auto()
 
+    def inverse(self) -> 'BitPolarity':
+        return {
+            self.POSITIVE: self.NEGATIVE,
+            self.NEGATIVE: self.POSITIVE,
+        }[self]
+
 
 class CannotDetermineSubframePhaseEvent(Event):
     pass

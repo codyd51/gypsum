@@ -381,6 +381,8 @@ class NavigationMessageSubframeParser:
     def parse_telemetry_word(self) -> TelemetryWord:
         # Ref: IS-GPS-200L, Figure 20-2
         tlm_prelude = [1, 0, 0, 0, 1, 0, 1, 1]
+        # TODO(PT): We need to be able to tell if the polarity of the bits has just flipped?
+        # Maybe we could do it each time we detect some kind of cycle slip?
         self.match_bits(tlm_prelude)
         telemetry_message = self.get_bits(14)
         integrity_status_flag = self.get_bit()
