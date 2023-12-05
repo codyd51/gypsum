@@ -102,6 +102,12 @@ class NavigationMessageDecoder:
         # TODO(PT): Maybe we could just keep waiting for a better lock?
         return None
 
+    def _reset_selected_subframe_phase(self):
+        _logger.info(f"Resetting selected subframe phase...")
+        self.determined_subframe_phase = None
+        self.determined_polarity = None
+        # self.queued_bit_events = []
+
     def _determine_subframe_phase_from_queued_bits(self) -> list[Event]:
         # We'll need at least two preambles to identify a subframe phase
         if len(self.queued_bit_events) < BITS_PER_SUBFRAME * 2:
