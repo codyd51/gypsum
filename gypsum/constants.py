@@ -21,8 +21,10 @@ GPS_L1_FREQUENCY = 1575.42e6
 MINIMUM_TRACKED_SATELLITES_FOR_POSITION_FIX = 4
 
 # The navigation message is transmitted at 50 bits per second.
+BITS_PER_SECOND = 50
 # This means that there are 20 PRN correlations / 20 'pseudosymbols' per navigation message bit.
 PSEUDOSYMBOLS_PER_NAVIGATION_BIT = 20
+PSEUDOSYMBOLS_PER_SECOND = PSEUDOSYMBOLS_PER_NAVIGATION_BIT * BITS_PER_SECOND
 
 # The Unix epoch is 1970/01/01.
 # The GPS epoch is 1980/01/06.
