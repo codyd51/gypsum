@@ -21,7 +21,6 @@ from gypsum.utils import (
     frequency_domain_correlation,
 )
 from gypsum.utils import CoherentCorrelationPeak
-from gypsum.utils import CorrelationProfile
 
 _logger = logging.getLogger(__name__)
 
@@ -101,14 +100,21 @@ class GpsSatelliteTrackingParameters:
 
     # The following arguments are handled automatically by this implementation
     correlation_peaks_rolling_buffer: collections.deque = None
+    correlation_peak_angles: list = None
 
     def __post_init__(self) -> None:
-        if self.correlation_peaks_rolling_buffer is not None:
-            raise RuntimeError(f'This field is not intended to be initialized at a call site.')
+        for field in [
+            self.correlation_peaks_rolling_buffer,
+            self.correlation_peak_angles,
+        ]:
+            if field is not None:
+                raise RuntimeError(f'This field is not intended to be initialized at a call site.')
         # Maintain a rolling buffer of the last few correlation peaks we've seen. Integrating these peaks over time
         # allows us to track the signal modulation (i.e. in a constellation plot).
         # The tracker runs at 1000Hz, so this represents the last n seconds of tracking.
+        # TODO(PT): Pull this out into a constant?
         self.correlation_peaks_rolling_buffer = collections.deque(maxlen=_TRACKER_ITERATIONS_PER_SECOND * 1)
+        self.correlation_peak_angles = []
 
 
 class GpsSatelliteTracker:
