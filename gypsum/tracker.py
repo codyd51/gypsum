@@ -1,3 +1,4 @@
+import collections
 import functools
 import logging
 from typing import Tuple
@@ -19,6 +20,8 @@ from gypsum.utils import (
     PrnCodePhaseInSamples,
     frequency_domain_correlation,
 )
+from gypsum.utils import CoherentCorrelationPeak
+from gypsum.utils import CorrelationProfile
 
 _logger = logging.getLogger(__name__)
 
@@ -80,6 +83,10 @@ class NavigationBitPseudosymbol(Enum):
         }[self]
 
 
+# The tracker runs at 1000Hz by definition, since it always operates on the output of a 1ms-long PRN correlation.
+_TRACKER_ITERATIONS_PER_SECOND = 1000
+
+
 @dataclass
 class GpsSatelliteTrackingParameters:
     satellite: GpsSatellite
@@ -90,7 +97,18 @@ class GpsSatelliteTrackingParameters:
     doppler_shifts: list[DopplerShiftHz]
     carrier_wave_phases: list[CarrierWavePhaseInRadians]
     carrier_wave_phase_errors: list[float]
-    navigation_bit_pseudosymbols: list[int]
+    navigation_bit_pseudosymbols: list[NavigationBitPseudosymbol]
+
+    # The following arguments are handled automatically by this implementation
+    correlation_peaks_rolling_buffer: collections.deque = None
+
+    def __post_init__(self) -> None:
+        if self.correlation_peaks_rolling_buffer is not None:
+            raise RuntimeError(f'This field is not intended to be initialized at a call site.')
+        # Maintain a rolling buffer of the last few correlation peaks we've seen. Integrating these peaks over time
+        # allows us to track the signal modulation (i.e. in a constellation plot).
+        # The tracker runs at 1000Hz, so this represents the last n seconds of tracking.
+        self.correlation_peaks_rolling_buffer = collections.deque(maxlen=_TRACKER_ITERATIONS_PER_SECOND * 1)
 
 
 class GpsSatelliteTracker:
@@ -99,13 +117,6 @@ class GpsSatelliteTracker:
 
         plt.ion()
         plt.autoscale(enable=True)
-        if False:
-            self.errors_figure = plt.figure()
-            self.errors_ax = self.errors_figure.add_subplot()
-            self.phase_figure = plt.figure()
-            self.phase_ax = self.phase_figure.add_subplot()
-            self.errors_figure.show()
-            self.phase_figure.show()
         self.constellation_fig = plt.figure(figsize=(12, 9))
         gs = plt.GridSpec(3, 3, figure=self.constellation_fig)
         self.freq_ax = self.constellation_fig.add_subplot(gs[0], title="Beat Frequency (Hz)")
@@ -120,10 +131,13 @@ class GpsSatelliteTracker:
         self._is = []
         self._qs = []
         self.iq_angles = []
-        self.phase_errors = []
         self.carrier_phases = []
-        # TODO(PT): Perhaps the carrier phase estimate that comes from acquisition is way off?
 
+        # PT: Small optimization here. Each time we process a millisecond of samples, we need to generate a time
+        # domain representing the time offset of the samples from when we began tracking. This involves creating the
+        # range below, plus a phase offset representing the current offset from when we started tracking. We save work
+        # by generating the correctly-spaced range just once upfront, then applying the phase offset for the current
+        # time each iteration.
         self.time_domain_for_1ms = np.arange(SAMPLES_PER_PRN_TRANSMISSION) / SAMPLES_PER_SECOND
 
     def _is_locked(self) -> bool:
@@ -188,30 +202,38 @@ class GpsSatelliteTracker:
 
         return loop_gain_phase, loop_gain_freq
 
-    def _test5(self, samples_with_carrier_and_prn_wipeoff: AntennaSamplesSpanningOneMs, sample) -> None:
-        error = sample.real * sample.imag
+    def _run_carrier_wave_tracking_loop_iteration(self, correlation_peak: CoherentCorrelationPeak) -> None:
+        # Classic error discriminator for a Costas-style PLL loop,
+        # since it's not sensitive to a 180 degree phase rotation.
+        error = correlation_peak.real * correlation_peak.imag
 
         if self._is_locked():
+            # When we detect our PLL is locked, use a 'fine-grained'/'track' mode with a low loop bandwidth.
             alpha, beta = self._calculate_loop_filter_alpha_and_beta(3)
         else:
+            # When unlocked, use a wider 'pull-in' bandwidth to try to get back on track.
             alpha, beta = self._calculate_loop_filter_alpha_and_beta(6)
+
         self.tracking_params.current_carrier_wave_phase_shift += error * alpha
         self.tracking_params.current_carrier_wave_phase_shift %= math.tau
         self.tracking_params.current_doppler_shift += error * beta
         self.tracking_params.carrier_wave_phase_errors.append(error)
-        self.iq_angles.append(np.angle(sample))
+        self.iq_angles.append(np.angle(correlation_peak))
 
-    def process_samples(self, seconds_since_start: Seconds, samples: AntennaSamplesSpanningOneMs) -> NavigationBitPseudosymbol:
-        if (seconds_since_start % 1) == 0:
-            locked_state = "Locked" if self._is_locked() else "Unlocked"
-            last_few_phase_errors = self.tracking_params.carrier_wave_phase_errors[-250:]
-            variance = np.var(last_few_phase_errors)
-            print(f'*** Seconds since start: {seconds_since_start} ({locked_state}), Variance {variance:.2f}')
+    def _run_prn_code_tracking_loop_iteration(
+        self,
+        seconds_since_start: Seconds,
+        samples: AntennaSamplesSpanningOneMs
+    ) -> Tuple[CoherentCorrelationPeak, NavigationBitPseudosymbol]:
         params = self.tracking_params
-
-        # Generate Doppler-shifted and phase-shifted carrier wave
         # Adjust the time domain based on our current time
         time_domain = self.time_domain_for_1ms + seconds_since_start
+
+        # Generate Doppler-shifted and phase-shifted carrier wave, based on our current carrier wave estimation.
+        # (Note that there's a circular dependency between the carrier wave tracker and the PRN code tracker.
+        # This loop will update the PRN code loop tracker by first demodulating with the current estimate of the carrier
+        # wave. The carrier wave tracker will similarly demodulate with the current estimation of the PRN code tracker,
+        # and so on).
         doppler_shift_carrier = np.exp(
             -1j * ((2 * np.pi * params.current_doppler_shift * time_domain) + params.current_carrier_wave_phase_shift)
         )
@@ -241,17 +263,37 @@ class GpsSatelliteTracker:
         params.current_prn_code_phase_shift = int(params.current_prn_code_phase_shift) % SAMPLES_PER_PRN_TRANSMISSION
 
         coherent_prompt_prn_correlation_peak = coherent_prompt_correlation[non_coherent_prompt_peak_offset]
-        navigation_bit_pseudosymbol_value = int(np.sign(coherent_prompt_prn_correlation_peak.real))
-        params.navigation_bit_pseudosymbols.append(navigation_bit_pseudosymbol_value)
 
-        # Questions:
-        # Amplitude of the PRN vs. amplitude of the input signal
-        # If I'm running an LPF on the carrier loop discriminator, what would be the cutoff?
-        # If I'm doing the error on the whole set of samples at once, how would I integrate the error?
+        # The sign of the correlation peak *is* the transmitted pseudosymbol value, since the signal is BPSK-modulated.
+        navigation_bit_pseudosymbol_value = int(np.sign(coherent_prompt_prn_correlation_peak.real))
+        navigation_bit_pseudosymbol = NavigationBitPseudosymbol.from_val(navigation_bit_pseudosymbol_value)
+
+        return coherent_prompt_prn_correlation_peak, navigation_bit_pseudosymbol
+
+    def process_samples(self, seconds_since_start: Seconds, samples: AntennaSamplesSpanningOneMs) -> NavigationBitPseudosymbol:
+        if (seconds_since_start % 1) == 0:
+            locked_state = "Locked" if self._is_locked() else "Unlocked"
+            last_few_phase_errors = self.tracking_params.carrier_wave_phase_errors[-250:]
+            variance = np.var(last_few_phase_errors)
+            print(f'*** Seconds since start: {seconds_since_start} ({locked_state}), Variance {variance:.2f}')
+
+        params = self.tracking_params
+
+        # First, run an iteration of the PRN code tracking loop
+        coherent_prompt_prn_correlation_peak, navigation_bit_pseudosymbol = self._run_prn_code_tracking_loop_iteration(
+            seconds_since_start,
+            samples,
+        )
+        params.navigation_bit_pseudosymbols.append(navigation_bit_pseudosymbol)
 
         self._is.append(coherent_prompt_prn_correlation_peak.real)
         self._qs.append(coherent_prompt_prn_correlation_peak.imag)
-        self._test5(coherent_prompt_correlation, coherent_prompt_prn_correlation_peak)
+        self.tracking_params.correlation_peaks_rolling_buffer.append(coherent_prompt_prn_correlation_peak)
+
+        # Next, run an iteration of the carrier wave tracking loop
+        self._run_carrier_wave_tracking_loop_iteration(
+            coherent_prompt_prn_correlation_peak,
+        )
         self.carrier_phases.append(params.current_carrier_wave_phase_shift)
 
         # logging.info(f"Doppler shift {params.current_doppler_shift:.2f}, Carrier phase {params.current_carrier_wave_phase_shift:.8f}")
@@ -328,4 +370,4 @@ class GpsSatelliteTracker:
 
                 plt.pause(0.001)
 
-        return NavigationBitPseudosymbol.from_val(navigation_bit_pseudosymbol_value)
+        return navigation_bit_pseudosymbol

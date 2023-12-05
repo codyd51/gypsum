@@ -19,6 +19,7 @@ PrnReplicaCodeSamplesSpanningOneMs = np.ndarray
 
 CorrelationProfile = np.ndarray
 CorrelationStrength = float
+CoherentCorrelationPeak = complex
 
 DopplerShiftHz = float
 CarrierWavePhaseInRadians = float
