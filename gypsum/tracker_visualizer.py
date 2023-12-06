@@ -24,22 +24,34 @@ class GpsSatelliteTrackerVisualizer:
             plt.ion()
             plt.autoscale(enable=True)
 
-        self.visualizer_figure = plt.figure(figsize=(9, 6))
-        self.visualizer_figure.suptitle(f"Satellite #{satellite_id.id} Tracker Dashboard")
-        grid_spec = plt.GridSpec(3, 3, figure=self.visualizer_figure)
+        self.visualizer_figure = plt.figure(figsize=(11, 6))
+        self.visualizer_figure.suptitle(f"Satellite #{satellite_id.id} Tracking Dashboard")
+        self.grid_spec = plt.GridSpec(nrows=2, ncols=4, figure=self.visualizer_figure)
 
-        self.freq_ax = self.visualizer_figure.add_subplot(grid_spec[0], title="Beat Frequency (Hz)")
-        self.constellation_ax = self.visualizer_figure.add_subplot(grid_spec[1], title="IQ Constellation")
-        self.samples_ax = self.visualizer_figure.add_subplot(grid_spec[2], title="Samples")
-        self.phase_errors_ax = self.visualizer_figure.add_subplot(grid_spec[3], title="Carrier Phase Error")
-        self.i_ax = self.visualizer_figure.add_subplot(grid_spec[4], title="I")
-        self.q_ax = self.visualizer_figure.add_subplot(grid_spec[5], title="Q")
-        self.iq_angle_ax = self.visualizer_figure.add_subplot(grid_spec[6], title="IQ Angle")
-        self.carrier_phase_ax = self.visualizer_figure.add_subplot(grid_spec[6], title="Carrier Phase")
-        self.visualizer_figure.show()
+        self.freq_ax = self.visualizer_figure.add_subplot(self.grid_spec[0])
+        self.constellation_ax = self.visualizer_figure.add_subplot(self.grid_spec[1])
+        self.phase_errors_ax = self.visualizer_figure.add_subplot(self.grid_spec[2])
+        self.i_ax = self.visualizer_figure.add_subplot(self.grid_spec[3])
+        self.q_ax = self.visualizer_figure.add_subplot(self.grid_spec[4])
+        self.iq_angle_ax = self.visualizer_figure.add_subplot(self.grid_spec[5])
+        self.carrier_phase_ax = self.visualizer_figure.add_subplot(self.grid_spec[6])
 
-        self._timestamp_of_last_dashboard_update = 0
-        self._timestamp_of_last_graph_reset = 0
+        self._redraw_subplot_titles()
+
+        # All done, request tight layout
+        self.grid_spec.tight_layout(self.visualizer_figure)
+
+    def _redraw_subplot_titles(self):
+        """Unfortunately, plt.Axes.clear() also erases the subplot title.
+        Therefore, every time we clear an axis, we have to redraw its title.
+        """
+        self.freq_ax.set_title("Beat Frequency (Hz)")
+        self.constellation_ax.set_title("IQ Constellation")
+        self.phase_errors_ax.set_title("Carrier Phase Error")
+        self.i_ax.set_title("I Component")
+        self.q_ax.set_title("Q Component")
+        self.iq_angle_ax.set_title("IQ Angle (Rad)")
+        self.carrier_phase_ax.set_title("Carrier Phase (Rad)")
 
     def step(self, seconds_since_start: Seconds, current_tracking_params: GpsSatelliteTrackingParameters) -> None:
         if seconds_since_start - self._timestamp_of_last_dashboard_update < _UPDATE_PERIOD:
@@ -99,4 +111,6 @@ class GpsSatelliteTrackerVisualizer:
 
         self.phase_errors_ax.plot(params.carrier_wave_phase_errors)
 
+        # We've just erased some of our axes titles via plt.Axes.clear(), so redraw them.
+        self._redraw_subplot_titles()
         plt.pause(0.001)
