@@ -58,8 +58,6 @@ class GpsSatelliteSignalProcessingPipeline:
             current_carrier_wave_phase_shift=acquisition_result.carrier_wave_phase_shift,
             current_prn_code_phase_shift=acquisition_result.prn_phase_shift,
             doppler_shifts=[],
-            carrier_wave_phases=[],
-            carrier_wave_phase_errors=[],
             navigation_bit_pseudosymbols=[],
         )
         self.tracker = GpsSatelliteTracker(tracking_params)
