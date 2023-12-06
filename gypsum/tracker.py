@@ -6,7 +6,6 @@ from typing import Tuple
 import math
 from dataclasses import dataclass
 from enum import Enum, auto
-import matplotlib.pyplot as plt
 
 import numpy as np
 
@@ -96,27 +95,30 @@ class GpsSatelliteTrackingParameters:
     current_prn_code_phase_shift: PrnCodePhaseInSamples
 
     doppler_shifts: list[DopplerShiftHz]
-    carrier_wave_phases: list[CarrierWavePhaseInRadians]
-    carrier_wave_phase_errors: list[float]
     navigation_bit_pseudosymbols: list[NavigationBitPseudosymbol]
 
     # The following arguments are handled automatically by this implementation
+    carrier_wave_phases: collections.deque[CarrierWavePhaseInRadians] = None
+    carrier_wave_phase_errors: collections.deque[float] = None
     correlation_peaks_rolling_buffer: collections.deque = None
-    correlation_peak_angles: list = None
+    correlation_peak_angles: collections.deque = None
 
     def __post_init__(self) -> None:
         for field in [
             self.correlation_peaks_rolling_buffer,
             self.correlation_peak_angles,
+            self.carrier_wave_phases,
+            self.carrier_wave_phase_errors,
         ]:
             if field is not None:
                 raise RuntimeError(f'This field is not intended to be initialized at a call site.')
         # Maintain a rolling buffer of the last few correlation peaks we've seen. Integrating these peaks over time
         # allows us to track the signal modulation (i.e. in a constellation plot).
         # The tracker runs at 1000Hz, so this represents the last n seconds of tracking.
-        # TODO(PT): Pull this out into a constant?
-        self.correlation_peaks_rolling_buffer = collections.deque(maxlen=_TRACKER_ITERATIONS_PER_SECOND * 1)
-        self.correlation_peak_angles = []
+        self.correlation_peaks_rolling_buffer = collections.deque(maxlen=_TRACKER_ITERATIONS_PER_SECOND)
+        self.correlation_peak_angles = collections.deque(maxlen=_TRACKER_ITERATIONS_PER_SECOND)
+        self.carrier_wave_phases = collections.deque(maxlen=_TRACKER_ITERATIONS_PER_SECOND * 5)
+        self.carrier_wave_phase_errors = collections.deque(maxlen=_TRACKER_ITERATIONS_PER_SECOND * 5)
 
     def is_locked(self) -> bool:
         """Apply heuristics to the recorded tracking metrics history to give an answer whether the tracker is 'locked'.
@@ -131,7 +133,7 @@ class GpsSatelliteTrackingParameters:
             _logger.info(f'Not enough errors to determine variance')
             return False
 
-        last_few_phase_errors = self.carrier_wave_phase_errors[-previous_milliseconds_to_consider:]
+        last_few_phase_errors = np.array(list(self.carrier_wave_phase_errors)[-previous_milliseconds_to_consider:])
         phase_error_variance = np.var(last_few_phase_errors)
         # TODO(PT): Pull this out into a constant?
         is_phase_error_variance_under_threshold = phase_error_variance < 900
