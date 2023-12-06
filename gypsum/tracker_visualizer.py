@@ -19,6 +19,9 @@ _RESET_DISPLAYED_DATA_PERIOD: Seconds = 5.0
 
 class GpsSatelliteTrackerVisualizer:
     def __init__(self, satellite_id: GpsSatelliteId) -> None:
+        self._timestamp_of_last_dashboard_update = 0
+        self._timestamp_of_last_graph_reset = 0
+
         # Enable interactive mode if not already done
         if not plt.isinteractive():
             plt.ion()
@@ -63,12 +66,13 @@ class GpsSatelliteTrackerVisualizer:
 
             # Reset the graphs that clear periodically (so the old data doesn't clutter things up).
             self.constellation_ax.clear()
+            self.phase_errors_ax.clear()
 
         # Time to update the GUI
         self._timestamp_of_last_dashboard_update = seconds_since_start
 
         locked_state = "Locked" if current_tracking_params.is_locked() else "Unlocked"
-        last_few_phase_errors = current_tracking_params.carrier_wave_phase_errors[-250:]
+        last_few_phase_errors = list(current_tracking_params.carrier_wave_phase_errors)[-250:]
         variance = np.var(last_few_phase_errors)
         _logger.info(f'Seconds since start: {seconds_since_start} ({locked_state}), Variance {variance:.2f}')
 
@@ -90,24 +94,19 @@ class GpsSatelliteTrackerVisualizer:
         self.constellation_ax.scatter([left_point.real, right_point.real], [left_point.imag, right_point.imag])
         self.i_ax.clear()
         self.i_ax.plot(np.real(points))
-        self._is = []
 
         self.q_ax.clear()
         #self.q_ax.plot(self._qs)
         self.q_ax.plot(np.imag(points))
-        self._qs = []
 
         self.iq_angle_ax.clear()
-        #self.iq_angle_ax.plot(self.iq_angles)
-        self.iq_angles = []
+        self.iq_angle_ax.plot(params.correlation_peak_angles)
+        #self.iq_angles = []
 
         self.carrier_phase_ax.clear()
         #self.carrier_phase_ax.plot(self.carrier_phases)
         self.carrier_phase_ax.plot(params.carrier_wave_phases)
-        self.carrier_phases = []
-
-        self.carrier = []
-        self.mixed = []
+        #self.carrier_phases = []
 
         self.phase_errors_ax.plot(params.carrier_wave_phase_errors)
 
