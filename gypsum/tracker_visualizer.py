@@ -25,7 +25,6 @@ class GpsSatelliteTrackerVisualizer:
         # Enable interactive mode if not already done
         if not plt.isinteractive():
             plt.ion()
-            plt.autoscale(enable=True)
 
         self.visualizer_figure = plt.figure(figsize=(11, 6))
         self.visualizer_figure.suptitle(f"Satellite #{satellite_id.id} Tracking Dashboard")
@@ -73,25 +72,30 @@ class GpsSatelliteTrackerVisualizer:
 
         locked_state = "Locked" if current_tracking_params.is_locked() else "Unlocked"
         last_few_phase_errors = list(current_tracking_params.carrier_wave_phase_errors)[-250:]
-        variance = np.var(last_few_phase_errors)
+        variance = np.var(last_few_phase_errors) if len(last_few_phase_errors) >= 2 else 0
         _logger.info(f'Seconds since start: {seconds_since_start} ({locked_state}), Variance {variance:.2f}')
 
         params = current_tracking_params
         self.freq_ax.plot(params.doppler_shifts[::10])
 
         points = np.array(params.correlation_peaks_rolling_buffer)
-        points_on_left_pole = points[points.real < 0]
-        points_on_right_pole = points[points.real >= 0]
-        left_point = np.mean(points_on_left_pole)
-        right_point = np.mean(points_on_right_pole)
-        angle = 180 - (((np.arctan2(left_point.imag, left_point.real) / math.tau) * 360) % 180)
-        rotation = angle
-        if angle > 90:
-            rotation = angle - 180
-        _logger.info(f'Angle {angle:.2f} Rotation {rotation:.2f} Doppler {params.current_doppler_shift:.2f}')
-
         self.constellation_ax.scatter(np.real(points), np.imag(points))
-        self.constellation_ax.scatter([left_point.real, right_point.real], [left_point.imag, right_point.imag])
+
+        if len(points) > 2:
+            # Draw the 'average' / mean point of each pole
+            points_on_left_pole = points[points.real < 0]
+            points_on_right_pole = points[points.real >= 0]
+
+            left_point = np.mean(points_on_left_pole) if len(points_on_left_pole) >= 2 else 0
+            right_point = np.mean(points_on_right_pole) if len(points_on_right_pole) >= 2 else 0
+
+            angle = 180 - (((np.arctan2(left_point.imag, left_point.real) / math.tau) * 360) % 180)
+            rotation = angle
+            if angle > 90:
+                rotation = angle - 180
+            _logger.info(f'Angle {angle:.2f} Rotation {rotation:.2f} Doppler {params.current_doppler_shift:.2f}')
+            self.constellation_ax.scatter([left_point.real, right_point.real], [left_point.imag, right_point.imag])
+
         self.i_ax.clear()
         self.i_ax.plot(np.real(points))
 

@@ -130,11 +130,11 @@ class GpsSatelliteTrackingParameters:
         previous_milliseconds_to_consider = 250
         if len(self.carrier_wave_phase_errors) < previous_milliseconds_to_consider:
             # We haven't run our PLL for long enough to determine lock
-            _logger.info(f'Not enough errors to determine variance')
+            # _logger.info(f'Not enough errors to determine variance')
             return False
 
         last_few_phase_errors = np.array(list(self.carrier_wave_phase_errors)[-previous_milliseconds_to_consider:])
-        phase_error_variance = np.var(last_few_phase_errors)
+        phase_error_variance = np.var(last_few_phase_errors) if len(last_few_phase_errors) >= 2 else 0
         # TODO(PT): Pull this out into a constant?
         is_phase_error_variance_under_threshold = phase_error_variance < 900
 
@@ -151,11 +151,10 @@ class GpsSatelliteTrackingParameters:
             # around each pole.
             peaks_on_negative_pole = last_few_peaks[last_few_peaks.real < 0]
             peaks_on_positive_pole = last_few_peaks[last_few_peaks.real >= 0]
-            mean_negative_peak = np.mean(peaks_on_negative_pole)
-            # mean_positive_peak = np.mean(peaks_on_positive_pole)
+            mean_negative_peak = np.mean(peaks_on_negative_pole) if len(peaks_on_negative_pole) >= 2 else 0
 
-            negative_i_peak_variance = np.var(peaks_on_negative_pole.real)
-            positive_i_peak_variance = np.var(peaks_on_positive_pole.real)
+            negative_i_peak_variance = np.var(peaks_on_negative_pole.real) if len(peaks_on_negative_pole) >= 2 else 0
+            positive_i_peak_variance = np.var(peaks_on_positive_pole.real) if len(peaks_on_positive_pole) >= 2 else 0
             mean_i_peak_variance = (negative_i_peak_variance + positive_i_peak_variance) / 2.0
             # PT: Chosen through experimentation
             does_i_channel_look_locked = mean_i_peak_variance < 2

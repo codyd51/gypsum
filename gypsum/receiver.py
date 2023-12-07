@@ -107,7 +107,7 @@ class GpsReceiver:
         # Therefore, we keep a rolling buffer of the last few samples.
         # If this buffer isn't primed yet, we can't do any work yet.
         if len(self.rolling_samples_buffer) < ACQUISITION_INTEGRATION_PERIOD_MS:
-            _logger.info(f"Skipping acquisition attempt because the history buffer isn't primed yet.")
+            # _logger.info(f"Skipping acquisition attempt because the history buffer isn't primed yet.")
             return []
 
         # TODO(PT): Properly model the cursor field
