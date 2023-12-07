@@ -1,8 +1,11 @@
 import logging
+from enum import Enum
+from enum import auto
 
 import math
 import logging
 import numpy as np
+from matplotlib.axes import Axes
 
 from gypsum.gps_ca_prn_codes import GpsSatelliteId
 from gypsum.tracker import GpsSatelliteTrackingParameters
@@ -15,6 +18,29 @@ _logger = logging.getLogger(__name__)
 
 _UPDATE_PERIOD: Seconds = 1.0
 _RESET_DISPLAYED_DATA_PERIOD: Seconds = 5.0
+
+
+class GraphTypeEnum(Enum):
+    # Note that the ordering of this enum defines the layout of the graphs in the dashboard
+    DOPPLER_SHIFT = auto()
+    IQ_CONSTELLATION = auto()
+    CARRIER_PHASE_ERROR = auto()
+    I_COMPONENT = auto()
+    Q_COMPONENT = auto()
+    IQ_ANGLE = auto()
+    CARRIER_PHASE = auto()
+
+    @property
+    def presentation_name(self) -> str:
+        return {
+            GraphTypeEnum.DOPPLER_SHIFT: "Beat Frequency (Hz)",
+            GraphTypeEnum.IQ_CONSTELLATION: "IQ Constellation",
+            GraphTypeEnum.CARRIER_PHASE_ERROR: "Carrier Phase Error",
+            GraphTypeEnum.I_COMPONENT: "I Component",
+            GraphTypeEnum.Q_COMPONENT: "Q Component",
+            GraphTypeEnum.IQ_ANGLE: "IQ Angle (Rad)",
+            GraphTypeEnum.CARRIER_PHASE: "Carrier Phase (Rad)",
+        }[self]
 
 
 class GpsSatelliteTrackerVisualizer:
@@ -30,13 +56,11 @@ class GpsSatelliteTrackerVisualizer:
         self.visualizer_figure.suptitle(f"Satellite #{satellite_id.id} Tracking Dashboard")
         self.grid_spec = plt.GridSpec(nrows=2, ncols=4, figure=self.visualizer_figure)
 
-        self.freq_ax = self.visualizer_figure.add_subplot(self.grid_spec[0])
-        self.constellation_ax = self.visualizer_figure.add_subplot(self.grid_spec[1])
-        self.phase_errors_ax = self.visualizer_figure.add_subplot(self.grid_spec[2])
-        self.i_ax = self.visualizer_figure.add_subplot(self.grid_spec[3])
-        self.q_ax = self.visualizer_figure.add_subplot(self.grid_spec[4])
-        self.iq_angle_ax = self.visualizer_figure.add_subplot(self.grid_spec[5])
-        self.carrier_phase_ax = self.visualizer_figure.add_subplot(self.grid_spec[6])
+        grid_spec_idx_iterator = iter(range(len(GraphTypeEnum)))
+        self.graph_type_to_graphs = {
+            t: self.visualizer_figure.add_subplot(self.grid_spec[next(grid_spec_idx_iterator)])
+            for t in GraphTypeEnum
+        }
 
         self._redraw_subplot_titles()
 
@@ -47,13 +71,11 @@ class GpsSatelliteTrackerVisualizer:
         """Unfortunately, plt.Axes.clear() also erases the subplot title.
         Therefore, every time we clear an axis, we have to redraw its title.
         """
-        self.freq_ax.set_title("Beat Frequency (Hz)")
-        self.constellation_ax.set_title("IQ Constellation")
-        self.phase_errors_ax.set_title("Carrier Phase Error")
-        self.i_ax.set_title("I Component")
-        self.q_ax.set_title("Q Component")
-        self.iq_angle_ax.set_title("IQ Angle (Rad)")
-        self.carrier_phase_ax.set_title("Carrier Phase (Rad)")
+        for graph_type, graph in self.graph_type_to_graphs.items():
+            graph.set_title(graph_type.presentation_name)
+
+    def graph_for_type(self, t: GraphTypeEnum) -> Axes:
+        return self.graph_type_to_graphs[t]
 
     def step(self, seconds_since_start: Seconds, current_tracking_params: GpsSatelliteTrackingParameters) -> None:
         if seconds_since_start - self._timestamp_of_last_dashboard_update < _UPDATE_PERIOD:
@@ -64,8 +86,8 @@ class GpsSatelliteTrackerVisualizer:
             self._timestamp_of_last_graph_reset = seconds_since_start
 
             # Reset the graphs that clear periodically (so the old data doesn't clutter things up).
-            self.constellation_ax.clear()
-            self.phase_errors_ax.clear()
+            self.graph_for_type(GraphTypeEnum.IQ_CONSTELLATION).clear()
+            self.graph_for_type(GraphTypeEnum.CARRIER_PHASE_ERROR).clear()
 
         # Time to update the GUI
         self._timestamp_of_last_dashboard_update = seconds_since_start
@@ -76,10 +98,10 @@ class GpsSatelliteTrackerVisualizer:
         _logger.info(f'Seconds since start: {seconds_since_start} ({locked_state}), Variance {variance:.2f}')
 
         params = current_tracking_params
-        self.freq_ax.plot(params.doppler_shifts[::10])
+        self.graph_for_type(GraphTypeEnum.DOPPLER_SHIFT).plot(params.doppler_shifts[::10])
 
         points = np.array(params.correlation_peaks_rolling_buffer)
-        self.constellation_ax.scatter(np.real(points), np.imag(points))
+        self.graph_for_type(GraphTypeEnum.IQ_CONSTELLATION).scatter(np.real(points), np.imag(points))
 
         if len(points) > 2:
             # Draw the 'average' / mean point of each pole
@@ -94,25 +116,22 @@ class GpsSatelliteTrackerVisualizer:
             if angle > 90:
                 rotation = angle - 180
             _logger.info(f'Angle {angle:.2f} Rotation {rotation:.2f} Doppler {params.current_doppler_shift:.2f}')
-            self.constellation_ax.scatter([left_point.real, right_point.real], [left_point.imag, right_point.imag])
+            self.graph_for_type(GraphTypeEnum.IQ_CONSTELLATION).scatter([left_point.real, right_point.real], [left_point.imag, right_point.imag])
 
-        self.i_ax.clear()
-        self.i_ax.plot(np.real(points))
+        self.graph_for_type(GraphTypeEnum.I_COMPONENT).clear()
+        self.graph_for_type(GraphTypeEnum.I_COMPONENT).plot(np.real(points))
 
-        self.q_ax.clear()
-        #self.q_ax.plot(self._qs)
-        self.q_ax.plot(np.imag(points))
+        self.graph_for_type(GraphTypeEnum.Q_COMPONENT).clear()
+        self.graph_for_type(GraphTypeEnum.Q_COMPONENT).plot(np.imag(points))
 
-        self.iq_angle_ax.clear()
-        self.iq_angle_ax.plot(params.correlation_peak_angles)
-        #self.iq_angles = []
+        self.graph_for_type(GraphTypeEnum.IQ_ANGLE).clear()
+        self.graph_for_type(GraphTypeEnum.IQ_ANGLE).plot(params.correlation_peak_angles)
 
-        self.carrier_phase_ax.clear()
-        #self.carrier_phase_ax.plot(self.carrier_phases)
-        self.carrier_phase_ax.plot(params.carrier_wave_phases)
-        #self.carrier_phases = []
+        self.graph_for_type(GraphTypeEnum.CARRIER_PHASE).clear()
+        self.graph_for_type(GraphTypeEnum.CARRIER_PHASE).plot(params.carrier_wave_phases)
 
-        self.phase_errors_ax.plot(params.carrier_wave_phase_errors)
+        self.graph_for_type(GraphTypeEnum.CARRIER_PHASE_ERROR).clear()
+        self.graph_for_type(GraphTypeEnum.CARRIER_PHASE_ERROR).plot(params.carrier_wave_phase_errors)
 
         # We've just erased some of our axes titles via plt.Axes.clear(), so redraw them.
         self._redraw_subplot_titles()
