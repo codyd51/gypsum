@@ -9,17 +9,21 @@ from enum import Enum, auto
 
 import numpy as np
 
-from gypsum.antenna_sample_provider import Seconds
+from gypsum.config import MAXIMUM_PHASE_ERROR_VARIANCE_FOR_LOCK_STATE
+from gypsum.config import MILLISECONDS_TO_CONSIDER_FOR_TRACKER_LOCK_STATE
 from gypsum.constants import SAMPLES_PER_PRN_TRANSMISSION, SAMPLES_PER_SECOND
 from gypsum.satellite import GpsSatellite
+from gypsum.units import (
+    Seconds,
+    CarrierWavePhaseInRadians,
+    PrnCodePhaseInSamples,
+    CoherentCorrelationPeak,
+)
 from gypsum.utils import (
     AntennaSamplesSpanningOneMs,
-    CarrierWavePhaseInRadians,
     DopplerShiftHz,
-    PrnCodePhaseInSamples,
     frequency_domain_correlation,
 )
-from gypsum.utils import CoherentCorrelationPeak
 
 _logger = logging.getLogger(__name__)
 
@@ -124,7 +128,7 @@ class GpsSatelliteTrackingParameters:
         """Apply heuristics to the recorded tracking metrics history to give an answer whether the tracker is 'locked'.
         'Locked' means we feel confident we're accurately tracking the carrier wave frequency and phase.
         """
-        # TODO(PT): This should be cached for each loop iteration somehow...
+        # TODO(PT): The result of this method should be cached for each loop iteration somehow...
         # The PLL currently runs at 1000Hz, so each error entry is spaced at 1ms.
         # TODO(PT): Pull this out into a constant.
         previous_milliseconds_to_consider = 250

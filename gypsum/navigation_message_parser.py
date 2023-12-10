@@ -1,11 +1,9 @@
-import collections
 import logging
 from dataclasses import dataclass
 from enum import Enum, auto
-from typing import Self
 
 from gypsum.config import GPS_EPOCH_BASE_WEEK_NUMBER
-from gypsum.utils import Seconds
+from gypsum.units import Seconds
 
 Meters = float
 SemiCirclesPerSecond = float

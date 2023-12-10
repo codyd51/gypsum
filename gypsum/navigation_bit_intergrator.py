@@ -1,9 +1,7 @@
 import collections
 import logging
-import statistics
 from dataclasses import dataclass
 
-import math
 import numpy as np
 
 from gypsum.antenna_sample_provider import ReceiverTimestampSeconds

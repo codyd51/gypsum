@@ -22,10 +22,10 @@ from gypsum.navigation_message_parser import NavigationMessageSubframe4
 from gypsum.navigation_message_parser import NavigationMessageSubframe5
 from gypsum.navigation_message_parser import SemiCircles
 from gypsum.navigation_message_parser import SemiCirclesPerSecond
-from gypsum.utils import MetersPerSecond
-from gypsum.utils import Seconds
-from gypsum.utils import RadiansPerSecond
-from gypsum.utils import Radians
+from gypsum.units import MetersPerSecond
+from gypsum.units import Seconds
+from gypsum.units import RadiansPerSecond
+from gypsum.units import Radians
 
 
 _ParameterType = TypeVar("_ParameterType")

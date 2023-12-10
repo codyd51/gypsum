@@ -8,7 +8,7 @@ import numpy as np
 
 from gypsum.config import UTC_LEAP_SECONDS_COUNT
 from gypsum.constants import SAMPLES_PER_SECOND
-from gypsum.utils import Seconds
+from gypsum.units import Seconds
 
 # Expressed as seconds since the UTC epoch, as measured by the local clock (i.e. including the receiver clock bias)
 ReceiverTimestampSeconds = Seconds

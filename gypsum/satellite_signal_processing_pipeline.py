@@ -22,8 +22,8 @@ from gypsum.navigation_message_decoder import (
 from gypsum.satellite import GpsSatellite
 from gypsum.tracker import GpsSatelliteTracker, GpsSatelliteTrackingParameters
 from gypsum.tracker_visualizer import GpsSatelliteTrackerVisualizer
+from gypsum.units import Seconds
 from gypsum.utils import AntennaSamplesSpanningOneMs
-from gypsum.utils import Seconds
 
 _logger = logging.getLogger(__name__)
 

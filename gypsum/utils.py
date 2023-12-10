@@ -5,26 +5,13 @@ from typing import Any, Collection, Iterator, TypeVar
 import numpy as np
 
 from gypsum.constants import SAMPLES_PER_PRN_TRANSMISSION, SAMPLES_PER_SECOND
+from gypsum.units import AntennaSamplesSpanningAcquisitionIntegrationPeriodMs
+from gypsum.units import AntennaSamplesSpanningOneMs
+from gypsum.units import CorrelationProfile
+from gypsum.units import DopplerShiftHz
+from gypsum.units import PrnReplicaCodeSamplesSpanningOneMs
 
 _IterType = TypeVar("_IterType")
-
-# TODO(PT): Rename this to reflect that it represents 'seconds since startup'?
-Seconds = float
-MetersPerSecond = float
-RadiansPerSecond = float
-Radians = float
-
-AntennaSamplesSpanningAcquisitionIntegrationPeriodMs = np.ndarray
-AntennaSamplesSpanningOneMs = np.ndarray
-PrnReplicaCodeSamplesSpanningOneMs = np.ndarray
-
-CorrelationProfile = np.ndarray
-CorrelationStrength = float
-CoherentCorrelationPeak = complex
-
-DopplerShiftHz = float
-CarrierWavePhaseInRadians = float
-PrnCodePhaseInSamples = int
 
 
 class IntegrationType(Enum):

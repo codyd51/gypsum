@@ -1,4 +1,3 @@
-import logging
 from enum import Enum
 from enum import auto
 
@@ -7,14 +6,12 @@ import logging
 import numpy as np
 from matplotlib.axes import Axes
 
-from gypsum.constants import PSEUDOSYMBOLS_PER_NAVIGATION_BIT
 from gypsum.gps_ca_prn_codes import GpsSatelliteId
 from gypsum.navigation_bit_intergrator import NavigationBitIntegratorHistory
 from gypsum.navigation_message_decoder import NavigationMessageDecoderHistory
 from gypsum.tracker import BitValue
 from gypsum.tracker import GpsSatelliteTrackingParameters
-from gypsum.tracker import NavigationBitPseudosymbol
-from gypsum.utils import Seconds
+from gypsum.units import Seconds
 
 import matplotlib.pyplot as plt
 

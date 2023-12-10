@@ -1,7 +1,6 @@
 import logging
 from dataclasses import dataclass
 from enum import Enum, auto
-from typing import Sequence
 
 from gypsum.antenna_sample_provider import ReceiverTimestampSeconds
 from gypsum.events import Event
