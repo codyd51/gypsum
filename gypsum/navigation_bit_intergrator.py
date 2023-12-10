@@ -1,7 +1,13 @@
+import collections
 import logging
+import statistics
 from dataclasses import dataclass
 
+import math
+import numpy as np
+
 from gypsum.antenna_sample_provider import ReceiverTimestampSeconds
+from gypsum.constants import BITS_PER_SECOND
 from gypsum.constants import PSEUDOSYMBOLS_PER_NAVIGATION_BIT
 from gypsum.constants import PSEUDOSYMBOLS_PER_SECOND
 from gypsum.events import Event
@@ -12,6 +18,7 @@ _logger = logging.getLogger(__name__)
 
 
 Percentage = float
+BitPseudosymbolPhase = int
 
 
 class EmitNavigationBitEvent(Event):
@@ -47,6 +54,26 @@ class LostBitPhaseCoherenceError(Exception):
 class EmittedPseudosymbol:
     receiver_timestamp: ReceiverTimestampSeconds
     pseudosymbol: NavigationBitPseudosymbol
+
+
+@dataclass
+class NavigationBitIntegratorHistory:
+    last_seen_pseudosymbols: collections.deque[EmittedPseudosymbol] = None
+    last_emitted_bits: collections.deque[BitValue] = None
+    previous_bit_phase_decision: int | None = None
+    determined_bit_phase: int | None = None
+    is_bit_phase_locked: bool = False
+    consecutive_agreeing_bit_phase_decisions: int = 0
+
+    def __post_init__(self) -> None:
+        if self.last_seen_pseudosymbols is not None:
+            raise ValueError(f'Cannot be set explicitly')
+        if self.last_emitted_bits is not None:
+            raise ValueError(f'Cannot be set explicitly')
+        # 1000 to store the display the last 1 second of pseudosymbols, which matches the tracker history
+        self.last_seen_pseudosymbols = collections.deque(maxlen=1000)
+        # 50 to match a 1-second history period
+        self.last_emitted_bits = collections.deque(maxlen=BITS_PER_SECOND)
 
 
 class NavigationBitIntegrator:
