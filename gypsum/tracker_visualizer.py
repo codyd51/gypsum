@@ -37,6 +37,7 @@ class GraphTypeEnum(Enum):
     PSEUDOSYMBOLS = auto()
     BIT_PHASE = auto()
     SUBFRAME_PHASE = auto()
+    TRACK_DURATION = auto()
 
     @property
     def presentation_name(self) -> str:
@@ -51,6 +52,7 @@ class GraphTypeEnum(Enum):
             GraphTypeEnum.PSEUDOSYMBOLS: "Pseudosymbols",
             GraphTypeEnum.BIT_PHASE: "Bit Phase (PSymbols)",
             GraphTypeEnum.SUBFRAME_PHASE: "Subframe Phase (Bits)",
+            GraphTypeEnum.TRACK_DURATION: "Track Duration (Sec)",
         }[self]
 
 
@@ -166,6 +168,11 @@ class GpsSatelliteTrackerVisualizer:
         else:
             subframe_phase_status_message = f"{navigation_message_decoder_history.determined_subframe_phase}"
         self.graph_for_type(GraphTypeEnum.SUBFRAME_PHASE).text(0.0, 0.4, subframe_phase_status_message, fontsize=20)
+
+        self.graph_for_type(GraphTypeEnum.TRACK_DURATION).clear()
+        # TODO(PT): This is the offset from startup, not track start...
+        track_duration_text = f'{seconds_since_start:.2f}'
+        self.graph_for_type(GraphTypeEnum.TRACK_DURATION).text(0.0, 0.4, track_duration_text, fontsize=20)
 
         # We've just erased some of our axes titles via plt.Axes.clear(), so redraw them.
         self._redraw_subplot_titles()
