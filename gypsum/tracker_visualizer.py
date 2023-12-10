@@ -38,6 +38,7 @@ class GraphTypeEnum(Enum):
     BIT_PHASE = auto()
     SUBFRAME_PHASE = auto()
     TRACK_DURATION = auto()
+    BIT_HEALTH = auto()
 
     @property
     def presentation_name(self) -> str:
@@ -53,6 +54,7 @@ class GraphTypeEnum(Enum):
             GraphTypeEnum.BIT_PHASE: "Bit Phase (PSymbols)",
             GraphTypeEnum.SUBFRAME_PHASE: "Subframe Phase (Bits)",
             GraphTypeEnum.TRACK_DURATION: "Track Duration (Sec)",
+            GraphTypeEnum.BIT_HEALTH: "Bit Health",
         }[self]
 
 
@@ -173,6 +175,15 @@ class GpsSatelliteTrackerVisualizer:
         # TODO(PT): This is the offset from startup, not track start...
         track_duration_text = f'{seconds_since_start:.2f}'
         self.graph_for_type(GraphTypeEnum.TRACK_DURATION).text(0.0, 0.4, track_duration_text, fontsize=20)
+
+        self.graph_for_type(GraphTypeEnum.BIT_HEALTH).clear()
+        # Bit health represents the proportion of the previous period of bits that were resolved with confidence
+        if len(bit_integrator_history.last_emitted_bits) == 0:
+            bit_health_text = "No bits seen yet"
+        else:
+            bit_health = (len([x for x in bit_integrator_history.last_emitted_bits if x != BitValue.UNKNOWN]) / len(bit_integrator_history.last_emitted_bits)) * 100
+            bit_health_text = f"{bit_health}%"
+        self.graph_for_type(GraphTypeEnum.BIT_HEALTH).text(0.0, 0.4, bit_health_text, fontsize=20)
 
         # We've just erased some of our axes titles via plt.Axes.clear(), so redraw them.
         self._redraw_subplot_titles()
