@@ -36,6 +36,7 @@ class GraphTypeEnum(Enum):
     CARRIER_PHASE = auto()
     PSEUDOSYMBOLS = auto()
     BIT_PHASE = auto()
+    SUBFRAME_PHASE = auto()
 
     @property
     def presentation_name(self) -> str:
@@ -49,6 +50,7 @@ class GraphTypeEnum(Enum):
             GraphTypeEnum.CARRIER_PHASE: "Carrier Phase (Rad)",
             GraphTypeEnum.PSEUDOSYMBOLS: "Pseudosymbols",
             GraphTypeEnum.BIT_PHASE: "Bit Phase (PSymbols)",
+            GraphTypeEnum.SUBFRAME_PHASE: "Subframe Phase (Bits)",
         }[self]
 
 
@@ -157,6 +159,13 @@ class GpsSatelliteTrackerVisualizer:
         lock_state = f"Unlocked" if not bit_integrator_history.is_bit_phase_locked else "Locked"
         bit_phase_status_message = f"{bit_integrator_history.determined_bit_phase} ({lock_state})"
         self.graph_for_type(GraphTypeEnum.BIT_PHASE).text(0.0, 0.4, bit_phase_status_message, fontsize=20)
+
+        self.graph_for_type(GraphTypeEnum.SUBFRAME_PHASE).clear()
+        if navigation_message_decoder_history.determined_subframe_phase is None:
+            subframe_phase_status_message = f"Unknown"
+        else:
+            subframe_phase_status_message = f"{navigation_message_decoder_history.determined_subframe_phase}"
+        self.graph_for_type(GraphTypeEnum.SUBFRAME_PHASE).text(0.0, 0.4, subframe_phase_status_message, fontsize=20)
 
         # We've just erased some of our axes titles via plt.Axes.clear(), so redraw them.
         self._redraw_subplot_titles()
