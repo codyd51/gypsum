@@ -70,7 +70,6 @@ class GpsSatelliteSignalProcessingPipeline:
         self.current_receiver_timestamp = receiver_timestamp
         pseudosymbol = self.tracker.process_samples(seconds_since_start, samples)
         # Now that the tracker has run an iteration, allow the visualizer to display the characteristics
-        self.tracker_visualizer.step(seconds_since_start, self.tracker.tracking_params)
 
         integrator_events = self.pseudosymbol_integrator.process_pseudosymbol(receiver_timestamp, pseudosymbol)
 
@@ -87,6 +86,15 @@ class GpsSatelliteSignalProcessingPipeline:
                 raise UnknownEventError(event_type)
             callback = integrator_event_type_to_callback[event_type]
             events_to_return.extend(callback(event) or [])
+
+        # Pipeline is all done with this chunk of samples, push state updates to the GUI
+        self.tracker_visualizer.step(
+            seconds_since_start,
+            self.tracker.tracking_params,
+            self.pseudosymbol_integrator.history,
+            self.navigation_message_decoder.history,
+        )
+
         return events_to_return
 
     def _handle_integrator_determined_bit_phase(self, event: DeterminedBitPhaseEvent) -> None:

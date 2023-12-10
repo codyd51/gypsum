@@ -73,7 +73,6 @@ class NavigationMessageDecoderHistory:
     """TODO(PT): "State" might be a better word, but might imply we should move *all* state here, which would be odd"""
     # PT: Looking at it, perhaps we *should* move all state here
     determined_subframe_phase: int | None = None
-    # We could say "average of last 10 bits is -1", and "average of these 10 bits is 1", so there's a bit transition
 
 
 class NavigationMessageDecoder:

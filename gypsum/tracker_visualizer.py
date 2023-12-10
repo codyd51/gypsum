@@ -7,8 +7,13 @@ import logging
 import numpy as np
 from matplotlib.axes import Axes
 
+from gypsum.constants import PSEUDOSYMBOLS_PER_NAVIGATION_BIT
 from gypsum.gps_ca_prn_codes import GpsSatelliteId
+from gypsum.navigation_bit_intergrator import NavigationBitIntegratorHistory
+from gypsum.navigation_message_decoder import NavigationMessageDecoderHistory
+from gypsum.tracker import BitValue
 from gypsum.tracker import GpsSatelliteTrackingParameters
+from gypsum.tracker import NavigationBitPseudosymbol
 from gypsum.utils import Seconds
 
 import matplotlib.pyplot as plt
@@ -29,6 +34,7 @@ class GraphTypeEnum(Enum):
     Q_COMPONENT = auto()
     IQ_ANGLE = auto()
     CARRIER_PHASE = auto()
+    PSEUDOSYMBOLS = auto()
 
     @property
     def presentation_name(self) -> str:
@@ -40,6 +46,7 @@ class GraphTypeEnum(Enum):
             GraphTypeEnum.Q_COMPONENT: "Q Component",
             GraphTypeEnum.IQ_ANGLE: "IQ Angle (Rad)",
             GraphTypeEnum.CARRIER_PHASE: "Carrier Phase (Rad)",
+            GraphTypeEnum.PSEUDOSYMBOLS: "Pseudosymbols",
         }[self]
 
 
@@ -54,7 +61,7 @@ class GpsSatelliteTrackerVisualizer:
 
         self.visualizer_figure = plt.figure(figsize=(11, 6))
         self.visualizer_figure.suptitle(f"Satellite #{satellite_id.id} Tracking Dashboard")
-        self.grid_spec = plt.GridSpec(nrows=2, ncols=4, figure=self.visualizer_figure)
+        self.grid_spec = plt.GridSpec(nrows=3, ncols=4, figure=self.visualizer_figure)
 
         grid_spec_idx_iterator = iter(range(len(GraphTypeEnum)))
         self.graph_type_to_graphs = {
@@ -77,7 +84,13 @@ class GpsSatelliteTrackerVisualizer:
     def graph_for_type(self, t: GraphTypeEnum) -> Axes:
         return self.graph_type_to_graphs[t]
 
-    def step(self, seconds_since_start: Seconds, current_tracking_params: GpsSatelliteTrackingParameters) -> None:
+    def step(
+        self,
+        seconds_since_start: Seconds,
+        current_tracking_params: GpsSatelliteTrackingParameters,
+        bit_integrator_history: NavigationBitIntegratorHistory,
+        navigation_message_decoder_history: NavigationMessageDecoderHistory,
+    ) -> None:
         if seconds_since_start - self._timestamp_of_last_dashboard_update < _UPDATE_PERIOD:
             # It hasn't been long enough since our last GUI update
             return
@@ -132,6 +145,11 @@ class GpsSatelliteTrackerVisualizer:
 
         self.graph_for_type(GraphTypeEnum.CARRIER_PHASE_ERROR).clear()
         self.graph_for_type(GraphTypeEnum.CARRIER_PHASE_ERROR).plot(params.carrier_wave_phase_errors)
+
+        self.graph_for_type(GraphTypeEnum.PSEUDOSYMBOLS).clear()
+        self.graph_for_type(GraphTypeEnum.PSEUDOSYMBOLS).plot(
+            [x.pseudosymbol.as_val() for x in bit_integrator_history.last_seen_pseudosymbols]
+        )
 
         # We've just erased some of our axes titles via plt.Axes.clear(), so redraw them.
         self._redraw_subplot_titles()
