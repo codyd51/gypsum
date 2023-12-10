@@ -73,6 +73,7 @@ class NavigationMessageDecoderHistory:
     """TODO(PT): "State" might be a better word, but might imply we should move *all* state here, which would be odd"""
     # PT: Looking at it, perhaps we *should* move all state here
     determined_subframe_phase: int | None = None
+    # We could say "average of last 10 bits is -1", and "average of these 10 bits is 1", so there's a bit transition
 
 
 class NavigationMessageDecoder:
@@ -134,7 +135,7 @@ class NavigationMessageDecoder:
         ]
         for preamble, polarity in preamble_and_polarity:
             first_identified_preamble_index = self._identify_preamble_in_queued_bits(preamble)
-            if first_identified_preamble_index:
+            if first_identified_preamble_index is not None:
                 events.append(DeterminedSubframePhaseEvent(first_identified_preamble_index, polarity))
                 self.history.determined_subframe_phase = first_identified_preamble_index
                 self.determined_polarity = polarity
