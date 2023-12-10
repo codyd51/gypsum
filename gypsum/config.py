@@ -1,3 +1,7 @@
+from gypsum.units import Degrees
+from gypsum.units import Hertz
+from gypsum.units import Seconds
+
 # Controls how many milliseconds of antenna data we'll integrate when searching for satellite PRNs.
 # Don't go above 20 as we might be subject to navigation message bit flips
 ACQUISITION_INTEGRATION_PERIOD_MS = 20
@@ -22,3 +26,18 @@ GPS_EPOCH_BASE_WEEK_NUMBER = 2048
 # GPS receivers need to maintain an awareness of the current number of leap seconds that have been added to UTC, to
 # synchronize the two time frames.
 UTC_LEAP_SECONDS_COUNT = 27
+
+# The tracker will look at signal heuristics from the last N milliseconds of tracker data to decide whether the
+# tracker is currently locked onto the signal.
+MILLISECONDS_TO_CONSIDER_FOR_TRACKER_LOCK_STATE = 250
+# If the variance of the phase error in the consideration period is too high, we won't consider the signal locked.
+MAXIMUM_PHASE_ERROR_VARIANCE_FOR_LOCK_STATE = 900
+# The tracker has a periodic job that looks at the rotation of the constellation plot and performs a frequency
+# correction if the observed rotation exceeds a threshold. This value controls how often this job runs.
+CONSTELLATION_BASED_FREQUENCY_ADJUSTMENT_PERIOD: Seconds = 4
+# This defines the maximum rotation that may be observed in the constellation plot, after which a
+# frequency correction will be performed.
+CONSTELLATION_BASED_FREQUENCY_ADJUSTMENT_MAXIMUM_ALLOWED_ROTATION: Degrees = 3
+# When we decide to make a frequency adjustment based on an observed rotation in the constellation plot,
+# this value controls the magnitude of the adjustment.
+CONSTELLATION_BASED_FREQUENCY_ADJUSTMENT_MAGNITUDE: Hertz = 5

@@ -9,6 +9,9 @@ from enum import Enum, auto
 
 import numpy as np
 
+from gypsum.config import CONSTELLATION_BASED_FREQUENCY_ADJUSTMENT_MAGNITUDE
+from gypsum.config import CONSTELLATION_BASED_FREQUENCY_ADJUSTMENT_MAXIMUM_ALLOWED_ROTATION
+from gypsum.config import CONSTELLATION_BASED_FREQUENCY_ADJUSTMENT_PERIOD
 from gypsum.config import MAXIMUM_PHASE_ERROR_VARIANCE_FOR_LOCK_STATE
 from gypsum.config import MILLISECONDS_TO_CONSIDER_FOR_TRACKER_LOCK_STATE
 from gypsum.constants import SAMPLES_PER_PRN_TRANSMISSION, SAMPLES_PER_SECOND
@@ -130,8 +133,7 @@ class GpsSatelliteTrackingParameters:
         """
         # TODO(PT): The result of this method should be cached for each loop iteration somehow...
         # The PLL currently runs at 1000Hz, so each error entry is spaced at 1ms.
-        # TODO(PT): Pull this out into a constant.
-        previous_milliseconds_to_consider = 250
+        previous_milliseconds_to_consider = MILLISECONDS_TO_CONSIDER_FOR_TRACKER_LOCK_STATE
         if len(self.carrier_wave_phase_errors) < previous_milliseconds_to_consider:
             # We haven't run our PLL for long enough to determine lock
             # _logger.info(f'Not enough errors to determine variance')
@@ -139,8 +141,7 @@ class GpsSatelliteTrackingParameters:
 
         last_few_phase_errors = np.array(list(self.carrier_wave_phase_errors)[-previous_milliseconds_to_consider:])
         phase_error_variance = np.var(last_few_phase_errors) if len(last_few_phase_errors) >= 2 else 0
-        # TODO(PT): Pull this out into a constant?
-        is_phase_error_variance_under_threshold = phase_error_variance < 900
+        is_phase_error_variance_under_threshold = phase_error_variance < MAXIMUM_PHASE_ERROR_VARIANCE_FOR_LOCK_STATE
 
         # Default to claiming the I channel is fine if we don't have enough samples to make a proper decision
         does_i_channel_look_locked = True
@@ -295,8 +296,8 @@ class GpsSatelliteTracker:
         params.doppler_shifts.append(params.current_doppler_shift)
         params.carrier_wave_phases.append(params.current_carrier_wave_phase_shift)
 
-        # TODO(PT): Extract this into a constant
-        if seconds_since_start - self._time_since_last_constellation_rotation_induced_adjustment >= 4.0:
+        # TODO(PT): Extract the logic to get the rotation of a constellation plot into utils
+        if seconds_since_start - self._time_since_last_constellation_rotation_induced_adjustment >= CONSTELLATION_BASED_FREQUENCY_ADJUSTMENT_PERIOD:
             self._time_since_last_constellation_rotation_induced_adjustment = seconds_since_start
             points = np.array(self.tracking_params.correlation_peaks_rolling_buffer)
             points_on_left_pole = points[points.real < 0]
@@ -308,8 +309,8 @@ class GpsSatelliteTracker:
                     rotation = angle - 180
 
                 # TODO(PT): Extract these into constants
-                if abs(rotation) > 3:
-                    adjustment = -np.sign(rotation) * 5
+                if abs(rotation) > CONSTELLATION_BASED_FREQUENCY_ADJUSTMENT_MAXIMUM_ALLOWED_ROTATION:
+                    adjustment = -np.sign(rotation) * CONSTELLATION_BASED_FREQUENCY_ADJUSTMENT_MAGNITUDE
                     print(f'** Adjusting by {adjustment}')
                     self.tracking_params.current_doppler_shift += adjustment
 
