@@ -293,7 +293,7 @@ class NavigationMessageSubframeParser:
         )
 
     def preprocess_next_word(self) -> None:
-        _logger.info(f'Preprocessing next subframe word...')
+        # _logger.info(f'Preprocessing next subframe word...')
         # Each word needs to be decoded based on the last parity bits from the previous word
         prev_d29 = self.last_two_parity_bits[0]
         prev_d30 = self.last_two_parity_bits[1]
@@ -302,7 +302,7 @@ class NavigationMessageSubframeParser:
             # Read raw bits from our subframe buffer
             from_preprocessed_word_bits=False
         )
-        _logger.info(f'Word bits: {word_bits}')
+        # _logger.info(f'Word bits: {word_bits}')
         data_bits = word_bits[:_DATA_BIT_COUNT_PER_WORD]
 
         complemented_data_bits = []

@@ -1,4 +1,5 @@
 import logging
+from dataclasses import dataclass
 from enum import Enum, auto
 from typing import Sequence
 
@@ -67,10 +68,17 @@ class EmitSubframeEvent(Event):
         self.subframe = subframe
 
 
+@dataclass
+class NavigationMessageDecoderHistory:
+    """TODO(PT): "State" might be a better word, but might imply we should move *all* state here, which would be odd"""
+    # PT: Looking at it, perhaps we *should* move all state here
+    determined_subframe_phase: int | None = None
+
+
 class NavigationMessageDecoder:
     def __init__(self) -> None:
         self.queued_bit_events: list[EmitNavigationBitEvent] = []
-        self.determined_subframe_phase: int | None = None
+        self.history = NavigationMessageDecoderHistory()
         self.determined_polarity: BitPolarity | None = None
 
     def _identify_preamble_in_queued_bits(
@@ -104,7 +112,8 @@ class NavigationMessageDecoder:
 
     def _reset_selected_subframe_phase(self):
         _logger.info(f"Resetting selected subframe phase...")
-        self.determined_subframe_phase = None
+        # TODO(PT): Add an @property setter so we can just say determined_subframe_phase?
+        self.history.determined_subframe_phase = None
         self.determined_polarity = None
         # self.queued_bit_events = []
 
@@ -127,13 +136,13 @@ class NavigationMessageDecoder:
             first_identified_preamble_index = self._identify_preamble_in_queued_bits(preamble)
             if first_identified_preamble_index:
                 events.append(DeterminedSubframePhaseEvent(first_identified_preamble_index, polarity))
-                self.determined_subframe_phase = first_identified_preamble_index
+                self.history.determined_subframe_phase = first_identified_preamble_index
                 self.determined_polarity = polarity
                 # Discard queued bits from the first partial subframe
-                bit_count_outside_first_subframe_to_discard = self.determined_subframe_phase % BITS_PER_SUBFRAME
+                bit_count_outside_first_subframe_to_discard = self.history.determined_subframe_phase % BITS_PER_SUBFRAME
                 self.queued_bit_events = self.queued_bit_events[bit_count_outside_first_subframe_to_discard:]
                 _logger.info(
-                    f'Identified preamble at bit phase {self.determined_subframe_phase} '
+                    f'Identified preamble at bit phase {self.history.determined_subframe_phase} '
                     f'when probing with bit polarity: {polarity.name}'
                 )
                 break
@@ -161,11 +170,11 @@ class NavigationMessageDecoder:
         self.queued_bit_events.append(bit_event)
 
         # Try to identify subframe phase once we have enough bits to see a few subframes
-        if self.determined_subframe_phase is None:
+        if self.history.determined_subframe_phase is None:
             events.extend(self._determine_subframe_phase_from_queued_bits())
 
         # We may have just determined the subframe phase above, so check again
-        if self.determined_subframe_phase is not None:
+        if self.history.determined_subframe_phase is not None:
             # Drain the bit queue as much as we can
             while True:
                 if len(self.queued_bit_events) >= BITS_PER_SUBFRAME:
