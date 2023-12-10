@@ -181,6 +181,8 @@ class GpsSatelliteTracker:
         # time each iteration.
         self.time_domain_for_1ms = np.arange(SAMPLES_PER_PRN_TRANSMISSION) / SAMPLES_PER_SECOND
 
+        self._time_since_last_constellation_rotation_induced_adjustment = 0.0
+
     # We only have two PLL modes, so an LRU cache with 2 entries should be sufficient.
     @functools.lru_cache(maxsize=2)
     def _calculate_loop_filter_alpha_and_beta(self, loop_bandwidth: float) -> Tuple[float, float]:
@@ -289,16 +291,22 @@ class GpsSatelliteTracker:
         params.doppler_shifts.append(params.current_doppler_shift)
         params.carrier_wave_phases.append(params.current_carrier_wave_phase_shift)
 
-        points = self.tracking_params.correlation_peaks_rolling_buffer
-        points_on_left_pole = [p for p in points if p.real < 0]
-        if len(points_on_left_pole) > 2:
-            left_point = np.mean(points_on_left_pole)
-            angle = 180 - (((np.arctan2(left_point.imag, left_point.real) / math.tau) * 360) % 180)
-            rotation = angle
-            if angle > 90:
-                rotation = angle - 180
-            if not params.is_locked():
-                filtered_rotation = rotation * 0.00005
-                self.tracking_params.current_doppler_shift -= filtered_rotation
+        # TODO(PT): Extract this into a constant
+        if seconds_since_start - self._time_since_last_constellation_rotation_induced_adjustment >= 4.0:
+            self._time_since_last_constellation_rotation_induced_adjustment = seconds_since_start
+            points = np.array(self.tracking_params.correlation_peaks_rolling_buffer)
+            points_on_left_pole = points[points.real < 0]
+            if len(points_on_left_pole) > 2:
+                left_point = np.mean(points_on_left_pole)
+                angle = 180 - (((np.arctan2(left_point.imag, left_point.real) / math.tau) * 360) % 180)
+                rotation = angle
+                if angle > 90:
+                    rotation = angle - 180
+
+                # TODO(PT): Extract these into constants
+                if abs(rotation) > 3:
+                    adjustment = -np.sign(rotation) * 5
+                    print(f'** Adjusting by {adjustment}')
+                    self.tracking_params.current_doppler_shift += adjustment
 
         return navigation_bit_pseudosymbol
