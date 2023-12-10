@@ -35,6 +35,7 @@ class GraphTypeEnum(Enum):
     IQ_ANGLE = auto()
     CARRIER_PHASE = auto()
     PSEUDOSYMBOLS = auto()
+    BIT_PHASE = auto()
 
     @property
     def presentation_name(self) -> str:
@@ -47,6 +48,7 @@ class GraphTypeEnum(Enum):
             GraphTypeEnum.IQ_ANGLE: "IQ Angle (Rad)",
             GraphTypeEnum.CARRIER_PHASE: "Carrier Phase (Rad)",
             GraphTypeEnum.PSEUDOSYMBOLS: "Pseudosymbols",
+            GraphTypeEnum.BIT_PHASE: "Bit Phase (PSymbols)",
         }[self]
 
 
@@ -150,6 +152,11 @@ class GpsSatelliteTrackerVisualizer:
         self.graph_for_type(GraphTypeEnum.PSEUDOSYMBOLS).plot(
             [x.pseudosymbol.as_val() for x in bit_integrator_history.last_seen_pseudosymbols]
         )
+
+        self.graph_for_type(GraphTypeEnum.BIT_PHASE).clear()
+        lock_state = f"Unlocked" if not bit_integrator_history.is_bit_phase_locked else "Locked"
+        bit_phase_status_message = f"{bit_integrator_history.determined_bit_phase} ({lock_state})"
+        self.graph_for_type(GraphTypeEnum.BIT_PHASE).text(0.0, 0.4, bit_phase_status_message, fontsize=20)
 
         # We've just erased some of our axes titles via plt.Axes.clear(), so redraw them.
         self._redraw_subplot_titles()
