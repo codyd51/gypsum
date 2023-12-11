@@ -83,172 +83,24 @@ class NavigationBitIntegrator:
         self.bit_index = 0
         self.sequential_unknown_bit_value_counter = 0
         self._processed_pseudosymbol_count = 0
+        self.all_symbols: list[EmittedPseudosymbol] = []
+        self.smoothed_symbols: list[int] = []
+        self.emitted_bits = []
 
-    def _determine_bit_phase_from_pseudosymbols(self, pseudosymbols: list[EmittedPseudosymbol]):
-        # TODO(PT): I think we need a better way of continuously adjusting the bit phase.
-        # We're trying to determine one phase after many seconds of processing, then apply it retrospectively to
-        # pseudosymbols that were collected seconds ago. If the phase has drifted just a bit (presumably due to
-        # tracking oscillations), the whole thing gets off-kilter, as we trim a bit halfway through and have seconds
-        # of bad output bits in the face of good input pseudosymbols.
-        # We could say "average of last 10 symbols is -1", and "average of these 10 symbols is 1", so there's a bit transition
-        if len(pseudosymbols) % PSEUDOSYMBOLS_PER_NAVIGATION_BIT != 0:
-            raise ValueError(f'This method must be provided a multiple of PSEUDOSYMBOLS_PER_NAVIGATION_BIT')
+        # Maintain a rolling average of the last half-bit of pseudosymbols that we've seen
+        self.rolling_average_window_size = PSEUDOSYMBOLS_PER_NAVIGATION_BIT // 2
+        self.rolling_average_window = collections.deque(maxlen=self.rolling_average_window_size)
 
-        # Combine all the pseudosymbols we've been provided in a circular buffer of pseudosymbols, so we can
-        # consider the whole range for phase selection
-
-        import matplotlib.pyplot as plt
-        plt.ioff()
-        fig = plt.figure()
-        ax = fig.add_subplot()
-        ax.plot([p.pseudosymbol.as_val() for p in pseudosymbols[-200:]])
-        plt.show()
-        plt.ion()
-
-        phase_guess_to_confidence_score = {}
-        for phase_guess in range(0, PSEUDOSYMBOLS_PER_NAVIGATION_BIT):
-            phase_guess_confidence = 0
-            symbols_rolled_due_to_phase_guess = np.roll(pseudosymbols, phase_guess)
-            symbols_grouped_into_bits = list(chunks(symbols_rolled_due_to_phase_guess, PSEUDOSYMBOLS_PER_NAVIGATION_BIT))
-            for symbols_in_bit in symbols_grouped_into_bits:
-                bit_confidence = abs(sum([symbol.pseudosymbol.as_val() for symbol in symbols_in_bit]))
-                phase_guess_confidence += bit_confidence
-            # Normalize based on the number of bit groups we looked at
-            phase_guess_to_confidence_score[phase_guess] = phase_guess_confidence / len(
-                symbols_grouped_into_bits
-            )
-
-        highest_confidence_phase_offset = max(
-            phase_guess_to_confidence_score, key=phase_guess_to_confidence_score.get  # type: ignore
-        )
-        highest_confidence_score = phase_guess_to_confidence_score[highest_confidence_phase_offset]
-
-        highest_confidence_as_percentage: Percentage = abs(
-            highest_confidence_score / PSEUDOSYMBOLS_PER_NAVIGATION_BIT
-        )
-
-        _logger.info(
-            f"Highest confidence phase offset: {highest_confidence_phase_offset}. "
-            f"Score: {highest_confidence_as_percentage * 100}"
-        )
-
-        if highest_confidence_as_percentage >= 0.80:
-            return highest_confidence_phase_offset % PSEUDOSYMBOLS_PER_NAVIGATION_BIT
-        return None
-
-    def _determine_bit_phase_from_queued_pseudosymbols(self) -> list[Event]:
-        # Have we seen enough pseudosymbols to make an initial phase selection?
-        symbols_required_to_make_initial_phase_selection = PSEUDOSYMBOLS_PER_NAVIGATION_BIT * 2
-        if len(self.queued_pseudosymbols) < symbols_required_to_make_initial_phase_selection:
-            # Not enough queued symbols to detect a bit phase
-            # _logger.info(
-            #    f'Pseudosymbol integrator hasn\'t yet determined bit phase '
-            #    f'but has only processed {len(self.queued_pseudosymbols)} pseudosymbols'
-            # )
-            return []
-
-        # Only attempt to select a bit phase once we've collected an even multiple of pseudosymbols per bit
-        if len(self.queued_pseudosymbols) % PSEUDOSYMBOLS_PER_NAVIGATION_BIT != 0:
-            return []
-
-        events = []
-
-        if determined_bit_phase := self._determine_bit_phase_from_pseudosymbols(self.queued_pseudosymbols):
-            self.history.determined_bit_phase = determined_bit_phase
-            # Discard queued symbols from the first partial bit
-            self.queued_pseudosymbols = self.queued_pseudosymbols[self.history.determined_bit_phase:]
-            events.append(DeterminedBitPhaseEvent(determined_bit_phase))
-        else:
-            # Keep waiting for more pseudosymbols to come in, up to a maximum allowance
-            if len(self.queued_pseudosymbols) < PSEUDOSYMBOLS_PER_NAVIGATION_BIT * 50 * 30:
-                # Continue to allow the tracker to run, although we haven't been able to identify a bit phase so far.
-                pass
-            else:
-                _logger.info(f'Failed to identify a bit phase in a generous tracking span.')
-                # TODO(PT): -1 isn't super meaningful here, this argument should be removed?
-                events.append(CannotDetermineBitPhaseEvent(-1))
-        return events
-
-    def _determine_bit_phase_from_queued_pseudosymbols2(self) -> list[Event]:
-        # Have we seen enough bits to determine the navigation bit phase?
-        # Give ourselves 6 seconds to lock
-        seconds_count_to_buffer_symbols_before_attempting_phase_selection = 60
-        # (The bound here can probably be lowered if useful)
-        # PT: What if we determine a bit phase too early, before we've locked, and it's wrong?
-        seconds_count_to_consider_for_symbol_phase_selection = seconds_count_to_buffer_symbols_before_attempting_phase_selection // 2
-        if len(self.queued_pseudosymbols) < (PSEUDOSYMBOLS_PER_SECOND * seconds_count_to_buffer_symbols_before_attempting_phase_selection):
-            # Not enough queued symbols to detect a bit phase
-            # _logger.info(
-            #    f'Pseudosymbol integrator hasn\'t yet determined bit phase '
-            #    f'but has only processed {len(self.queued_pseudosymbols)} pseudosymbols'
-            # )
-            return []
-
-        events = []
-        _logger.info(
-            f"Pseudosymbol integrator has seen enough bits ({len(self.queued_pseudosymbols)}), selecting a bit phase..."
-        )
-        # Look at the symbols from the final four seconds, as they'll probably be much closer to correct than the
-        # initial symbols we see.
-        # We'll need two seconds worth of symbols to select a phase, as we try different offsets up to 20 symbols
-        # This could instead be 1 second of we rolled instead of sliding the start.
-
-        # TODO(PT): This only considers one bit! Perhaps we should do multiple bits again
-        symbols_considered_for_phase_selection = self.queued_pseudosymbols[
-            PSEUDOSYMBOLS_PER_NAVIGATION_BIT * (
-                seconds_count_to_buffer_symbols_before_attempting_phase_selection -
-                seconds_count_to_consider_for_symbol_phase_selection
-            ):
-        ]
-        phase_guess_to_confidence_score = {}
-        for phase_guess in range(0, PSEUDOSYMBOLS_PER_NAVIGATION_BIT):
-            phase_guess_confidence = 0
-            symbols_grouped_into_bits = list(
-                chunks(symbols_considered_for_phase_selection[phase_guess:], PSEUDOSYMBOLS_PER_NAVIGATION_BIT)
-            )
-            for symbols_in_bit in symbols_grouped_into_bits:
-                bit_confidence = abs(sum([symbol.pseudosymbol.as_val() for symbol in symbols_in_bit]))
-                phase_guess_confidence += bit_confidence
-            # Normalize based on the number of bit groups we looked at
-            phase_guess_to_confidence_score[phase_guess] = phase_guess_confidence / len(
-                symbols_grouped_into_bits
-            )
-            # This could be sensitive to tracking errors in this particular second of processing...
-
-        highest_confidence_phase_offset = max(
-            phase_guess_to_confidence_score, key=phase_guess_to_confidence_score.get  # type: ignore
-        )
-        highest_confidence_score = phase_guess_to_confidence_score[highest_confidence_phase_offset]
-        # highest_confidence_phase_offset = int(np.argmax(confidence_scores))
-        # highest_confidence_score = confidence_scores[highest_confidence_phase_offset]
-        _logger.info(
-            f"Highest confidence phase offset: {highest_confidence_phase_offset}. "
-            f"Score: {highest_confidence_score}"
-        )
-
-        highest_confidence_as_percentage: Percentage = abs(
-            highest_confidence_score / PSEUDOSYMBOLS_PER_NAVIGATION_BIT
-        )
-
-        if highest_confidence_as_percentage >= 0.70:
-            self.history.determined_bit_phase = highest_confidence_phase_offset % PSEUDOSYMBOLS_PER_NAVIGATION_BIT
-            # Discard queued symbols from the first partial symbol
-            self.queued_pseudosymbols = self.queued_pseudosymbols[self.history.determined_bit_phase:]
-            events.append(DeterminedBitPhaseEvent(highest_confidence_phase_offset))
-        else:
-            _logger.info(
-                f"Highest confidence bit phase was below confidence threshold: {highest_confidence_as_percentage}"
-            )
-            events.append(CannotDetermineBitPhaseEvent(highest_confidence_as_percentage))
-        return events
+        # TODO(PT): Pull these out into constants
+        self.resynchronize_bit_phase_period = 30 * PSEUDOSYMBOLS_PER_SECOND
+        self.resynchronize_bit_phase_after_failed_bit_count = 10
+        self.pseudosymbol_cursor = 0
 
     def _reset_selected_bit_phase(self):
         _logger.info(f"Resetting selected bit phase...")
         self.history.determined_bit_phase = None
 
     def _compute_bit_confidence_score(self, pseudosymbols: list[NavigationBitPseudosymbol]) -> float:
-
-        strength_scores = []
         pseudosymbol_sums_per_bit = []
         for i, pseudosymbols_in_bit in enumerate(chunks(pseudosymbols, PSEUDOSYMBOLS_PER_NAVIGATION_BIT)):
             # A bit is 'strongest' if all the pseudosymbols have the same sign
@@ -256,30 +108,23 @@ class NavigationBitIntegrator:
             # the 'stronger' the agreement of the pseudosymbols.
             summed_values = sum(x.as_val() for x in pseudosymbols_in_bit)
             pseudosymbol_sums_per_bit.append(summed_values)
-            #strength_score = abs(summed_values) / PSEUDOSYMBOLS_PER_NAVIGATION_BIT
-            #strength_scores.append(strength_score)
-            #_logger.info(f'Strength for bit {i}: {strength_score} ({summed_values})')
         strength_score = sum([abs(x) for x in pseudosymbol_sums_per_bit]) / (len(pseudosymbols) / PSEUDOSYMBOLS_PER_NAVIGATION_BIT)
-        #_logger.info(f'\tPseudosymbol sums per bit: {pseudosymbol_sums_per_bit}, strength {strength_score}')
 
         # Average the strength scores across all the bits provided
-        #return statistics.mean(strength_scores)
-        return strength_score / 20
+        return strength_score / PSEUDOSYMBOLS_PER_NAVIGATION_BIT
 
     def _redetermine_bit_phase(self) -> BitPseudosymbolPhase | None:
         if len(self.history.last_seen_pseudosymbols) < self.pseudosymbol_count_to_use_for_bit_phase_selection:
             # We haven't yet seen enough pseudosymbols to select a bit phase
             return None
 
-        # Only look at the last 4 bits
-        #pseudosymbols_to_consider = list(self.history.last_seen_pseudosymbols)[-PSEUDOSYMBOLS_PER_NAVIGATION_BIT * 16:]
-        pseudosymbols_to_consider = self.history.last_seen_pseudosymbols
+        # Only look at the last few bits
+        pseudosymbols_to_consider = list(self.history.last_seen_pseudosymbols)[-PSEUDOSYMBOLS_PER_NAVIGATION_BIT * 16:]
         # Try every possible bit phase
         pseudosymbols = np.array(list([x.pseudosymbol for x in pseudosymbols_to_consider]))
         bit_phase_to_confidence_score = dict()
         for possible_bit_phase in range(0, PSEUDOSYMBOLS_PER_NAVIGATION_BIT):
-            #_logger.info(f'try bit phase {possible_bit_phase}')
-            pseudosymbols_aligned_with_bit_phase = np.roll(pseudosymbols, possible_bit_phase)
+            pseudosymbols_aligned_with_bit_phase = np.roll(pseudosymbols, -possible_bit_phase)
             # Compute a confidence score
             confidence = self._compute_bit_confidence_score(pseudosymbols_aligned_with_bit_phase)   # type: ignore
             bit_phase_to_confidence_score[possible_bit_phase] = confidence
@@ -287,101 +132,214 @@ class NavigationBitIntegrator:
         best_bit_phase = max(
             bit_phase_to_confidence_score, key=bit_phase_to_confidence_score.get    # type: ignore
         )
-        highest_confidence_score = bit_phase_to_confidence_score[best_bit_phase]
-        if False:
-            _logger.info(
-                f"Highest confidence bit phase offset: {best_bit_phase}. "
-                f"Score: {highest_confidence_score * 100}"
-            )
-            import matplotlib.pyplot as plt
-            plt.ioff()
-            plt.plot([x.as_val() for x in pseudosymbols])
-            plt.show()
-
-        #if highest_confidence_as_percentage >= 0.80:
-        #    return highest_confidence_phase_offset % PSEUDOSYMBOLS_PER_NAVIGATION_BIT
-        #return None
-        #best_bit_phase
         return best_bit_phase
 
+    def _get_bit_value_from_pseudosymbols(self, pseudosymbols: list[EmittedPseudosymbol]) -> BitValue:
+        pseudosymbol_sum = sum([s.pseudosymbol.as_val() for s in pseudosymbols])
+        if pseudosymbol_sum > 0:
+            bit_value = BitValue.ONE
+        else:
+            bit_value = BitValue.ZERO
+
+        # Divide by however many pseudosymbols are actually in the bit, as we might have been provided
+        # with a partial bit
+        confidence_score: Percentage = abs(int((pseudosymbol_sum / len(pseudosymbols)) * 100))
+        if confidence_score <= 50:
+            bit_value = BitValue.UNKNOWN
+        return bit_value
+
+    def _emit_bit_from_pseudosymbols(self, pseudosymbols: list[EmittedPseudosymbol]) -> EmitNavigationBitEvent:
+        bit_value = self._get_bit_value_from_pseudosymbols(pseudosymbols)
+        self.bit_index += 1
+        self.history.last_emitted_bits.append(bit_value)
+        self.emitted_bits.append(bit_value)
+        if bit_value == BitValue.UNKNOWN:
+            self.sequential_unknown_bit_value_counter += 1
+            if self.sequential_unknown_bit_value_counter >= 30:
+                # TODO(PT): This might cause issues because it throws our subframe phase out of alignment?
+                # We might need to emit an event to tell the subframe decoder to select a new phase now
+                _logger.info(f'Resetting bit phase because we failed to resolve too many bits in a row...')
+                self._reset_selected_bit_phase()
+        else:
+            self.sequential_unknown_bit_value_counter = 0
+
+        # TODO(PT): Come up with some condition to emit a LostBitCoherenceEvent (i.e. X% unknown bits
+        # emitted in the last Y seconds).
+
+        # The timestamp of the bit comes from the receiver timestamp of
+        # the first pseudosymbol in the bit.
+        timestamp = pseudosymbols[0].receiver_timestamp
+        return EmitNavigationBitEvent(receiver_timestamp=timestamp, bit_value=bit_value)
+
+    def _emit_bits_from_queued_pseudosymbols2(self) -> list[Event]:
+        if self.history.determined_bit_phase is None:
+            return []
+
+        events = []
+        # Drain the symbol queue as much as we can
+        while True:
+            if len(self.queued_pseudosymbols) >= PSEUDOSYMBOLS_PER_NAVIGATION_BIT:
+                # _logger.info(f'Emitting bit from pseudosymbol queue with {len(self.queued_pseudosymbols)} symbols')
+                bit_pseudosymbols = self.queued_pseudosymbols[:PSEUDOSYMBOLS_PER_NAVIGATION_BIT]
+                # Consume these pseudosymbols by removing them from the queue
+                self.queued_pseudosymbols = self.queued_pseudosymbols[PSEUDOSYMBOLS_PER_NAVIGATION_BIT:]
+                events.append(self._emit_bit_from_pseudosymbols(bit_pseudosymbols))
+            else:
+                # Not enough pseudosymbols to emit a bit
+                break
+        return events
+
+    def _emit_bits_from_queued_pseudosymbols(self) -> list[Event]:
+        if self.history.determined_bit_phase is None:
+            return []
+
+        events = []
+        cursor = self.pseudosymbol_cursor
+        for chunk in chunks(self.all_symbols[cursor:], PSEUDOSYMBOLS_PER_NAVIGATION_BIT):
+            events.append(self._emit_bit_from_pseudosymbols(list(chunk)))
+            self.pseudosymbol_cursor += PSEUDOSYMBOLS_PER_NAVIGATION_BIT
+
+        # Trim off all the past symbols, except the last 20
+        # This group allows us to shift our phase estimate 'backwards'
+        symbol_count_to_retain = len(self.all_symbols) % PSEUDOSYMBOLS_PER_NAVIGATION_BIT
+        symbol_count_to_drop = len(self.all_symbols) - symbol_count_to_retain
+        self.all_symbols = self.all_symbols[symbol_count_to_drop:]
+        self.pseudosymbol_cursor -= symbol_count_to_drop
+
+        return events
+
+    def _should_resynchronize_bit_phase(self) -> bool:
+        if self._processed_pseudosymbol_count % self.resynchronize_bit_phase_period == 0:
+            print(f'should resync because its time')
+            return True
+
+        # Can't determine bit phase without any pseudosymbols to work with
+        if self._processed_pseudosymbol_count == 0:
+            return False
+
+        # In the best case, we'd be on a bit boundary
+        if self._processed_pseudosymbol_count % PSEUDOSYMBOLS_PER_NAVIGATION_BIT != 0:
+            return False
+
+        # Have we never detected a bit phase?
+        if self.history.previous_bit_phase_decision is None:
+            print(f'should resync because weve never detected a phase before')
+            return True
+
+        # Have we failed too many bits in a row?
+        last_few_bits = list(self.history.last_emitted_bits)[-self.resynchronize_bit_phase_after_failed_bit_count:]
+        # Ensure we have enough bits in the buffer
+        if len(last_few_bits) == self.resynchronize_bit_phase_after_failed_bit_count:
+            failed_bit_count = len([x == BitValue.UNKNOWN for x in last_few_bits])
+            if failed_bit_count / len(last_few_bits) > 0.5:
+                #print(f'should resync because too many bits failde')
+                return True
+
+        return False
+
+    def _resynchronize_bit_phase_if_necessary(self) -> list[Event]:
+        if not self._should_resynchronize_bit_phase():
+            return []
+
+        # We're going to try resynchronizing our bit phase
+        events = []
+        previous_bit_phase_decision = self.history.previous_bit_phase_decision
+        new_bit_phase = self._redetermine_bit_phase()
+        self.history.previous_bit_phase_decision = new_bit_phase
+
+        # PT: Don't select any phase!
+        #return []
+
+        # Have we seen enough consecutive agreements to decide our bit phase is probably correct?
+        # TODO(PT): Pull this out into a constant?
+        # TODO(PT): Is it important to emit the event again, or can we drop it?
+        self.history.is_bit_phase_locked = True
+        self.history.determined_bit_phase = new_bit_phase
+        # TODO(PT): Always zero!
+        #self.history.determined_bit_phase = 0
+
+        #if (previous_bit_phase_decision is None) or (new_bit_phase is not None and previous_bit_phase_decision is not None and new_bit_phase != previous_bit_phase_decision):
+        #if (previous_bit_phase_decision is None and new_bit_phase is not None) or (new_bit_phase is not None and previous_bit_phase_decision is not None and new_bit_phase != previous_bit_phase_decision):
+        #if ((previous_bit_phase_decision is not None and new_bit_phase is not None) and (new_bit_phase != previous_bit_phase_decision)) or (previous_bit_phase_decision is None and new_bit_phase is not None):
+        #self.queued_pseudosymbols = self.queued_pseudosymbols[new_bit_phase:]
+        did_determine_first_bit_phase = previous_bit_phase_decision is None and new_bit_phase is not None
+        if did_determine_first_bit_phase:
+            print(f'******* FIRST Bit phase! {new_bit_phase}')
+            if new_bit_phase > 0:
+                #pseudosymbols_from_first_partial_bit = self.queued_pseudosymbols[:new_bit_phase]
+                #self.queued_pseudosymbols = self.queued_pseudosymbols[new_bit_phase:]
+                #emitted_bit_event = self._emit_bit_from_pseudosymbols(pseudosymbols_from_first_partial_bit)
+                #events.append(emitted_bit_event)
+                self.pseudosymbol_cursor = new_bit_phase
+        else:
+            did_change_bit_phase = previous_bit_phase_decision is not None and new_bit_phase is not None and previous_bit_phase_decision != new_bit_phase
+            if did_change_bit_phase:
+                diff = new_bit_phase - previous_bit_phase_decision
+                print(f'******* CHANGED bit phase {new_bit_phase}, prev {previous_bit_phase_decision}, diff {diff}!')
+                self.pseudosymbol_cursor += diff
+                if False:
+                    if diff > 0:
+                        pseudosymbols_from_first_partial_bit = self.queued_pseudosymbols[:diff]
+                        self.queued_pseudosymbols = self.queued_pseudosymbols[diff:]
+                        emitted_bit_event = self._emit_bit_from_pseudosymbols(pseudosymbols_from_first_partial_bit)
+                        events.append(emitted_bit_event)
+                        print(f'**** read a partial bit {emitted_bit_event.bit_value} from {len(pseudosymbols_from_first_partial_bit)} pseudosymbols')
+                    else:
+                        print(f'negative, what to do?')
+
+        return events
+
     def process_pseudosymbol(self, receiver_timestamp: ReceiverTimestampSeconds, pseudosymbol: NavigationBitPseudosymbol) -> list[Event]:
+        # Smooth out the current pseuodsymbol value over a rolling average of half a bit's worth of pseudosymbols
+        self.rolling_average_window.append(pseudosymbol.as_val())
+        if len(self.rolling_average_window) < self.rolling_average_window_size:
+            # Haven't yet seen enough symbols to start using our rolling average
+            return []
+        averaged_pseudosymbol_value = sum(self.rolling_average_window) // len(self.rolling_average_window)
+        rounded_pseudosymbol_value = -1 if averaged_pseudosymbol_value < 0 else 1
+
+        if False:
+            self.all_symbols.append(pseudosymbol)
+            self.smoothed_symbols.append(0 if rounded_pseudosymbol_value == -1 else 1)
+
+            if len(self.all_symbols) > 24000:
+                num = 4000
+                all_symbols = self.all_symbols[-num:]
+                smoothed_symbols = self.smoothed_symbols[-num:]
+                emitted_bits = self.emitted_bits[-(num//20):]
+
+                plt.ioff()
+                fig = plt.figure(figsize=(6, 9))
+                ax1 = fig.add_subplot(3, 1, 1)
+                ax1.set_title("Recevied Pseudosymbols")
+                ax1.plot([x.as_val() for x in all_symbols])
+
+                ax2 = fig.add_subplot(3, 1, 2)
+                ax2.set_title("Rolling Average Pseudosymbols")
+                ax2.plot([x for x in smoothed_symbols])
+
+                ax3 = fig.add_subplot(3, 1, 3)
+                ax3.set_title("Emitted Bits")
+                bits_as_runs = [*[0.5 for _ in range(180)]]
+                for bit in emitted_bits:
+                    val = bit.as_val() if bit != BitValue.UNKNOWN else 0.5
+                    bits_as_runs.extend([val for _ in range(20)])
+                #ax2.plot([x.as_val() if x != BitValue.UNKNOWN else 0.5 for x in self.history.last_emitted_bits])
+                ax3.plot(bits_as_runs)
+                plt.show(block=True)
+
         events: list[Event] = []
         emitted_pseudosymbol = EmittedPseudosymbol(
             receiver_timestamp=receiver_timestamp,
-            pseudosymbol=pseudosymbol,
+            pseudosymbol=NavigationBitPseudosymbol.from_val(rounded_pseudosymbol_value),
         )
-        self.queued_pseudosymbols.append(emitted_pseudosymbol)
+        #self.queued_pseudosymbols.append(emitted_pseudosymbol)
+        self.all_symbols.append(emitted_pseudosymbol)
         self.history.last_seen_pseudosymbols.append(emitted_pseudosymbol)
 
+        self._resynchronize_bit_phase_if_necessary()
+        events.extend(self._emit_bits_from_queued_pseudosymbols())
+
         self._processed_pseudosymbol_count += 1
-        if not self.history.is_bit_phase_locked:
-            # We're still trying to figure out a bit phase...
-            # Is this a second boundary? (TODO(PT): This was just to cut down how much work we're doing to determine the bit
-            # phase, but maybe we can drop it since we have a lock state?)
-            if self._processed_pseudosymbol_count % PSEUDOSYMBOLS_PER_NAVIGATION_BIT == 0:
-                previous_bit_phase_decision = self.history.previous_bit_phase_decision
-                new_bit_phase_decision = self._redetermine_bit_phase()
-                self.history.previous_bit_phase_decision = new_bit_phase_decision
-                if new_bit_phase_decision is not None and previous_bit_phase_decision == new_bit_phase_decision:
-                    # Found a consecutive agreement between two bit phase decisions
-                    self.history.consecutive_agreeing_bit_phase_decisions += 1
-                    # Have we seen enough consecutive agreements to decide our bit phase is probably correct?
-                    # TODO(PT): Pull this out into a constant?
-                    if self.history.consecutive_agreeing_bit_phase_decisions >= BITS_PER_SECOND * 4:
-                        # TODO(PT): Is it important to emit the event again, or can we drop it?
-                        self.history.is_bit_phase_locked = True
-                        self.history.determined_bit_phase = new_bit_phase_decision
-                        # Trim partial pseudosymbols
-                        self.queued_pseudosymbols = self.queued_pseudosymbols[new_bit_phase_decision:]
-                else:
-                    self.history.consecutive_agreeing_bit_phase_decisions = 0
-
-        # We may have just determined the bit phase above, so check now
-        if self.history.determined_bit_phase is not None:
-            # Drain the symbol queue as much as we can
-            while True:
-                if len(self.queued_pseudosymbols) >= PSEUDOSYMBOLS_PER_NAVIGATION_BIT:
-                    # _logger.info(f'Emitting bit from pseudosymbol queue with {len(self.queued_pseudosymbols)} symbols')
-                    bit_pseudosymbols = self.queued_pseudosymbols[:PSEUDOSYMBOLS_PER_NAVIGATION_BIT]
-                    # Consume these pseudosymbols by removing them from the queue
-                    self.queued_pseudosymbols = self.queued_pseudosymbols[PSEUDOSYMBOLS_PER_NAVIGATION_BIT:]
-                    pseudosymbol_sum = sum([s.pseudosymbol.as_val() for s in bit_pseudosymbols])
-                    if pseudosymbol_sum > 0:
-                        bit_value = BitValue.ONE
-                    else:
-                        bit_value = BitValue.ZERO
-
-                    confidence_score: Percentage = abs(int((pseudosymbol_sum / PSEUDOSYMBOLS_PER_NAVIGATION_BIT) * 100))
-                    self.bit_index += 1
-                    if confidence_score <= 50:
-                        # TODO(PT): Could it be because the symbol phase has shifted?
-                        bit_value = BitValue.UNKNOWN
-                        self.sequential_unknown_bit_value_counter += 1
-                        if self.sequential_unknown_bit_value_counter >= 30:
-                            # TODO(PT): This might cause issues because it throws our subframe phase out of alignment?
-                            # We might need to emit an event to tell the subframe decoder to select a new phase now
-                            _logger.info(f'Resetting bit phase because we failed to resolve too many bits in a row...')
-                            self._reset_selected_bit_phase()
-                    else:
-                        self.sequential_unknown_bit_value_counter = 0
-
-                    # The timestamp of the bit comes from the receiver timestamp of
-                    # the first pseudosymbol in the bit.
-                    timestamp = bit_pseudosymbols[0].receiver_timestamp
-                    events.append(EmitNavigationBitEvent(receiver_timestamp=timestamp, bit_value=bit_value))
-                    self.history.last_emitted_bits.append(bit_value)
-
-                    # TODO(PT): It looks as though our Doppler shift isn't following nearly fast enough (30Hz off on a re-acquire)
-                    # Should check the timestamps on this to get a feel for how fast it drops over time?
-
-                    # TODO(PT): Come up with some condition to emit a LostBitCoherenceEvent (i.e. X% unknown bits
-                    # emitted in the last Y seconds).
-                    #else:
-                    #    events.append(LostBitCoherenceEvent(confidence_score))
-                    #    # Stop consuming bits now
-                    #    break
-                else:
-                    # Not enough pseudosymbols to emit a bit
-                    break
 
         return events
