@@ -1,5 +1,6 @@
 from gypsum.units import Degrees
 from gypsum.units import Hertz
+from gypsum.units import Percent
 from gypsum.units import Seconds
 
 # Controls how many milliseconds of antenna data we'll integrate when searching for satellite PRNs.
@@ -41,3 +42,12 @@ CONSTELLATION_BASED_FREQUENCY_ADJUSTMENT_MAXIMUM_ALLOWED_ROTATION: Degrees = 3
 # When we decide to make a frequency adjustment based on an observed rotation in the constellation plot,
 # this value controls the magnitude of the adjustment.
 CONSTELLATION_BASED_FREQUENCY_ADJUSTMENT_MAGNITUDE: Hertz = 5
+
+# The navigation bit integrator will recalculate the optimal pseudosymbol phase in response to a variety of conditions,
+# one of which is the firing of a periodic timer.
+RECALCULATE_PSEUDOSYMBOL_PHASE_PERIOD: Seconds = 1
+# The navigation bit integrator will also recalculate the pseudosymbol phase if too many bits in the last memory window
+# were unresolvable.
+RECALCULATE_PSEUDOSYMBOL_PHASE_BIT_HEALTH_MEMORY_SIZE = 10
+# If a certain proportion of bits were unresolvable, trigger a pseudosymbol phase recalculation.
+RECALCULATE_PSEUDOSYMBOL_PHASE_BIT_HEALTH_THRESHOLD: Percent = 50

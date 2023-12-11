@@ -6,6 +6,7 @@ MetersPerSecond = float
 RadiansPerSecond = float
 Radians = float
 Degrees = float
+Percent = float
 
 AntennaSamplesSpanningAcquisitionIntegrationPeriodMs = np.ndarray
 AntennaSamplesSpanningOneMs = np.ndarray

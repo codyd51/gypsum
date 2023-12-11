@@ -5,6 +5,9 @@ from dataclasses import dataclass
 import numpy as np
 
 from gypsum.antenna_sample_provider import ReceiverTimestampSeconds
+from gypsum.config import RECALCULATE_PSEUDOSYMBOL_PHASE_BIT_HEALTH_MEMORY_SIZE
+from gypsum.config import RECALCULATE_PSEUDOSYMBOL_PHASE_BIT_HEALTH_THRESHOLD
+from gypsum.config import RECALCULATE_PSEUDOSYMBOL_PHASE_PERIOD
 from gypsum.constants import BITS_PER_SECOND
 from gypsum.constants import PSEUDOSYMBOLS_PER_NAVIGATION_BIT
 from gypsum.constants import PSEUDOSYMBOLS_PER_SECOND
@@ -73,7 +76,6 @@ class NavigationBitIntegrator:
     def __init__(self) -> None:
         self.queued_pseudosymbols: list[EmittedPseudosymbol] = []
         self.pseudosymbol_count_to_use_for_bit_phase_selection = PSEUDOSYMBOLS_PER_NAVIGATION_BIT * 4
-        #self.last_few_pseudosymbols = collections.deque(maxlen=self.pseudosymbol_count_to_use_for_bit_phase_selection)
         self.history = NavigationBitIntegratorHistory()
         self.bit_index = 0
         self.sequential_unknown_bit_value_counter = 0
@@ -87,8 +89,8 @@ class NavigationBitIntegrator:
         self.rolling_average_window = collections.deque(maxlen=self.rolling_average_window_size)
 
         # TODO(PT): Pull these out into constants
-        self.resynchronize_bit_phase_period = 30 * PSEUDOSYMBOLS_PER_SECOND
-        self.resynchronize_bit_phase_after_failed_bit_count = 10
+        self.resynchronize_bit_phase_period = PSEUDOSYMBOLS_PER_SECOND * RECALCULATE_PSEUDOSYMBOL_PHASE_PERIOD
+        self.resynchronize_bit_phase_memory_size = RECALCULATE_PSEUDOSYMBOL_PHASE_BIT_HEALTH_MEMORY_SIZE
         self.pseudosymbol_cursor = 0
 
     def _reset_selected_bit_phase(self):
@@ -205,7 +207,7 @@ class NavigationBitIntegrator:
 
     def _should_resynchronize_bit_phase(self) -> bool:
         if self._processed_pseudosymbol_count % self.resynchronize_bit_phase_period == 0:
-            print(f'should resync because its time')
+            _logger.info(f'Resynchronizing bit phase because the periodic job has fired')
             return True
 
         # Can't determine bit phase without any pseudosymbols to work with
@@ -218,16 +220,18 @@ class NavigationBitIntegrator:
 
         # Have we never detected a bit phase?
         if self.history.previous_bit_phase_decision is None:
-            print(f'should resync because weve never detected a phase before')
+            _logger.info(f'Resynchronizing bit phase because we\'ve never selected a phase before')
             return True
 
         # Have we failed too many bits in a row?
-        last_few_bits = list(self.history.last_emitted_bits)[-self.resynchronize_bit_phase_after_failed_bit_count:]
+        last_few_bits = list(self.history.last_emitted_bits)[-self.resynchronize_bit_phase_memory_size:]
         # Ensure we have enough bits in the buffer
-        if len(last_few_bits) == self.resynchronize_bit_phase_after_failed_bit_count:
-            failed_bit_count = len([x == BitValue.UNKNOWN for x in last_few_bits])
-            if failed_bit_count / len(last_few_bits) > 0.5:
-                #print(f'should resync because too many bits failde')
+        if len(last_few_bits) == self.resynchronize_bit_phase_memory_size:
+            failed_bit_count = len(list(filter(lambda x: x == BitValue.UNKNOWN, last_few_bits)))
+            proportion_failures = failed_bit_count / len(last_few_bits)
+            percent_failures = proportion_failures * 100
+            if percent_failures >= RECALCULATE_PSEUDOSYMBOL_PHASE_BIT_HEALTH_THRESHOLD:
+                _logger.info(f'Resynchronizing bit phase because too many of the last few bits were unresolved')
                 return True
 
         return False
