@@ -7,7 +7,6 @@ from gypsum.antenna_sample_provider import ReceiverTimestampSeconds
 from gypsum.events import UnknownEventError
 from gypsum.navigation_bit_intergrator import (
     CannotDetermineBitPhaseEvent,
-    DeterminedBitPhaseEvent,
     EmitNavigationBitEvent,
     Event,
     LostBitCoherenceEvent,
@@ -74,7 +73,6 @@ class GpsSatelliteSignalProcessingPipeline:
         integrator_events = self.pseudosymbol_integrator.process_pseudosymbol(receiver_timestamp, pseudosymbol)
 
         integrator_event_type_to_callback: dict[Type[Event], Callable[[Event], list[Event] | None]] = {  # type: ignore
-            DeterminedBitPhaseEvent: self._handle_integrator_determined_bit_phase,  # type: ignore
             CannotDetermineBitPhaseEvent: self._handle_integrator_cannot_determine_bit_phase,  # type: ignore
             LostBitCoherenceEvent: self._handle_integrator_lost_bit_coherence,  # type: ignore
             EmitNavigationBitEvent: self._handle_integrator_emitted_bit,  # type: ignore
@@ -96,10 +94,6 @@ class GpsSatelliteSignalProcessingPipeline:
         )
 
         return events_to_return
-
-    def _handle_integrator_determined_bit_phase(self, event: DeterminedBitPhaseEvent) -> None:
-        satellite_id = self.satellite.satellite_id.id
-        _logger.info(f"Integrator for SV({satellite_id}) has determined bit phase {event.bit_phase}")
 
     def _handle_integrator_cannot_determine_bit_phase(self, event: CannotDetermineBitPhaseEvent) -> None:
         satellite_id = self.satellite.satellite_id.id

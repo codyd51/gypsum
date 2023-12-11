@@ -29,11 +29,6 @@ class EmitNavigationBitEvent(Event):
         self.bit_value = bit_value
 
 
-class DeterminedBitPhaseEvent(Event):
-    def __init__(self, bit_phase: int) -> None:
-        self.bit_phase = bit_phase
-
-
 class CannotDetermineBitPhaseEvent(Event):
     def __init__(self, confidence: Percentage) -> None:
         self.confidence = confidence
