@@ -39,6 +39,7 @@ class GraphTypeEnum(Enum):
     BIT_HEALTH = auto()
 
     BITS = auto()
+    FAILED_BITS = auto()
     @property
     def presentation_name(self) -> str:
         return {
@@ -56,6 +57,7 @@ class GraphTypeEnum(Enum):
             GraphTypeEnum.TRACK_DURATION: "Track Duration (Sec)",
             GraphTypeEnum.BIT_HEALTH: "Bit Health",
             GraphTypeEnum.EMITTED_SUBFRAMES: "Emitted Subframes",
+            GraphTypeEnum.FAILED_BITS: "Failed Bits",
         }[self]
 
 
@@ -195,6 +197,10 @@ class GpsSatelliteTrackerVisualizer:
         self.graph_for_type(GraphTypeEnum.EMITTED_SUBFRAMES).clear()
         emitted_subframes_text = f"{navigation_message_decoder_history.emitted_subframe_count}"
         self.graph_for_type(GraphTypeEnum.EMITTED_SUBFRAMES).text(0.0, 0.4, emitted_subframes_text, fontsize=20)
+
+        self.graph_for_type(GraphTypeEnum.FAILED_BITS).clear()
+        failed_bits_text = f'{bit_integrator_history.failed_bit_count}'
+        self.graph_for_type(GraphTypeEnum.FAILED_BITS).text(0.0, 0.4, failed_bits_text, fontsize=20)
 
         # We've just erased some of our axes titles via plt.Axes.clear(), so redraw them.
         self._redraw_subplot_titles()

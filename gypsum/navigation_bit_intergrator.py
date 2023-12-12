@@ -60,6 +60,7 @@ class NavigationBitIntegratorHistory:
     determined_bit_phase: int | None = None
     is_bit_phase_locked: bool = False
     consecutive_agreeing_bit_phase_decisions: int = 0
+    failed_bit_count: int = 0
 
     def __post_init__(self) -> None:
         if self.last_seen_pseudosymbols is not None:
@@ -152,6 +153,7 @@ class NavigationBitIntegrator:
         self.emitted_bits.append(bit_value)
         if bit_value == BitValue.UNKNOWN:
             self.sequential_unknown_bit_value_counter += 1
+            self.history.failed_bit_count += 1
             if self.sequential_unknown_bit_value_counter >= 30:
                 # TODO(PT): This might cause issues because it throws our subframe phase out of alignment?
                 # We might need to emit an event to tell the subframe decoder to select a new phase now
