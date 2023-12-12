@@ -26,20 +26,25 @@ _RESET_DISPLAYED_DATA_PERIOD: Seconds = 5.0
 class GraphTypeEnum(Enum):
     # Note that the ordering of this enum defines the layout of the graphs in the dashboard
     DOPPLER_SHIFT = auto()
-    IQ_CONSTELLATION = auto()
-    CARRIER_PHASE_ERROR = auto()
-    I_COMPONENT = auto()
-    Q_COMPONENT = auto()
-    IQ_ANGLE = auto()
     CARRIER_PHASE = auto()
-    PSEUDOSYMBOLS = auto()
+    Q_COMPONENT = auto()
+    CARRIER_PHASE_ERROR = auto()
+
+    I_COMPONENT = auto()
+    IQ_CONSTELLATION = auto()
     BIT_PHASE = auto()
     SUBFRAME_PHASE = auto()
+
+    PSEUDOSYMBOLS = auto()
+    IQ_ANGLE = auto()
     TRACK_DURATION = auto()
     BIT_HEALTH = auto()
 
     BITS = auto()
+    SPACER = auto()
+    EMITTED_SUBFRAMES = auto()
     FAILED_BITS = auto()
+
     @property
     def presentation_name(self) -> str:
         return {
@@ -56,6 +61,7 @@ class GraphTypeEnum(Enum):
             GraphTypeEnum.SUBFRAME_PHASE: "Subframe Phase (Bits)",
             GraphTypeEnum.TRACK_DURATION: "Track Duration (Sec)",
             GraphTypeEnum.BIT_HEALTH: "Bit Health",
+            GraphTypeEnum.SPACER: "Spacer",
             GraphTypeEnum.EMITTED_SUBFRAMES: "Emitted Subframes",
             GraphTypeEnum.FAILED_BITS: "Failed Bits",
         }[self]
