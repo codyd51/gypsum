@@ -37,6 +37,7 @@ class GraphTypeEnum(Enum):
     TRACK_DURATION = auto()
     BIT_HEALTH = auto()
 
+    BITS = auto()
     @property
     def presentation_name(self) -> str:
         return {
@@ -155,6 +156,12 @@ class GpsSatelliteTrackerVisualizer:
         self.graph_for_type(GraphTypeEnum.PSEUDOSYMBOLS).plot(
             [x.pseudosymbol.as_val() for x in bit_integrator_history.last_seen_pseudosymbols]
         )
+
+        self.graph_for_type(GraphTypeEnum.BITS).clear()
+        bits_as_runs = []
+        for bit in bit_integrator_history.last_emitted_bits:
+            bits_as_runs.extend([0.5 if bit == BitValue.UNKNOWN else bit.as_val() for _ in range(PSEUDOSYMBOLS_PER_NAVIGATION_BIT)])
+        self.graph_for_type(GraphTypeEnum.BITS).plot(bits_as_runs)
 
         self.graph_for_type(GraphTypeEnum.BIT_PHASE).clear()
         lock_state = f"Unlocked" if not bit_integrator_history.is_bit_phase_locked else "Locked"
