@@ -61,7 +61,7 @@ class GraphTypeEnum(Enum):
             GraphTypeEnum.SUBFRAME_PHASE: "Subframe Phase (Bits)",
             GraphTypeEnum.TRACK_DURATION: "Track Duration (Sec)",
             GraphTypeEnum.BIT_HEALTH: "Bit Health",
-            GraphTypeEnum.SPACER: "Spacer",
+            GraphTypeEnum.SPACER: "",
             GraphTypeEnum.EMITTED_SUBFRAMES: "Emitted Subframes",
             GraphTypeEnum.FAILED_BITS: "Failed Bits",
         }[self]
@@ -98,8 +98,35 @@ class GpsSatelliteTrackerVisualizer:
         for graph_type, graph in self.graph_type_to_graphs.items():
             graph.set_title(graph_type.presentation_name)
 
+        # Certain graph types are text-only, and we don't need the ticks/frame that pyplot provides by default.
+        for graph_type in [
+            GraphTypeEnum.BIT_HEALTH,
+            GraphTypeEnum.EMITTED_SUBFRAMES,
+            GraphTypeEnum.TRACK_DURATION,
+            GraphTypeEnum.SUBFRAME_PHASE,
+            GraphTypeEnum.FAILED_BITS,
+            GraphTypeEnum.BIT_PHASE,
+            GraphTypeEnum.SPACER,
+        ]:
+            self.graph_for_type(graph_type).axis('off')
+
     def graph_for_type(self, t: GraphTypeEnum) -> Axes:
         return self.graph_type_to_graphs[t]
+
+    def draw_text(self, t: GraphTypeEnum, s: str):
+        self.graph_for_type(t).text(
+            0.5,
+            0.25,
+            s,
+            fontsize=20,
+            bbox={
+                'edgecolor': '#000000',
+                "facecolor": "#cccccc",
+                "boxstyle": 'round',
+                "pad": 0.2
+            },
+            ha="center"
+        )
 
     def step(
         self,
@@ -122,10 +149,10 @@ class GpsSatelliteTrackerVisualizer:
         # Time to update the GUI
         self._timestamp_of_last_dashboard_update = seconds_since_start
 
-        locked_state = "Locked" if current_tracking_params.is_locked() else "Unlocked"
-        last_few_phase_errors = list(current_tracking_params.carrier_wave_phase_errors)[-250:]
-        variance = np.var(last_few_phase_errors) if len(last_few_phase_errors) >= 2 else 0
-        _logger.info(f'Seconds since start: {seconds_since_start} ({locked_state}), Variance {variance:.2f}')
+        # locked_state = "Locked" if current_tracking_params.is_locked() else "Unlocked"
+        # last_few_phase_errors = list(current_tracking_params.carrier_wave_phase_errors)[-250:]
+        # variance = np.var(last_few_phase_errors) if len(last_few_phase_errors) >= 2 else 0
+        # _logger.info(f'Seconds since start: {seconds_since_start} ({locked_state}), Variance {variance:.2f}')
 
         params = current_tracking_params
         self.graph_for_type(GraphTypeEnum.DOPPLER_SHIFT).plot(params.doppler_shifts[::10])
@@ -145,7 +172,7 @@ class GpsSatelliteTrackerVisualizer:
             rotation = angle
             if angle > 90:
                 rotation = angle - 180
-            _logger.info(f'Angle {angle:.2f} Rotation {rotation:.2f} Doppler {params.current_doppler_shift:.2f}')
+            # _logger.info(f'Angle {angle:.2f} Rotation {rotation:.2f} Doppler {params.current_doppler_shift:.2f}')
             self.graph_for_type(GraphTypeEnum.IQ_CONSTELLATION).scatter([left_point.real, right_point.real], [left_point.imag, right_point.imag])
 
         self.graph_for_type(GraphTypeEnum.I_COMPONENT).clear()
@@ -177,19 +204,19 @@ class GpsSatelliteTrackerVisualizer:
         self.graph_for_type(GraphTypeEnum.BIT_PHASE).clear()
         lock_state = f"Unlocked" if not bit_integrator_history.is_bit_phase_locked else "Locked"
         bit_phase_status_message = f"{bit_integrator_history.determined_bit_phase} ({lock_state})"
-        self.graph_for_type(GraphTypeEnum.BIT_PHASE).text(0.0, 0.4, bit_phase_status_message, fontsize=20)
+        self.draw_text(GraphTypeEnum.BIT_PHASE, bit_phase_status_message)
 
         self.graph_for_type(GraphTypeEnum.SUBFRAME_PHASE).clear()
         if navigation_message_decoder_history.determined_subframe_phase is None:
             subframe_phase_status_message = f"Unknown"
         else:
             subframe_phase_status_message = f"{navigation_message_decoder_history.determined_subframe_phase}"
-        self.graph_for_type(GraphTypeEnum.SUBFRAME_PHASE).text(0.0, 0.4, subframe_phase_status_message, fontsize=20)
+        self.draw_text(GraphTypeEnum.SUBFRAME_PHASE, subframe_phase_status_message)
 
         self.graph_for_type(GraphTypeEnum.TRACK_DURATION).clear()
         # TODO(PT): This is the offset from startup, not track start...
         track_duration_text = f'{seconds_since_start:.2f}'
-        self.graph_for_type(GraphTypeEnum.TRACK_DURATION).text(0.0, 0.4, track_duration_text, fontsize=20)
+        self.draw_text(GraphTypeEnum.TRACK_DURATION, track_duration_text)
 
         self.graph_for_type(GraphTypeEnum.BIT_HEALTH).clear()
         # Bit health represents the proportion of the previous period of bits that were resolved with confidence
@@ -198,15 +225,15 @@ class GpsSatelliteTrackerVisualizer:
         else:
             bit_health = (len([x for x in bit_integrator_history.last_emitted_bits if x != BitValue.UNKNOWN]) / len(bit_integrator_history.last_emitted_bits)) * 100
             bit_health_text = f"{bit_health}%"
-        self.graph_for_type(GraphTypeEnum.BIT_HEALTH).text(0.0, 0.4, bit_health_text, fontsize=20)
+        self.draw_text(GraphTypeEnum.BIT_HEALTH, bit_health_text)
 
         self.graph_for_type(GraphTypeEnum.EMITTED_SUBFRAMES).clear()
         emitted_subframes_text = f"{navigation_message_decoder_history.emitted_subframe_count}"
-        self.graph_for_type(GraphTypeEnum.EMITTED_SUBFRAMES).text(0.0, 0.4, emitted_subframes_text, fontsize=20)
+        self.draw_text(GraphTypeEnum.EMITTED_SUBFRAMES, emitted_subframes_text)
 
         self.graph_for_type(GraphTypeEnum.FAILED_BITS).clear()
         failed_bits_text = f'{bit_integrator_history.failed_bit_count}'
-        self.graph_for_type(GraphTypeEnum.FAILED_BITS).text(0.0, 0.4, failed_bits_text, fontsize=20)
+        self.draw_text(GraphTypeEnum.FAILED_BITS, failed_bits_text)
 
         # We've just erased some of our axes titles via plt.Axes.clear(), so redraw them.
         self._redraw_subplot_titles()
