@@ -6,6 +6,7 @@ import logging
 import numpy as np
 from matplotlib.axes import Axes
 
+from gypsum.constants import PSEUDOSYMBOLS_PER_NAVIGATION_BIT
 from gypsum.gps_ca_prn_codes import GpsSatelliteId
 from gypsum.navigation_bit_intergrator import NavigationBitIntegratorHistory
 from gypsum.navigation_message_decoder import NavigationMessageDecoderHistory
@@ -49,10 +50,12 @@ class GraphTypeEnum(Enum):
             GraphTypeEnum.IQ_ANGLE: "IQ Angle (Rad)",
             GraphTypeEnum.CARRIER_PHASE: "Carrier Phase (Rad)",
             GraphTypeEnum.PSEUDOSYMBOLS: "Pseudosymbols",
+            GraphTypeEnum.BITS: "Bits",
             GraphTypeEnum.BIT_PHASE: "Bit Phase (PSymbols)",
             GraphTypeEnum.SUBFRAME_PHASE: "Subframe Phase (Bits)",
             GraphTypeEnum.TRACK_DURATION: "Track Duration (Sec)",
             GraphTypeEnum.BIT_HEALTH: "Bit Health",
+            GraphTypeEnum.EMITTED_SUBFRAMES: "Emitted Subframes",
         }[self]
 
 
@@ -67,7 +70,7 @@ class GpsSatelliteTrackerVisualizer:
 
         self.visualizer_figure = plt.figure(figsize=(11, 6))
         self.visualizer_figure.suptitle(f"Satellite #{satellite_id.id} Tracking Dashboard")
-        self.grid_spec = plt.GridSpec(nrows=3, ncols=4, figure=self.visualizer_figure)
+        self.grid_spec = plt.GridSpec(nrows=4, ncols=4, figure=self.visualizer_figure)
 
         grid_spec_idx_iterator = iter(range(len(GraphTypeEnum)))
         self.graph_type_to_graphs = {
@@ -188,6 +191,10 @@ class GpsSatelliteTrackerVisualizer:
             bit_health = (len([x for x in bit_integrator_history.last_emitted_bits if x != BitValue.UNKNOWN]) / len(bit_integrator_history.last_emitted_bits)) * 100
             bit_health_text = f"{bit_health}%"
         self.graph_for_type(GraphTypeEnum.BIT_HEALTH).text(0.0, 0.4, bit_health_text, fontsize=20)
+
+        self.graph_for_type(GraphTypeEnum.EMITTED_SUBFRAMES).clear()
+        emitted_subframes_text = f"{navigation_message_decoder_history.emitted_subframe_count}"
+        self.graph_for_type(GraphTypeEnum.EMITTED_SUBFRAMES).text(0.0, 0.4, emitted_subframes_text, fontsize=20)
 
         # We've just erased some of our axes titles via plt.Axes.clear(), so redraw them.
         self._redraw_subplot_titles()

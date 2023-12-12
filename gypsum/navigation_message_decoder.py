@@ -72,6 +72,7 @@ class NavigationMessageDecoderHistory:
     """TODO(PT): "State" might be a better word, but might imply we should move *all* state here, which would be odd"""
     # PT: Looking at it, perhaps we *should* move all state here
     determined_subframe_phase: int | None = None
+    emitted_subframe_count: int = 0
 
 
 class NavigationMessageDecoder:
@@ -181,6 +182,7 @@ class NavigationMessageDecoder:
                         maybe_subframe = self.parse_subframe()
                         if maybe_subframe:
                             events.append(maybe_subframe)
+                            self.history.emitted_subframe_count += 1
                     except Exception as e:
                         # TODO(PT): This will probably break everything because we stop parsing in the middle of a frame...
                         raise
