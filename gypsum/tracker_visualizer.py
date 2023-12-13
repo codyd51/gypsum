@@ -154,9 +154,13 @@ class GraphTypeEnum(Enum):
 
 
 class GpsSatelliteTrackerVisualizer:
-    def __init__(self, satellite_id: GpsSatelliteId) -> None:
+    def __init__(self, satellite_id: GpsSatelliteId, should_display: bool = True) -> None:
+        self.should_display = should_display
         self._timestamp_of_last_dashboard_update = 0
         self._timestamp_of_last_graph_reset = 0
+
+        if not should_display:
+            return
 
         # Enable interactive mode if not already done
         if not plt.isinteractive():
@@ -227,6 +231,9 @@ class GpsSatelliteTrackerVisualizer:
         bit_integrator_history: NavigationBitIntegratorHistory,
         navigation_message_decoder_history: NavigationMessageDecoderHistory,
     ) -> None:
+        if not self.should_display:
+            return
+
         if seconds_since_start - self._timestamp_of_last_dashboard_update < _UPDATE_PERIOD:
             # It hasn't been long enough since our last GUI update
             return
