@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from enum import Enum
 from enum import auto
 
@@ -23,6 +24,31 @@ _UPDATE_PERIOD: Seconds = 1.0
 _RESET_DISPLAYED_DATA_PERIOD: Seconds = 5.0
 
 
+@dataclass
+class GraphAttributes:
+    display_axes: bool = False
+    is_text_only: bool = False
+    # The below fields are only relevant if this is a 'text-only' graph
+    # Expressed as a hex RGB color, prefixed with '#'
+    background_color: str | None = None
+
+    @staticmethod
+    def spacer() -> 'GraphAttributes':
+        return GraphAttributes(is_text_only=True, display_axes=False)
+
+    @staticmethod
+    def text(background_color: str) -> 'GraphAttributes':
+        return GraphAttributes(is_text_only=True, display_axes=False, background_color=background_color)
+
+    @staticmethod
+    def with_axes() -> 'GraphAttributes':
+        return GraphAttributes(display_axes=True, is_text_only=False)
+
+    @staticmethod
+    def without_axes() -> 'GraphAttributes':
+        return GraphAttributes(display_axes=False, is_text_only=False)
+
+
 class GraphTypeEnum(Enum):
     # Note that the ordering of this enum defines the layout of the graphs in the dashboard
     DOPPLER_SHIFT = auto()
@@ -44,6 +70,30 @@ class GraphTypeEnum(Enum):
     SPACER = auto()
     EMITTED_SUBFRAMES = auto()
     FAILED_BITS = auto()
+    @property
+    def attributes(self) -> GraphAttributes:
+        return {
+            GraphTypeEnum.CARRIER_PHASE: GraphAttributes.with_axes(),
+            GraphTypeEnum.DOPPLER_SHIFT: GraphAttributes.with_axes(),
+            GraphTypeEnum.BITS: GraphAttributes.without_axes(),
+            GraphTypeEnum.CARRIER_PHASE_ERROR: GraphAttributes.without_axes(),
+            GraphTypeEnum.IQ_ANGLE: GraphAttributes.without_axes(),
+            GraphTypeEnum.IQ_CONSTELLATION: GraphAttributes.without_axes(),
+            GraphTypeEnum.I_COMPONENT: GraphAttributes.without_axes(),
+            GraphTypeEnum.PSEUDOSYMBOLS: GraphAttributes.without_axes(),
+            GraphTypeEnum.Q_COMPONENT: GraphAttributes.without_axes(),
+            GraphTypeEnum.BIT_HEALTH: GraphAttributes.text(background_color="#ffe7a6"),
+            GraphTypeEnum.BIT_PHASE: GraphAttributes.text(background_color="#acdffc"),
+            GraphTypeEnum.CORRELATION_STRENGTH: GraphAttributes.text(background_color="#ffe7a6"),
+            GraphTypeEnum.EMITTED_SUBFRAMES: GraphAttributes.text(background_color="#c4fcac"),
+            GraphTypeEnum.FAILED_BITS: GraphAttributes.text(background_color="#ffe7a6"),
+            GraphTypeEnum.PRN_CODE_PHASE: GraphAttributes.text(background_color="#acdffc"),
+            GraphTypeEnum.SUBFRAME_PHASE: GraphAttributes.text(background_color="#acdffc"),
+            GraphTypeEnum.TRACK_DURATION: GraphAttributes.text(background_color="#c4fcac"),
+            GraphTypeEnum.SPACER1: GraphAttributes.spacer(),
+            GraphTypeEnum.SPACER2: GraphAttributes.spacer(),
+            GraphTypeEnum.SPACER3: GraphAttributes.spacer(),
+        }[self]
 
     @property
     def presentation_name(self) -> str:
@@ -99,21 +149,25 @@ class GpsSatelliteTrackerVisualizer:
             graph.set_title(graph_type.presentation_name)
 
         # Certain graph types are text-only, and we don't need the ticks/frame that pyplot provides by default.
-        for graph_type in [
-            GraphTypeEnum.BIT_HEALTH,
-            GraphTypeEnum.EMITTED_SUBFRAMES,
-            GraphTypeEnum.TRACK_DURATION,
-            GraphTypeEnum.SUBFRAME_PHASE,
-            GraphTypeEnum.FAILED_BITS,
-            GraphTypeEnum.BIT_PHASE,
-            GraphTypeEnum.SPACER,
-        ]:
+        graphs_with_no_frames = [x for x in GraphTypeEnum if x.attributes.is_text_only]
+        for graph_type in graphs_with_no_frames:
             self.graph_for_type(graph_type).axis('off')
+
+        # Certain graph types aren't worth showing the axis labels, as the magnitudes aren't too important and they
+        # clutter the UI.
+        graphs_without_axes_labels = [x for x in GraphTypeEnum if not x.attributes.display_axes]
+        for graph_type in graphs_without_axes_labels:
+            self.graph_for_type(graph_type).get_xaxis().set_visible(False)
+            self.graph_for_type(graph_type).get_yaxis().set_visible(False)
 
     def graph_for_type(self, t: GraphTypeEnum) -> Axes:
         return self.graph_type_to_graphs[t]
 
     def draw_text(self, t: GraphTypeEnum, s: str):
+        background_color = t.attributes.background_color
+        if background_color is None:
+            raise ValueError(f'No background color set for {t}')
+
         self.graph_for_type(t).text(
             0.5,
             0.25,
@@ -121,7 +175,7 @@ class GpsSatelliteTrackerVisualizer:
             fontsize=20,
             bbox={
                 'edgecolor': '#000000',
-                "facecolor": "#cccccc",
+                "facecolor": background_color,
                 "boxstyle": 'round',
                 "pad": 0.2
             },
