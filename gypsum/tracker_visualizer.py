@@ -70,6 +70,11 @@ class GraphTypeEnum(Enum):
     BITS = auto()
     PRN_CODE_PHASE = auto()
     CORRELATION_STRENGTH = auto()
+
+    SPACER1 = auto()
+    SPACER2 = auto()
+    SPACER3 = auto()
+
     @property
     def attributes(self) -> GraphAttributes:
         return {
@@ -134,23 +139,26 @@ class GraphTypeEnum(Enum):
     @property
     def presentation_name(self) -> str:
         return {
-            GraphTypeEnum.DOPPLER_SHIFT: "Beat Frequency (Hz)",
-            GraphTypeEnum.IQ_CONSTELLATION: "IQ Constellation",
-            GraphTypeEnum.CARRIER_PHASE_ERROR: "Carrier Phase Error",
-            GraphTypeEnum.I_COMPONENT: "I Component",
-            GraphTypeEnum.Q_COMPONENT: "Q Component",
-            GraphTypeEnum.IQ_ANGLE: "IQ Angle (Rad)",
-            GraphTypeEnum.CARRIER_PHASE: "Carrier Phase (Rad)",
-            GraphTypeEnum.PSEUDOSYMBOLS: "Pseudosymbols",
-            GraphTypeEnum.BITS: "Bits",
-            GraphTypeEnum.BIT_PHASE: "Bit Phase (PSymbols)",
-            GraphTypeEnum.SUBFRAME_PHASE: "Subframe Phase (Bits)",
-            GraphTypeEnum.TRACK_DURATION: "Track Duration (Sec)",
-            GraphTypeEnum.BIT_HEALTH: "Bit Health",
-            GraphTypeEnum.SPACER: "",
-            GraphTypeEnum.EMITTED_SUBFRAMES: "Emitted Subframes",
-            GraphTypeEnum.FAILED_BITS: "Failed Bits",
+            self.DOPPLER_SHIFT: "Beat Frequency (Hz)",
+            self.IQ_CONSTELLATION: "IQ Constellation",
+            self.CARRIER_PHASE_ERROR: "Carrier Phase Error",
+            self.I_COMPONENT: "I Component",
+            self.Q_COMPONENT: "Q Component",
+            self.IQ_ANGLE: "IQ Angle (Rad)",
+            self.CARRIER_PHASE: "Carrier Phase (Rad)",
+            self.PSEUDOSYMBOLS: "Pseudosymbols",
+            self.BITS: "Bits",
+            self.BIT_PHASE: "Bit Phase",
+            self.SUBFRAME_PHASE: "Subframe Phase",
+            self.TRACK_DURATION: "Track Duration",
+            self.BIT_HEALTH: "Bit Health",
             self.PRN_CODE_PHASE: "PRN Code Phase",
+            self.EMITTED_SUBFRAMES: "Emitted Subframes",
+            self.FAILED_BITS: "Failed Bits",
+            self.CORRELATION_STRENGTH: "PRN Correlation Strength",
+            self.SPACER1: "",
+            self.SPACER2: "",
+            self.SPACER3: "",
         }[self]
 
 
@@ -302,19 +310,19 @@ class GpsSatelliteTrackerVisualizer:
         self.graph_for_type(GraphTypeEnum.BITS).plot(bits_as_runs)
 
         self.graph_for_type(GraphTypeEnum.BIT_PHASE).clear()
-        bit_phase_status_message = f"{bit_integrator_history.determined_bit_phase}"
+        bit_phase_status_message = f"{bit_integrator_history.determined_bit_phase} pseudosymbols"
         self.draw_text(GraphTypeEnum.BIT_PHASE, bit_phase_status_message)
 
         self.graph_for_type(GraphTypeEnum.SUBFRAME_PHASE).clear()
         if navigation_message_decoder_history.determined_subframe_phase is None:
             subframe_phase_status_message = f"Unknown"
         else:
-            subframe_phase_status_message = f"{navigation_message_decoder_history.determined_subframe_phase}"
+            subframe_phase_status_message = f"{navigation_message_decoder_history.determined_subframe_phase} bits"
         self.draw_text(GraphTypeEnum.SUBFRAME_PHASE, subframe_phase_status_message)
 
         self.graph_for_type(GraphTypeEnum.TRACK_DURATION).clear()
         # TODO(PT): This is the offset from startup, not track start...
-        track_duration_text = f'{int(seconds_since_start)}'
+        track_duration_text = f'{int(seconds_since_start)} seconds'
         self.draw_text(GraphTypeEnum.TRACK_DURATION, track_duration_text)
 
         self.graph_for_type(GraphTypeEnum.BIT_HEALTH).clear()
@@ -323,20 +331,25 @@ class GpsSatelliteTrackerVisualizer:
             bit_health_text = "No bits seen yet"
         else:
             bit_health = int((len([x for x in bit_integrator_history.last_emitted_bits if x != BitValue.UNKNOWN]) / len(bit_integrator_history.last_emitted_bits)) * 100)
-            bit_health_text = f"{bit_health}%"
+            bit_health_text = f"{bit_health}% success"
         self.draw_text(GraphTypeEnum.BIT_HEALTH, bit_health_text)
 
         self.graph_for_type(GraphTypeEnum.EMITTED_SUBFRAMES).clear()
-        emitted_subframes_text = f"{navigation_message_decoder_history.emitted_subframe_count}"
+        emitted_subframes_text = f"{navigation_message_decoder_history.emitted_subframe_count} subframes"
         self.draw_text(GraphTypeEnum.EMITTED_SUBFRAMES, emitted_subframes_text)
 
         self.graph_for_type(GraphTypeEnum.FAILED_BITS).clear()
-        failed_bits_text = f'{bit_integrator_history.failed_bit_count}'
+        failed_bits_text = f'{bit_integrator_history.failed_bit_count} bits'
         self.draw_text(GraphTypeEnum.FAILED_BITS, failed_bits_text)
 
         self.graph_for_type(GraphTypeEnum.PRN_CODE_PHASE).clear()
         prn_code_phase_text = f'{current_tracking_params.current_prn_code_phase_shift} chips'
         self.draw_text(GraphTypeEnum.PRN_CODE_PHASE, prn_code_phase_text)
+
+        self.graph_for_type(GraphTypeEnum.CORRELATION_STRENGTH).clear()
+        average_correlation_strength = np.mean(np.abs(np.array(current_tracking_params.correlation_peaks_rolling_buffer)))
+        correlation_strength_text = f'{average_correlation_strength:.2f}'
+        self.draw_text(GraphTypeEnum.CORRELATION_STRENGTH, correlation_strength_text)
 
         # We've just erased some of our axes titles via plt.Axes.clear(), so redraw them.
         self._redraw_subplot_titles()
