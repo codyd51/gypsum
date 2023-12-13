@@ -69,12 +69,18 @@ class NavigationBitIntegratorHistory:
     # This will jitter back and forth, both as we consume bits and as our phase decider makes small adjustments.
     pseudosymbol_cursor_within_queue: int = 0
 
+    # Maintain a rolling average of the last half-bit of pseudosymbols that we've seen
+    rolling_average_window_size: int = PSEUDOSYMBOLS_PER_NAVIGATION_BIT // 2
+    rolling_average_window: collections.deque[int] = None
+
     def __post_init__(self) -> None:
         if self.last_seen_pseudosymbols is not None:
             raise ValueError(f'Cannot be set explicitly')
         if self.queued_pseudosymbols is not None:
             raise ValueError(f'Cannot be set explicitly')
         if self.last_emitted_bits is not None:
+            raise ValueError(f'Cannot be set explicitly')
+        if self.rolling_average_window is not None:
             raise ValueError(f'Cannot be set explicitly')
         # 1000 to store the display the last 1 second of pseudosymbols, which matches the tracker history
         self.last_seen_pseudosymbols = collections.deque(maxlen=1000)
@@ -86,17 +92,15 @@ class NavigationBitIntegratorHistory:
         # extremely useful when our phase detector decides it needs to shift our phase 'backwards'. If we didn't keep
         # a short history of the last pseudosymbols we consumed, we wouldn't be able to provide this.
         self.queued_pseudosymbols = []
+        # Integrate the pseudosymbol values we observe over half a bit duration.
+        # This provides some resilience against high-frequency spurious pseudosymbol flips.
+        self.rolling_average_window = collections.deque(maxlen=self.rolling_average_window_size)
 
 
 class NavigationBitIntegrator:
     def __init__(self) -> None:
         self.history = NavigationBitIntegratorHistory()
         self.pseudosymbol_count_to_use_for_bit_phase_selection = PSEUDOSYMBOLS_PER_NAVIGATION_BIT * 4
-
-        # Maintain a rolling average of the last half-bit of pseudosymbols that we've seen
-        self.rolling_average_window_size = PSEUDOSYMBOLS_PER_NAVIGATION_BIT // 2
-        self.rolling_average_window = collections.deque(maxlen=self.rolling_average_window_size)
-
         self.resynchronize_bit_phase_period = PSEUDOSYMBOLS_PER_SECOND * RECALCULATE_PSEUDOSYMBOL_PHASE_PERIOD
         self.resynchronize_bit_phase_memory_size = RECALCULATE_PSEUDOSYMBOL_PHASE_BIT_HEALTH_MEMORY_SIZE
 
@@ -253,42 +257,12 @@ class NavigationBitIntegrator:
 
     def process_pseudosymbol(self, receiver_timestamp: ReceiverTimestampSeconds, pseudosymbol: NavigationBitPseudosymbol) -> list[Event]:
         # Smooth out the current pseuodsymbol value over a rolling average of half a bit's worth of pseudosymbols
-        self.rolling_average_window.append(pseudosymbol.as_val())
-        if len(self.rolling_average_window) < self.rolling_average_window_size:
+        self.history.rolling_average_window.append(pseudosymbol.as_val())
+        if len(self.history.rolling_average_window) < self.history.rolling_average_window_size:
             # Haven't yet seen enough symbols to start using our rolling average
             return []
-        averaged_pseudosymbol_value = sum(self.rolling_average_window) // len(self.rolling_average_window)
+        averaged_pseudosymbol_value = sum(self.history.rolling_average_window) // self.history.rolling_average_window_size
         rounded_pseudosymbol_value = -1 if averaged_pseudosymbol_value < 0 else 1
-
-        if False:
-            self.all_symbols.append(pseudosymbol)
-            self.smoothed_symbols.append(0 if rounded_pseudosymbol_value == -1 else 1)
-
-            if len(self.all_symbols) > 24000:
-                num = 4000
-                all_symbols = self.all_symbols[-num:]
-                smoothed_symbols = self.smoothed_symbols[-num:]
-                emitted_bits = self.emitted_bits[-(num//20):]
-
-                plt.ioff()
-                fig = plt.figure(figsize=(6, 9))
-                ax1 = fig.add_subplot(3, 1, 1)
-                ax1.set_title("Recevied Pseudosymbols")
-                ax1.plot([x.as_val() for x in all_symbols])
-
-                ax2 = fig.add_subplot(3, 1, 2)
-                ax2.set_title("Rolling Average Pseudosymbols")
-                ax2.plot([x for x in smoothed_symbols])
-
-                ax3 = fig.add_subplot(3, 1, 3)
-                ax3.set_title("Emitted Bits")
-                bits_as_runs = [*[0.5 for _ in range(180)]]
-                for bit in emitted_bits:
-                    val = bit.as_val() if bit != BitValue.UNKNOWN else 0.5
-                    bits_as_runs.extend([val for _ in range(20)])
-                #ax2.plot([x.as_val() if x != BitValue.UNKNOWN else 0.5 for x in self.history.last_emitted_bits])
-                ax3.plot(bits_as_runs)
-                plt.show(block=True)
 
         events: list[Event] = []
         emitted_pseudosymbol = EmittedPseudosymbol(
