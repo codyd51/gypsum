@@ -55,6 +55,7 @@ class EmittedPseudosymbol:
 @dataclass
 class NavigationBitIntegratorHistory:
     last_seen_pseudosymbols: collections.deque[EmittedPseudosymbol] = None
+
     last_emitted_bits: collections.deque[BitValue] = None
     previous_bit_phase_decision: int | None = None
     determined_bit_phase: int | None = None
@@ -63,8 +64,15 @@ class NavigationBitIntegratorHistory:
     processed_pseudosymbol_count: int = 0
     sequential_unknown_bit_value_counter: int = 0
 
+    queued_pseudosymbols: list[EmittedPseudosymbol] = None
+    # This should be a multiple of the pseudosymbols per bit, plus the determined bit phase.
+    # This will jitter back and forth, both as we consume bits and as our phase decider makes small adjustments.
+    pseudosymbol_cursor_within_queue: int = 0
+
     def __post_init__(self) -> None:
         if self.last_seen_pseudosymbols is not None:
+            raise ValueError(f'Cannot be set explicitly')
+        if self.queued_pseudosymbols is not None:
             raise ValueError(f'Cannot be set explicitly')
         if self.last_emitted_bits is not None:
             raise ValueError(f'Cannot be set explicitly')
@@ -73,12 +81,16 @@ class NavigationBitIntegratorHistory:
         # 50 to match a 1-second history period
         self.last_emitted_bits = collections.deque(maxlen=BITS_PER_SECOND)
 
+        # This is our 'working buffer' of pseudosymbols. Incoming pseudosymbols will be queued up in this buffer
+        # until we emit bits from them. Additionally, this buffer provides a short 'history' of pseudosymbols. This is
+        # extremely useful when our phase detector decides it needs to shift our phase 'backwards'. If we didn't keep
+        # a short history of the last pseudosymbols we consumed, we wouldn't be able to provide this.
+        self.queued_pseudosymbols = []
+
 
 class NavigationBitIntegrator:
     def __init__(self) -> None:
         self.history = NavigationBitIntegratorHistory()
-        self.all_symbols: list[EmittedPseudosymbol] = []
-
         self.pseudosymbol_count_to_use_for_bit_phase_selection = PSEUDOSYMBOLS_PER_NAVIGATION_BIT * 4
 
         # Maintain a rolling average of the last half-bit of pseudosymbols that we've seen
@@ -87,7 +99,6 @@ class NavigationBitIntegrator:
 
         self.resynchronize_bit_phase_period = PSEUDOSYMBOLS_PER_SECOND * RECALCULATE_PSEUDOSYMBOL_PHASE_PERIOD
         self.resynchronize_bit_phase_memory_size = RECALCULATE_PSEUDOSYMBOL_PHASE_BIT_HEALTH_MEMORY_SIZE
-        self.pseudosymbol_cursor = 0
 
     def _reset_selected_bit_phase(self):
         _logger.info(f"Resetting selected bit phase...")
@@ -168,18 +179,18 @@ class NavigationBitIntegrator:
             return []
 
         events = []
-        cursor = self.pseudosymbol_cursor
-        for chunk in chunks(self.all_symbols[cursor:], PSEUDOSYMBOLS_PER_NAVIGATION_BIT):
+        cursor = self.history.pseudosymbol_cursor_within_queue
+        for chunk in chunks(self.history.queued_pseudosymbols[cursor:], PSEUDOSYMBOLS_PER_NAVIGATION_BIT):
             events.append(self._emit_bit_from_pseudosymbols(list(chunk)))
-            self.pseudosymbol_cursor += PSEUDOSYMBOLS_PER_NAVIGATION_BIT
+            self.history.pseudosymbol_cursor_within_queue += PSEUDOSYMBOLS_PER_NAVIGATION_BIT
             self.history.emitted_bit_count += 1
 
         # Drop old symbols that we don't need to keep around anymore
         # To keep everything in alignment, only do this once per bit period
-        if len(self.all_symbols) >= PSEUDOSYMBOLS_PER_NAVIGATION_BIT:
-            offset_from_end = len(self.all_symbols) - self.pseudosymbol_cursor
-            self.all_symbols = self.all_symbols[-PSEUDOSYMBOLS_PER_NAVIGATION_BIT:]
-            self.pseudosymbol_cursor = PSEUDOSYMBOLS_PER_NAVIGATION_BIT - offset_from_end
+        if len(self.history.queued_pseudosymbols) >= PSEUDOSYMBOLS_PER_NAVIGATION_BIT:
+            offset_from_end = len(self.history.queued_pseudosymbols) - self.history.pseudosymbol_cursor_within_queue
+            self.history.queued_pseudosymbols = self.history.queued_pseudosymbols[-PSEUDOSYMBOLS_PER_NAVIGATION_BIT:]
+            self.history.pseudosymbol_cursor_within_queue = PSEUDOSYMBOLS_PER_NAVIGATION_BIT - offset_from_end
 
         return events
 
@@ -230,13 +241,13 @@ class NavigationBitIntegrator:
         if did_determine_first_bit_phase:
             print(f'******* FIRST Bit phase! {new_bit_phase}')
             if new_bit_phase > 0:
-                self.pseudosymbol_cursor = new_bit_phase
+                self.history.pseudosymbol_cursor_within_queue = new_bit_phase
         else:
             did_change_bit_phase = previous_bit_phase_decision is not None and new_bit_phase is not None and previous_bit_phase_decision != new_bit_phase
             if did_change_bit_phase:
                 diff = new_bit_phase - previous_bit_phase_decision
                 print(f'******* CHANGED bit phase {new_bit_phase}, prev {previous_bit_phase_decision}, diff {diff}!')
-                self.pseudosymbol_cursor += diff
+                self.history.pseudosymbol_cursor_within_queue += diff
 
         return events
 
@@ -284,7 +295,7 @@ class NavigationBitIntegrator:
             receiver_timestamp=receiver_timestamp,
             pseudosymbol=NavigationBitPseudosymbol.from_val(rounded_pseudosymbol_value),
         )
-        self.all_symbols.append(emitted_pseudosymbol)
+        self.history.queued_pseudosymbols.append(emitted_pseudosymbol)
         self.history.last_seen_pseudosymbols.append(emitted_pseudosymbol)
 
         self._resynchronize_bit_phase_if_necessary()
