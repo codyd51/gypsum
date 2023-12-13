@@ -174,6 +174,13 @@ class NavigationBitIntegrator:
             self.pseudosymbol_cursor += PSEUDOSYMBOLS_PER_NAVIGATION_BIT
             self.history.emitted_bit_count += 1
 
+        # Drop old symbols that we don't need to keep around anymore
+        # To keep everything in alignment, only do this once per bit period
+        if len(self.all_symbols) >= PSEUDOSYMBOLS_PER_NAVIGATION_BIT:
+            offset_from_end = len(self.all_symbols) - self.pseudosymbol_cursor
+            self.all_symbols = self.all_symbols[-PSEUDOSYMBOLS_PER_NAVIGATION_BIT:]
+            self.pseudosymbol_cursor = PSEUDOSYMBOLS_PER_NAVIGATION_BIT - offset_from_end
+
         return events
 
     def _should_resynchronize_bit_phase(self) -> bool:
