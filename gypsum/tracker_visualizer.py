@@ -150,6 +150,7 @@ class GraphTypeEnum(Enum):
             GraphTypeEnum.SPACER: "",
             GraphTypeEnum.EMITTED_SUBFRAMES: "Emitted Subframes",
             GraphTypeEnum.FAILED_BITS: "Failed Bits",
+            self.PRN_CODE_PHASE: "PRN Code Phase",
         }[self]
 
 
@@ -332,6 +333,10 @@ class GpsSatelliteTrackerVisualizer:
         self.graph_for_type(GraphTypeEnum.FAILED_BITS).clear()
         failed_bits_text = f'{bit_integrator_history.failed_bit_count}'
         self.draw_text(GraphTypeEnum.FAILED_BITS, failed_bits_text)
+
+        self.graph_for_type(GraphTypeEnum.PRN_CODE_PHASE).clear()
+        prn_code_phase_text = f'{current_tracking_params.current_prn_code_phase_shift} chips'
+        self.draw_text(GraphTypeEnum.PRN_CODE_PHASE, prn_code_phase_text)
 
         # We've just erased some of our axes titles via plt.Axes.clear(), so redraw them.
         self._redraw_subplot_titles()
