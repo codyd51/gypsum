@@ -50,26 +50,26 @@ class GraphAttributes:
 
 
 class GraphTypeEnum(Enum):
-    # Note that the ordering of this enum defines the layout of the graphs in the dashboard
     DOPPLER_SHIFT = auto()
     CARRIER_PHASE = auto()
-    Q_COMPONENT = auto()
-    CARRIER_PHASE_ERROR = auto()
-
-    I_COMPONENT = auto()
-    IQ_CONSTELLATION = auto()
     BIT_PHASE = auto()
     SUBFRAME_PHASE = auto()
 
-    PSEUDOSYMBOLS = auto()
-    IQ_ANGLE = auto()
+    Q_COMPONENT = auto()
+    CARRIER_PHASE_ERROR = auto()
     TRACK_DURATION = auto()
     BIT_HEALTH = auto()
 
-    BITS = auto()
-    SPACER = auto()
+    I_COMPONENT = auto()
+    IQ_CONSTELLATION = auto()
     EMITTED_SUBFRAMES = auto()
     FAILED_BITS = auto()
+
+    PSEUDOSYMBOLS = auto()
+    IQ_ANGLE = auto()
+    BITS = auto()
+    PRN_CODE_PHASE = auto()
+    CORRELATION_STRENGTH = auto()
     @property
     def attributes(self) -> GraphAttributes:
         return {
@@ -94,6 +94,42 @@ class GraphTypeEnum(Enum):
             GraphTypeEnum.SPACER2: GraphAttributes.spacer(),
             GraphTypeEnum.SPACER3: GraphAttributes.spacer(),
         }[self]
+
+    @classmethod
+    def layout_order(cls) -> list[list['GraphTypeEnum']]:
+        """Defines the ordering of the graphs in the dashboard"""
+        return [
+            [
+                cls.DOPPLER_SHIFT,
+                cls.CARRIER_PHASE,
+                cls.BIT_HEALTH,
+                cls.FAILED_BITS,
+            ],
+            [
+                cls.I_COMPONENT,
+                cls.IQ_CONSTELLATION,
+                cls.CORRELATION_STRENGTH,
+                cls.SPACER1,
+            ],
+            [
+                cls.PSEUDOSYMBOLS,
+                cls.IQ_ANGLE,
+                cls.EMITTED_SUBFRAMES,
+                cls.TRACK_DURATION,
+            ],
+            [
+                cls.BITS,
+                cls.SPACER2,
+                cls.BIT_PHASE,
+                cls.PRN_CODE_PHASE,
+            ],
+            [
+                cls.Q_COMPONENT,
+                cls.CARRIER_PHASE_ERROR,
+                cls.SUBFRAME_PHASE,
+                cls.SPACER3,
+            ],
+        ]
 
     @property
     def presentation_name(self) -> str:
@@ -128,13 +164,15 @@ class GpsSatelliteTrackerVisualizer:
 
         self.visualizer_figure = plt.figure(figsize=(11, 6))
         self.visualizer_figure.suptitle(f"Satellite #{satellite_id.id} Tracking Dashboard")
-        self.grid_spec = plt.GridSpec(nrows=4, ncols=4, figure=self.visualizer_figure)
+        self.grid_spec = plt.GridSpec(nrows=5, ncols=4, figure=self.visualizer_figure)
 
         grid_spec_idx_iterator = iter(range(len(GraphTypeEnum)))
-        self.graph_type_to_graphs = {
-            t: self.visualizer_figure.add_subplot(self.grid_spec[next(grid_spec_idx_iterator)])
-            for t in GraphTypeEnum
-        }
+        # Initialize the graphs in the order specified
+        self.graph_type_to_graphs = {}
+        layout_order = GraphTypeEnum.layout_order()
+        for row in layout_order:
+            for graph_type in row:
+                self.graph_type_to_graphs[graph_type] = self.visualizer_figure.add_subplot(self.grid_spec[next(grid_spec_idx_iterator)])
 
         self._redraw_subplot_titles()
 
