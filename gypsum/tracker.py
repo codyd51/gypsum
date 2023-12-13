@@ -308,7 +308,6 @@ class GpsSatelliteTracker:
                 if angle > 90:
                     rotation = angle - 180
 
-                # TODO(PT): Extract these into constants
                 if abs(rotation) > CONSTELLATION_BASED_FREQUENCY_ADJUSTMENT_MAXIMUM_ALLOWED_ROTATION:
                     adjustment = -np.sign(rotation) * CONSTELLATION_BASED_FREQUENCY_ADJUSTMENT_MAGNITUDE
                     print(f'** Adjusting by {adjustment}')

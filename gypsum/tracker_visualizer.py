@@ -202,8 +202,7 @@ class GpsSatelliteTrackerVisualizer:
         self.graph_for_type(GraphTypeEnum.BITS).plot(bits_as_runs)
 
         self.graph_for_type(GraphTypeEnum.BIT_PHASE).clear()
-        lock_state = f"Unlocked" if not bit_integrator_history.is_bit_phase_locked else "Locked"
-        bit_phase_status_message = f"{bit_integrator_history.determined_bit_phase} ({lock_state})"
+        bit_phase_status_message = f"{bit_integrator_history.determined_bit_phase}"
         self.draw_text(GraphTypeEnum.BIT_PHASE, bit_phase_status_message)
 
         self.graph_for_type(GraphTypeEnum.SUBFRAME_PHASE).clear()
@@ -215,7 +214,7 @@ class GpsSatelliteTrackerVisualizer:
 
         self.graph_for_type(GraphTypeEnum.TRACK_DURATION).clear()
         # TODO(PT): This is the offset from startup, not track start...
-        track_duration_text = f'{seconds_since_start:.2f}'
+        track_duration_text = f'{int(seconds_since_start)}'
         self.draw_text(GraphTypeEnum.TRACK_DURATION, track_duration_text)
 
         self.graph_for_type(GraphTypeEnum.BIT_HEALTH).clear()
@@ -223,7 +222,7 @@ class GpsSatelliteTrackerVisualizer:
         if len(bit_integrator_history.last_emitted_bits) == 0:
             bit_health_text = "No bits seen yet"
         else:
-            bit_health = (len([x for x in bit_integrator_history.last_emitted_bits if x != BitValue.UNKNOWN]) / len(bit_integrator_history.last_emitted_bits)) * 100
+            bit_health = int((len([x for x in bit_integrator_history.last_emitted_bits if x != BitValue.UNKNOWN]) / len(bit_integrator_history.last_emitted_bits)) * 100)
             bit_health_text = f"{bit_health}%"
         self.draw_text(GraphTypeEnum.BIT_HEALTH, bit_health_text)
 

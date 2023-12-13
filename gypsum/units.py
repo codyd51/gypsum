@@ -20,5 +20,3 @@ Hertz = float
 DopplerShiftHz = float
 CarrierWavePhaseInRadians = float
 PrnCodePhaseInSamples = int
-
-

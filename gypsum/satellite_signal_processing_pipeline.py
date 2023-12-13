@@ -107,7 +107,7 @@ class GpsSatelliteSignalProcessingPipeline:
         satellite_id = self.satellite.satellite_id.id
         _logger.info(
             f"{self.current_receiver_timestamp}: Integrator for SV({satellite_id}) lost bit coherence. "
-            f"Confidence for bit {self.pseudosymbol_integrator.bit_index}: {event.confidence}%"
+            f"Confidence for bit {self.pseudosymbol_integrator.history.emitted_bit_count}: {event.confidence}%"
         )
         # Untrack this satellite as our bit quality went too far downhill
         raise LostSatelliteLockError()
