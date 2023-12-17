@@ -105,7 +105,9 @@ class GpsReceiver:
                     orbit_params = world_model_event.orbital_parameters
 
     def _perform_acquisition(self) -> None:
-        self._perform_acquisition_on_satellite_ids(self.satellite_ids_eligible_for_acquisition)
+        newly_acquired_satellite_ids = self._perform_acquisition_on_satellite_ids(self.satellite_ids_eligible_for_acquisition)
+        # The satellites that we've just acquired no longer need to be searched for in the acquisition stage
+        self.satellite_ids_eligible_for_acquisition = [x for x in self.satellite_ids_eligible_for_acquisition if x not in newly_acquired_satellite_ids]
 
     def _perform_acquisition_on_satellite_ids(self, satellite_ids: list[GpsSatelliteId]) -> list[GpsSatelliteId]:
         # To improve signal-to-noise ratio during acquisition, we integrate antenna data over 20ms.
