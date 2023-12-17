@@ -12,6 +12,8 @@ from gypsum.navigation_message_parser import (
     NavigationMessageSubframeParser,
     TelemetryWord,
 )
+from gypsum.navigation_message_parser import IncorrectPreludeBitsError
+from gypsum.navigation_message_parser import InvalidSubframeIdError
 from gypsum.tracker import BitValue
 from gypsum.utils import get_indexes_of_sublist
 
@@ -226,8 +228,20 @@ class NavigationMessageDecoder:
             preprocessed_bits = [b.inverted() for b in preprocessed_bits]
         bits_as_ints = [b.as_val() for b in preprocessed_bits]
         subframe_parser = NavigationMessageSubframeParser(bits_as_ints)
-        telemetry_word = subframe_parser.parse_telemetry_word()
-        handover_word = subframe_parser.parse_handover_word()
+        try:
+            telemetry_word = subframe_parser.parse_telemetry_word()
+        except IncorrectPreludeBitsError:
+            _logger.info("Resetting phase because the prelude was incorrect")
+            self._reset_selected_subframe_phase()
+            return None
+
+        try:
+            handover_word = subframe_parser.parse_handover_word()
+        except InvalidSubframeIdError:
+            _logger.info("Resetting phase because the subframe ID was invalid")
+            self._reset_selected_subframe_phase()
+            return None
+
         _logger.info(f"Handover word time of week: {handover_word.time_of_week_in_seconds}")
 
         subframe_id = handover_word.subframe_id
