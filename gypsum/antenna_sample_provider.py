@@ -10,8 +10,7 @@ import numpy as np
 from gypsum.config import UTC_LEAP_SECONDS_COUNT
 from gypsum.constants import PRN_REPETITIONS_PER_SECOND
 from gypsum.radio_input import InputFileInfo
-from gypsum.units import SampleCount
-from gypsum.units import Seconds
+from gypsum.units import SampleCount, Seconds
 
 # Expressed as seconds since the UTC epoch, as measured by the local clock (i.e. including the receiver clock bias)
 ReceiverTimestampSeconds = Seconds
@@ -48,14 +47,14 @@ class AntennaSampleProviderBackedByBytes(AntennaSampleProvider):
     def __init__(self, data: np.ndarray) -> None:
         self.data = data
         self.cursor = 0
-        raise NotImplementedError(f'This provider must be reworked to track the passage of time.')
+        raise NotImplementedError(f"This provider must be reworked to track the passage of time.")
 
     def peek_samples(self, sample_count: SampleCount) -> Tuple[ReceiverTimestampSeconds, np.ndarray]:
-        raise NotImplementedError(f'This provider must be reworked to track the passage of time.')
+        raise NotImplementedError(f"This provider must be reworked to track the passage of time.")
         return self.data[self.cursor : self.cursor + sample_count]
 
     def get_samples(self, sample_count: SampleCount) -> Tuple[ReceiverTimestampSeconds, np.ndarray]:
-        raise NotImplementedError(f'This provider must be reworked to track the passage of time.')
+        raise NotImplementedError(f"This provider must be reworked to track the passage of time.")
         data = self.peek_samples(sample_count)
         self.cursor += sample_count
         return data

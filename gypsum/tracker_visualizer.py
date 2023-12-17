@@ -1,9 +1,9 @@
-from dataclasses import dataclass
-from enum import Enum
-from enum import auto
-
-import math
 import logging
+import math
+from dataclasses import dataclass
+from enum import Enum, auto
+
+import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.axes import Axes
 
@@ -11,11 +11,8 @@ from gypsum.constants import PSEUDOSYMBOLS_PER_NAVIGATION_BIT
 from gypsum.gps_ca_prn_codes import GpsSatelliteId
 from gypsum.navigation_bit_intergrator import NavigationBitIntegratorHistory
 from gypsum.navigation_message_decoder import NavigationMessageDecoderHistory
-from gypsum.tracker import BitValue
-from gypsum.tracker import GpsSatelliteTrackingParameters
+from gypsum.tracker import BitValue, GpsSatelliteTrackingParameters
 from gypsum.units import Seconds
-
-import matplotlib.pyplot as plt
 
 _logger = logging.getLogger(__name__)
 
@@ -33,19 +30,19 @@ class GraphAttributes:
     background_color: str | None = None
 
     @staticmethod
-    def spacer() -> 'GraphAttributes':
+    def spacer() -> "GraphAttributes":
         return GraphAttributes(is_text_only=True, display_axes=False)
 
     @staticmethod
-    def text(background_color: str) -> 'GraphAttributes':
+    def text(background_color: str) -> "GraphAttributes":
         return GraphAttributes(is_text_only=True, display_axes=False, background_color=background_color)
 
     @staticmethod
-    def with_axes() -> 'GraphAttributes':
+    def with_axes() -> "GraphAttributes":
         return GraphAttributes(display_axes=True, is_text_only=False)
 
     @staticmethod
-    def without_axes() -> 'GraphAttributes':
+    def without_axes() -> "GraphAttributes":
         return GraphAttributes(display_axes=False, is_text_only=False)
 
 
@@ -101,7 +98,7 @@ class GraphTypeEnum(Enum):
         }[self]
 
     @classmethod
-    def layout_order(cls) -> list[list['GraphTypeEnum']]:
+    def layout_order(cls) -> list[list["GraphTypeEnum"]]:
         """Defines the ordering of the graphs in the dashboard"""
         return [
             [
@@ -185,7 +182,9 @@ class GpsSatelliteTrackerVisualizer:
         layout_order = GraphTypeEnum.layout_order()
         for row in layout_order:
             for graph_type in row:
-                self.graph_type_to_graphs[graph_type] = self.visualizer_figure.add_subplot(self.grid_spec[next(grid_spec_idx_iterator)])
+                self.graph_type_to_graphs[graph_type] = self.visualizer_figure.add_subplot(
+                    self.grid_spec[next(grid_spec_idx_iterator)]
+                )
 
         self._redraw_subplot_titles()
 
@@ -202,7 +201,7 @@ class GpsSatelliteTrackerVisualizer:
         # Certain graph types are text-only, and we don't need the ticks/frame that pyplot provides by default.
         graphs_with_no_frames = [x for x in GraphTypeEnum if x.attributes.is_text_only]
         for graph_type in graphs_with_no_frames:
-            self.graph_for_type(graph_type).axis('off')
+            self.graph_for_type(graph_type).axis("off")
 
         # Certain graph types aren't worth showing the axis labels, as the magnitudes aren't too important and they
         # clutter the UI.
@@ -217,20 +216,15 @@ class GpsSatelliteTrackerVisualizer:
     def draw_text(self, t: GraphTypeEnum, s: str):
         background_color = t.attributes.background_color
         if background_color is None:
-            raise ValueError(f'No background color set for {t}')
+            raise ValueError(f"No background color set for {t}")
 
         self.graph_for_type(t).text(
             0.5,
             0.25,
             s,
             fontsize=20,
-            bbox={
-                'edgecolor': '#000000',
-                "facecolor": background_color,
-                "boxstyle": 'round',
-                "pad": 0.2
-            },
-            ha="center"
+            bbox={"edgecolor": "#000000", "facecolor": background_color, "boxstyle": "round", "pad": 0.2},
+            ha="center",
         )
 
     def step(
@@ -282,7 +276,9 @@ class GpsSatelliteTrackerVisualizer:
             if angle > 90:
                 rotation = angle - 180
             # _logger.info(f'Angle {angle:.2f} Rotation {rotation:.2f} Doppler {params.current_doppler_shift:.2f}')
-            self.graph_for_type(GraphTypeEnum.IQ_CONSTELLATION).scatter([left_point.real, right_point.real], [left_point.imag, right_point.imag])
+            self.graph_for_type(GraphTypeEnum.IQ_CONSTELLATION).scatter(
+                [left_point.real, right_point.real], [left_point.imag, right_point.imag]
+            )
 
         self.graph_for_type(GraphTypeEnum.I_COMPONENT).clear()
         self.graph_for_type(GraphTypeEnum.I_COMPONENT).plot(np.real(points))
@@ -307,7 +303,9 @@ class GpsSatelliteTrackerVisualizer:
         self.graph_for_type(GraphTypeEnum.BITS).clear()
         bits_as_runs = []
         for bit in bit_integrator_history.last_emitted_bits:
-            bits_as_runs.extend([0.5 if bit == BitValue.UNKNOWN else bit.as_val() for _ in range(PSEUDOSYMBOLS_PER_NAVIGATION_BIT)])
+            bits_as_runs.extend(
+                [0.5 if bit == BitValue.UNKNOWN else bit.as_val() for _ in range(PSEUDOSYMBOLS_PER_NAVIGATION_BIT)]
+            )
         self.graph_for_type(GraphTypeEnum.BITS).plot(bits_as_runs)
 
         self.graph_for_type(GraphTypeEnum.BIT_PHASE).clear()
@@ -323,7 +321,7 @@ class GpsSatelliteTrackerVisualizer:
 
         self.graph_for_type(GraphTypeEnum.TRACK_DURATION).clear()
         # TODO(PT): This is the offset from startup, not track start...
-        track_duration_text = f'{int(seconds_since_start)} seconds'
+        track_duration_text = f"{int(seconds_since_start)} seconds"
         self.draw_text(GraphTypeEnum.TRACK_DURATION, track_duration_text)
 
         self.graph_for_type(GraphTypeEnum.BIT_HEALTH).clear()
@@ -331,7 +329,13 @@ class GpsSatelliteTrackerVisualizer:
         if len(bit_integrator_history.last_emitted_bits) == 0:
             bit_health_text = "No bits seen yet"
         else:
-            bit_health = int((len([x for x in bit_integrator_history.last_emitted_bits if x != BitValue.UNKNOWN]) / len(bit_integrator_history.last_emitted_bits)) * 100)
+            bit_health = int(
+                (
+                    len([x for x in bit_integrator_history.last_emitted_bits if x != BitValue.UNKNOWN])
+                    / len(bit_integrator_history.last_emitted_bits)
+                )
+                * 100
+            )
             bit_health_text = f"{bit_health}% success"
         self.draw_text(GraphTypeEnum.BIT_HEALTH, bit_health_text)
 
@@ -340,16 +344,18 @@ class GpsSatelliteTrackerVisualizer:
         self.draw_text(GraphTypeEnum.EMITTED_SUBFRAMES, emitted_subframes_text)
 
         self.graph_for_type(GraphTypeEnum.FAILED_BITS).clear()
-        failed_bits_text = f'{bit_integrator_history.failed_bit_count} bits'
+        failed_bits_text = f"{bit_integrator_history.failed_bit_count} bits"
         self.draw_text(GraphTypeEnum.FAILED_BITS, failed_bits_text)
 
         self.graph_for_type(GraphTypeEnum.PRN_CODE_PHASE).clear()
-        prn_code_phase_text = f'{current_tracking_params.current_prn_code_phase_shift} chips'
+        prn_code_phase_text = f"{current_tracking_params.current_prn_code_phase_shift} chips"
         self.draw_text(GraphTypeEnum.PRN_CODE_PHASE, prn_code_phase_text)
 
         self.graph_for_type(GraphTypeEnum.CORRELATION_STRENGTH).clear()
-        average_correlation_strength = np.mean(np.abs(np.array(current_tracking_params.correlation_peaks_rolling_buffer)))
-        correlation_strength_text = f'{average_correlation_strength:.2f}'
+        average_correlation_strength = np.mean(
+            np.abs(np.array(current_tracking_params.correlation_peaks_rolling_buffer))
+        )
+        correlation_strength_text = f"{average_correlation_strength:.2f}"
         self.draw_text(GraphTypeEnum.CORRELATION_STRENGTH, correlation_strength_text)
 
         # We've just erased some of our axes titles via plt.Axes.clear(), so redraw them.

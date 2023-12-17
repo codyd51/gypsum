@@ -5,19 +5,15 @@ from copy import deepcopy
 import numpy as np
 
 from gypsum.acquisition import GpsSatelliteDetector
-from gypsum.antenna_sample_provider import AntennaSampleProvider
-from gypsum.antenna_sample_provider import ReceiverTimestampSeconds
+from gypsum.antenna_sample_provider import AntennaSampleProvider, ReceiverTimestampSeconds
 from gypsum.config import ACQUISITION_INTEGRATION_PERIOD_MS
 from gypsum.gps_ca_prn_codes import GpsSatelliteId, generate_replica_prn_signals
 from gypsum.navigation_bit_intergrator import Event
 from gypsum.navigation_message_decoder import EmitSubframeEvent
-from gypsum.satellite import ALL_SATELLITE_IDS
-from gypsum.satellite import GpsSatellite
-from gypsum.satellite_signal_processing_pipeline import GpsSatelliteSignalProcessingPipeline
-from gypsum.satellite_signal_processing_pipeline import LostSatelliteLockError
+from gypsum.satellite import ALL_SATELLITE_IDS, GpsSatellite
+from gypsum.satellite_signal_processing_pipeline import GpsSatelliteSignalProcessingPipeline, LostSatelliteLockError
 from gypsum.utils import AntennaSamplesSpanningOneMs
-from gypsum.world_model import DeterminedSatelliteOrbitEvent
-from gypsum.world_model import GpsWorldModel
+from gypsum.world_model import DeterminedSatelliteOrbitEvent, GpsWorldModel
 
 _logger = logging.getLogger(__name__)
 
@@ -29,12 +25,16 @@ class GpsReceiver:
         # Generate the replica signals that we'll use to correlate against the received antenna signals upfront
         satellites_to_replica_prn_signals = generate_replica_prn_signals()
         self.satellites_by_id = {
-            satellite_id: GpsSatellite(satellite_id=satellite_id, prn_code=code, scale_factor=antenna_samples_provider.samples_per_prn_transmission()//1023)
+            satellite_id: GpsSatellite(
+                satellite_id=satellite_id,
+                prn_code=code,
+                scale_factor=antenna_samples_provider.samples_per_prn_transmission() // 1023,
+            )
             for satellite_id, code in satellites_to_replica_prn_signals.items()
         }
         # TODO(PT): Perhaps this state should belong to the detector.
         # The receiver can remove satellites from the pool when it decides a satellite has been acquired
-        #self.satellite_ids_eligible_for_acquisition = deepcopy(ALL_SATELLITE_IDS)
+        # self.satellite_ids_eligible_for_acquisition = deepcopy(ALL_SATELLITE_IDS)
         # PT: The phase isn't about the chip offset, it's about "the timestamp of where the PRN starts"
         # Literally they're the same, but the latter makes more sense conceptually in terms of 'measuring the delay' -
         # you look at the timestamp where the PRN starts.
@@ -55,8 +55,10 @@ class GpsReceiver:
         """Run one 'iteration' of the GPS receiver. This consumes one millisecond of antenna data."""
         receiver_timestamp: ReceiverTimestampSeconds
         samples: AntennaSamplesSpanningOneMs
-        receiver_timestamp, samples = self.antenna_samples_provider.get_samples(self.antenna_samples_provider.samples_per_prn_transmission())
-        #receiver_timestamp, samples = self.antenna_samples_provider.get_samples(SAMPLES_PER_PRN_TRANSMISSION)
+        receiver_timestamp, samples = self.antenna_samples_provider.get_samples(
+            self.antenna_samples_provider.samples_per_prn_transmission()
+        )
+        # receiver_timestamp, samples = self.antenna_samples_provider.get_samples(SAMPLES_PER_PRN_TRANSMISSION)
         # Firstly, record this sample in our rolling buffer
         self.rolling_samples_buffer.append(samples)
 
@@ -80,25 +82,26 @@ class GpsReceiver:
                     self.subframe_count += 1
                     emit_subframe_event: EmitSubframeEvent = event
                     subframe = emit_subframe_event.subframe
-                    print(f'*** Subframe {subframe.subframe_id.name} from {satellite_id}:')
+                    print(f"*** Subframe {subframe.subframe_id.name} from {satellite_id}:")
                     from dataclasses import fields
+
                     for field in fields(subframe):
-                        print(f'\t{field.name}: {getattr(subframe, field.name)}')
+                        print(f"\t{field.name}: {getattr(subframe, field.name)}")
 
                     world_model_events_from_this_satellite = self.world_model.handle_subframe_emitted(
-                        satellite_id,
-                        emit_subframe_event
+                        satellite_id, emit_subframe_event
                     )
                     satellite_ids_to_world_model_events[satellite_id] = world_model_events_from_this_satellite
                 else:
-                    raise NotImplementedError(f'Unhandled event type: {type(event)}')
+                    raise NotImplementedError(f"Unhandled event type: {type(event)}")
 
         # Process updates to our world model
         for satellite_id, world_model_events in satellite_ids_to_world_model_events.items():
             for world_model_event in world_model_events:
                 if isinstance(world_model_event, DeterminedSatelliteOrbitEvent):
-                    print(f'Determined the orbit of {satellite_id}! {world_model_event.orbital_parameters}')
+                    print(f"Determined the orbit of {satellite_id}! {world_model_event.orbital_parameters}")
                     orbit_params = world_model_event.orbital_parameters
+
     def _perform_acquisition(self) -> None:
         self._perform_acquisition_on_satellite_ids(self.satellite_ids_eligible_for_acquisition)
 
@@ -130,7 +133,9 @@ class GpsReceiver:
         return [n.satellite_id for n in newly_acquired_satellites]
 
     def _track_acquired_satellites(
-        self, receiver_timestamp: ReceiverTimestampSeconds, samples: AntennaSamplesSpanningOneMs,
+        self,
+        receiver_timestamp: ReceiverTimestampSeconds,
+        samples: AntennaSamplesSpanningOneMs,
     ) -> dict[GpsSatelliteId, list[Event]]:
         satellite_ids_to_events = {}
         satellite_ids_to_reacquire = []

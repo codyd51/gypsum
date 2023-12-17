@@ -48,7 +48,7 @@ class GpsSubframeId(Enum):
     FIVE = auto()
 
     @classmethod
-    def from_bits(cls, bits: list[int]) -> 'GpsSubframeId':
+    def from_bits(cls, bits: list[int]) -> "GpsSubframeId":
         try:
             return {
                 (0, 0, 1): GpsSubframeId.ONE,
@@ -56,7 +56,9 @@ class GpsSubframeId(Enum):
                 (0, 1, 1): GpsSubframeId.THREE,
                 (1, 0, 0): GpsSubframeId.FOUR,
                 (1, 0, 1): GpsSubframeId.FIVE,
-            }[*bits]    # type: ignore
+            }[
+                *bits
+            ]  # type: ignore
         except KeyError:
             raise InvalidSubframeIdError()
 
@@ -205,7 +207,7 @@ class NavigationMessageSubframeParser:
             # word_relative_cursor = self.cursor % _DATA_BIT_COUNT_PER_WORD
             # return self.preprocessed_data_bits_of_current_word[word_relative_cursor: word_relative_cursor + n]
             return self.preprocessed_data_bits_of_current_word[:n]
-        return self.bits[self.cursor: self.cursor + n]
+        return self.bits[self.cursor : self.cursor + n]
 
     def get_bits(self, n: int, from_preprocessed_word_bits: bool = True) -> list[int]:
         if from_preprocessed_word_bits:
@@ -309,7 +311,7 @@ class NavigationMessageSubframeParser:
         word_bits = self.get_bits(
             _BIT_COUNT_PER_WORD,
             # Read raw bits from our subframe buffer
-            from_preprocessed_word_bits=False
+            from_preprocessed_word_bits=False,
         )
         # _logger.info(f'Word bits: {word_bits}')
         data_bits = word_bits[:_DATA_BIT_COUNT_PER_WORD]
@@ -378,13 +380,13 @@ class NavigationMessageSubframeParser:
         for bit in bits_to_use_for_xor_inputs:
             accumulator = (accumulator + bit) % 2
         if accumulator != actual_parity_bit:
-            #raise ValueError(
+            # raise ValueError(
             #    f'Failed parity check: {complemented_data_bits}, {actual_parity_bit}, '
             #    f'{bit_from_previous_parity_word}, {spec_bit_indexes_to_use_as_xor_inputs}'
-            #)
+            # )
             _logger.info(
-                f'Failed parity check: {complemented_data_bits}, {accumulator} != {actual_parity_bit}, '
-                f'd30*={bit_from_previous_parity_word}, xors={spec_bit_indexes_to_use_as_xor_inputs}'
+                f"Failed parity check: {complemented_data_bits}, {accumulator} != {actual_parity_bit}, "
+                f"d30*={bit_from_previous_parity_word}, xors={spec_bit_indexes_to_use_as_xor_inputs}"
             )
 
     def parse_telemetry_word(self) -> TelemetryWord:
@@ -479,16 +481,19 @@ class NavigationMessageSubframeParser:
         correction_to_orbital_radius_sin = self.get_num(bit_count=16, scale_factor_exp2=-5, twos_complement=True)
 
         # Word 4
-        mean_motion_difference_from_computed_value = self.get_num(bit_count=16, scale_factor_exp2=-43, twos_complement=True)
+        mean_motion_difference_from_computed_value = self.get_num(
+            bit_count=16, scale_factor_exp2=-43, twos_complement=True
+        )
         mean_anomaly_at_reference_time_high = self.get_bits(8)
 
         # Word 5
         mean_anomaly_at_reference_time_low = self.get_bits(24)
-        mean_anomaly_at_reference_time_bits = [*mean_anomaly_at_reference_time_high, *mean_anomaly_at_reference_time_low]
+        mean_anomaly_at_reference_time_bits = [
+            *mean_anomaly_at_reference_time_high,
+            *mean_anomaly_at_reference_time_low,
+        ]
         mean_anomaly_at_reference_time = self.get_num_from_bits(
-            bits=mean_anomaly_at_reference_time_bits,
-            scale_factor_exp2=-31,
-            twos_complement=True
+            bits=mean_anomaly_at_reference_time_bits, scale_factor_exp2=-31, twos_complement=True
         )
 
         # Word 6
@@ -498,11 +503,7 @@ class NavigationMessageSubframeParser:
         # Word 7
         eccentricity_low = self.get_bits(24)
         eccentricity_bits = [*eccentricity_high, *eccentricity_low]
-        eccentricity = self.get_num_from_bits(
-            bits=eccentricity_bits,
-            scale_factor_exp2=-33,
-            twos_complement=False
-        )
+        eccentricity = self.get_num_from_bits(bits=eccentricity_bits, scale_factor_exp2=-33, twos_complement=False)
 
         # Word 8
         correction_to_latitude_sin = self.get_num(bit_count=16, scale_factor_exp2=-29, twos_complement=True)
@@ -511,9 +512,7 @@ class NavigationMessageSubframeParser:
         sqrt_semi_major_axis_low = self.get_bits(24)
         sqrt_semi_major_axis_bits = [*sqrt_semi_major_axis_high, *sqrt_semi_major_axis_low]
         sqrt_semi_major_axis = self.get_num_from_bits(
-            bits=sqrt_semi_major_axis_bits,
-            scale_factor_exp2=-19,
-            twos_complement=False
+            bits=sqrt_semi_major_axis_bits, scale_factor_exp2=-19, twos_complement=False
         )
 
         reference_time_ephemeris = self.get_num(bit_count=16, scale_factor_exp2=4, twos_complement=False)

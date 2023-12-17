@@ -5,12 +5,12 @@ from dataclasses import dataclass
 import numpy as np
 
 from gypsum.antenna_sample_provider import ReceiverTimestampSeconds
-from gypsum.config import RECALCULATE_PSEUDOSYMBOL_PHASE_BIT_HEALTH_MEMORY_SIZE
-from gypsum.config import RECALCULATE_PSEUDOSYMBOL_PHASE_BIT_HEALTH_THRESHOLD
-from gypsum.config import RECALCULATE_PSEUDOSYMBOL_PHASE_PERIOD
-from gypsum.constants import BITS_PER_SECOND
-from gypsum.constants import PSEUDOSYMBOLS_PER_NAVIGATION_BIT
-from gypsum.constants import PSEUDOSYMBOLS_PER_SECOND
+from gypsum.config import (
+    RECALCULATE_PSEUDOSYMBOL_PHASE_BIT_HEALTH_MEMORY_SIZE,
+    RECALCULATE_PSEUDOSYMBOL_PHASE_BIT_HEALTH_THRESHOLD,
+    RECALCULATE_PSEUDOSYMBOL_PHASE_PERIOD,
+)
+from gypsum.constants import BITS_PER_SECOND, PSEUDOSYMBOLS_PER_NAVIGATION_BIT, PSEUDOSYMBOLS_PER_SECOND
 from gypsum.events import Event
 from gypsum.tracker import BitValue, NavigationBitPseudosymbol
 from gypsum.utils import chunks
@@ -23,11 +23,7 @@ BitPseudosymbolPhase = int
 
 
 class EmitNavigationBitEvent(Event):
-    def __init__(
-        self,
-        receiver_timestamp: ReceiverTimestampSeconds,
-        bit_value: BitValue
-    ) -> None:
+    def __init__(self, receiver_timestamp: ReceiverTimestampSeconds, bit_value: BitValue) -> None:
         self.receiver_timestamp = receiver_timestamp
         self.bit_value = bit_value
 
@@ -75,13 +71,13 @@ class NavigationBitIntegratorHistory:
 
     def __post_init__(self) -> None:
         if self.last_seen_pseudosymbols is not None:
-            raise ValueError(f'Cannot be set explicitly')
+            raise ValueError(f"Cannot be set explicitly")
         if self.queued_pseudosymbols is not None:
-            raise ValueError(f'Cannot be set explicitly')
+            raise ValueError(f"Cannot be set explicitly")
         if self.last_emitted_bits is not None:
-            raise ValueError(f'Cannot be set explicitly')
+            raise ValueError(f"Cannot be set explicitly")
         if self.rolling_average_window is not None:
-            raise ValueError(f'Cannot be set explicitly')
+            raise ValueError(f"Cannot be set explicitly")
         # 1000 to store the display the last 1 second of pseudosymbols, which matches the tracker history
         self.last_seen_pseudosymbols = collections.deque(maxlen=1000)
         # 50 to match a 1-second history period
@@ -116,7 +112,9 @@ class NavigationBitIntegrator:
             # the 'stronger' the agreement of the pseudosymbols.
             summed_values = sum(x.as_val() for x in pseudosymbols_in_bit)
             pseudosymbol_sums_per_bit.append(summed_values)
-        strength_score = sum([abs(x) for x in pseudosymbol_sums_per_bit]) / (len(pseudosymbols) / PSEUDOSYMBOLS_PER_NAVIGATION_BIT)
+        strength_score = sum([abs(x) for x in pseudosymbol_sums_per_bit]) / (
+            len(pseudosymbols) / PSEUDOSYMBOLS_PER_NAVIGATION_BIT
+        )
 
         # Average the strength scores across all the bits provided
         return strength_score / PSEUDOSYMBOLS_PER_NAVIGATION_BIT
@@ -127,19 +125,17 @@ class NavigationBitIntegrator:
             return None
 
         # Only look at the last few bits
-        pseudosymbols_to_consider = list(self.history.last_seen_pseudosymbols)[-PSEUDOSYMBOLS_PER_NAVIGATION_BIT * 16:]
+        pseudosymbols_to_consider = list(self.history.last_seen_pseudosymbols)[-PSEUDOSYMBOLS_PER_NAVIGATION_BIT * 16 :]
         # Try every possible bit phase
         pseudosymbols = np.array(list([x.pseudosymbol for x in pseudosymbols_to_consider]))
         bit_phase_to_confidence_score = dict()
         for possible_bit_phase in range(0, PSEUDOSYMBOLS_PER_NAVIGATION_BIT):
             pseudosymbols_aligned_with_bit_phase = np.roll(pseudosymbols, -possible_bit_phase)
             # Compute a confidence score
-            confidence = self._compute_bit_confidence_score(pseudosymbols_aligned_with_bit_phase)   # type: ignore
+            confidence = self._compute_bit_confidence_score(pseudosymbols_aligned_with_bit_phase)  # type: ignore
             bit_phase_to_confidence_score[possible_bit_phase] = confidence
 
-        best_bit_phase = max(
-            bit_phase_to_confidence_score, key=bit_phase_to_confidence_score.get    # type: ignore
-        )
+        best_bit_phase = max(bit_phase_to_confidence_score, key=bit_phase_to_confidence_score.get)  # type: ignore
         return best_bit_phase
 
     def _get_bit_value_from_pseudosymbols(self, pseudosymbols: list[EmittedPseudosymbol]) -> BitValue:
@@ -165,7 +161,7 @@ class NavigationBitIntegrator:
             if self.history.sequential_unknown_bit_value_counter >= 30:
                 # TODO(PT): This might cause issues because it throws our subframe phase out of alignment?
                 # We might need to emit an event to tell the subframe decoder to select a new phase now
-                _logger.info(f'Resetting bit phase because we failed to resolve too many bits in a row...')
+                _logger.info(f"Resetting bit phase because we failed to resolve too many bits in a row...")
                 self._reset_selected_bit_phase()
         else:
             self.history.sequential_unknown_bit_value_counter = 0
@@ -200,7 +196,7 @@ class NavigationBitIntegrator:
 
     def _should_resynchronize_bit_phase(self) -> bool:
         if self.history.processed_pseudosymbol_count % self.resynchronize_bit_phase_period == 0:
-            _logger.info(f'Resynchronizing bit phase because the periodic job has fired')
+            _logger.info(f"Resynchronizing bit phase because the periodic job has fired")
             return True
 
         # Can't determine bit phase without any pseudosymbols to work with
@@ -213,18 +209,18 @@ class NavigationBitIntegrator:
 
         # Have we never detected a bit phase?
         if self.history.previous_bit_phase_decision is None:
-            _logger.info(f'Resynchronizing bit phase because we\'ve never selected a phase before')
+            _logger.info(f"Resynchronizing bit phase because we've never selected a phase before")
             return True
 
         # Have we failed too many bits in a row?
-        last_few_bits = list(self.history.last_emitted_bits)[-self.resynchronize_bit_phase_memory_size:]
+        last_few_bits = list(self.history.last_emitted_bits)[-self.resynchronize_bit_phase_memory_size :]
         # Ensure we have enough bits in the buffer
         if len(last_few_bits) == self.resynchronize_bit_phase_memory_size:
             failed_bit_count = len(list(filter(lambda x: x == BitValue.UNKNOWN, last_few_bits)))
             proportion_failures = failed_bit_count / len(last_few_bits)
             percent_failures = proportion_failures * 100
             if percent_failures >= RECALCULATE_PSEUDOSYMBOL_PHASE_BIT_HEALTH_THRESHOLD:
-                _logger.info(f'Resynchronizing bit phase because too many of the last few bits were unresolved')
+                _logger.info(f"Resynchronizing bit phase because too many of the last few bits were unresolved")
                 return True
 
         return False
@@ -243,25 +239,33 @@ class NavigationBitIntegrator:
 
         did_determine_first_bit_phase = previous_bit_phase_decision is None and new_bit_phase is not None
         if did_determine_first_bit_phase:
-            print(f'******* FIRST Bit phase! {new_bit_phase}')
+            print(f"******* FIRST Bit phase! {new_bit_phase}")
             if new_bit_phase > 0:
                 self.history.pseudosymbol_cursor_within_queue = new_bit_phase
         else:
-            did_change_bit_phase = previous_bit_phase_decision is not None and new_bit_phase is not None and previous_bit_phase_decision != new_bit_phase
+            did_change_bit_phase = (
+                previous_bit_phase_decision is not None
+                and new_bit_phase is not None
+                and previous_bit_phase_decision != new_bit_phase
+            )
             if did_change_bit_phase:
                 diff = new_bit_phase - previous_bit_phase_decision
-                print(f'******* CHANGED bit phase {new_bit_phase}, prev {previous_bit_phase_decision}, diff {diff}!')
+                print(f"******* CHANGED bit phase {new_bit_phase}, prev {previous_bit_phase_decision}, diff {diff}!")
                 self.history.pseudosymbol_cursor_within_queue += diff
 
         return events
 
-    def process_pseudosymbol(self, receiver_timestamp: ReceiverTimestampSeconds, pseudosymbol: NavigationBitPseudosymbol) -> list[Event]:
+    def process_pseudosymbol(
+        self, receiver_timestamp: ReceiverTimestampSeconds, pseudosymbol: NavigationBitPseudosymbol
+    ) -> list[Event]:
         # Smooth out the current pseuodsymbol value over a rolling average of half a bit's worth of pseudosymbols
         self.history.rolling_average_window.append(pseudosymbol.as_val())
         if len(self.history.rolling_average_window) < self.history.rolling_average_window_size:
             # Haven't yet seen enough symbols to start using our rolling average
             return []
-        averaged_pseudosymbol_value = sum(self.history.rolling_average_window) // self.history.rolling_average_window_size
+        averaged_pseudosymbol_value = (
+            sum(self.history.rolling_average_window) // self.history.rolling_average_window_size
+        )
         rounded_pseudosymbol_value = -1 if averaged_pseudosymbol_value < 0 else 1
 
         events: list[Event] = []

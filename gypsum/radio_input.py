@@ -5,7 +5,6 @@ from pathlib import Path
 from typing import Type
 
 import dateutil.parser
-
 import numpy as np
 
 from gypsum.units import SampleCount

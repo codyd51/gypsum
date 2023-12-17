@@ -3,8 +3,7 @@ from enum import Enum, auto
 from typing import Callable, Type
 
 from gypsum.acquisition import SatelliteAcquisitionAttemptResult
-from gypsum.antenna_sample_provider import ReceiverTimestampSeconds
-from gypsum.antenna_sample_provider import SampleProviderAttributes
+from gypsum.antenna_sample_provider import ReceiverTimestampSeconds, SampleProviderAttributes
 from gypsum.events import UnknownEventError
 from gypsum.navigation_bit_intergrator import (
     CannotDetermineBitPhaseEvent,
@@ -53,7 +52,7 @@ class GpsSatelliteSignalProcessingPipeline:
         self,
         satellite: GpsSatellite,
         acquisition_result: SatelliteAcquisitionAttemptResult,
-        stream_attributes: SampleProviderAttributes
+        stream_attributes: SampleProviderAttributes,
     ) -> None:
         self.satellite = satellite
         self.state = TrackingState.PROVISIONAL_PROBE
@@ -71,7 +70,12 @@ class GpsSatelliteSignalProcessingPipeline:
         self.navigation_message_decoder = NavigationMessageDecoder()
         self.current_receiver_timestamp = 0.0
 
-    def process_samples(self, receiver_timestamp: ReceiverTimestampSeconds, seconds_since_start: Seconds, samples: AntennaSamplesSpanningOneMs) -> list[Event]:
+    def process_samples(
+        self,
+        receiver_timestamp: ReceiverTimestampSeconds,
+        seconds_since_start: Seconds,
+        samples: AntennaSamplesSpanningOneMs,
+    ) -> list[Event]:
         self.current_receiver_timestamp = receiver_timestamp
         pseudosymbol = self.tracker.process_samples(seconds_since_start, samples)
         # Now that the tracker has run an iteration, allow the visualizer to display the characteristics
@@ -122,9 +126,9 @@ class GpsSatelliteSignalProcessingPipeline:
         decoder_events = self.navigation_message_decoder.process_bit_from_satellite(bit_event)
 
         decoder_event_type_to_callback: dict[Type[Event], Callable[[Event], list[Event] | None]] = {  # type: ignore
-            DeterminedSubframePhaseEvent: self._handle_decoder_determined_subframe_phase,   # type: ignore
-            CannotDetermineSubframePhaseEvent: self._handle_decoder_cannot_determine_subframe_phase,   # type: ignore
-            EmitSubframeEvent: self._handle_decoder_emitted_subframe,   # type: ignore
+            DeterminedSubframePhaseEvent: self._handle_decoder_determined_subframe_phase,  # type: ignore
+            CannotDetermineSubframePhaseEvent: self._handle_decoder_cannot_determine_subframe_phase,  # type: ignore
+            EmitSubframeEvent: self._handle_decoder_emitted_subframe,  # type: ignore
         }
         events_to_return = []
         for event in decoder_events:

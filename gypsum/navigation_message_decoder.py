@@ -8,12 +8,12 @@ from gypsum.navigation_bit_intergrator import EmitNavigationBitEvent
 from gypsum.navigation_message_parser import (
     GpsSubframeId,
     HandoverWord,
+    IncorrectPreludeBitsError,
+    InvalidSubframeIdError,
     NavigationMessageSubframe,
     NavigationMessageSubframeParser,
     TelemetryWord,
 )
-from gypsum.navigation_message_parser import IncorrectPreludeBitsError
-from gypsum.navigation_message_parser import InvalidSubframeIdError
 from gypsum.tracker import BitValue
 from gypsum.utils import get_indexes_of_sublist
 
@@ -38,7 +38,7 @@ class BitPolarity(Enum):
     POSITIVE = auto()
     NEGATIVE = auto()
 
-    def inverse(self) -> 'BitPolarity':
+    def inverse(self) -> "BitPolarity":
         return {
             self.POSITIVE: self.NEGATIVE,
             self.NEGATIVE: self.POSITIVE,
@@ -72,6 +72,7 @@ class EmitSubframeEvent(Event):
 @dataclass
 class NavigationMessageDecoderHistory:
     """TODO(PT): "State" might be a better word, but might imply we should move *all* state here, which would be odd"""
+
     # PT: Looking at it, perhaps we *should* move all state here
     determined_subframe_phase: int | None = None
     emitted_subframe_count: int = 0
@@ -144,8 +145,8 @@ class NavigationMessageDecoder:
                 bit_count_outside_first_subframe_to_discard = self.history.determined_subframe_phase % BITS_PER_SUBFRAME
                 self.queued_bit_events = self.queued_bit_events[bit_count_outside_first_subframe_to_discard:]
                 _logger.info(
-                    f'Identified preamble at bit phase {self.history.determined_subframe_phase} '
-                    f'when probing with bit polarity: {polarity.name}'
+                    f"Identified preamble at bit phase {self.history.determined_subframe_phase} "
+                    f"when probing with bit polarity: {polarity.name}"
                 )
                 break
         else:
@@ -158,11 +159,13 @@ class NavigationMessageDecoder:
                 # and currently has some messy bits in the data)
                 pass
             else:
-                unknown_bit_indexes = [i for i, b in enumerate(self.queued_bit_events) if b.bit_value == BitValue.UNKNOWN]
+                unknown_bit_indexes = [
+                    i for i, b in enumerate(self.queued_bit_events) if b.bit_value == BitValue.UNKNOWN
+                ]
                 unknown_count = len(unknown_bit_indexes)
                 _logger.info(
-                    f'Failed to identify subframe phase in a generous tracking span. '
-                    f'({len(self.queued_bit_events)} bits ({unknown_count} unknown, unknown bit indexes: {unknown_bit_indexes})'
+                    f"Failed to identify subframe phase in a generous tracking span. "
+                    f"({len(self.queued_bit_events)} bits ({unknown_count} unknown, unknown bit indexes: {unknown_bit_indexes})"
                 )
                 events.append(CannotDetermineSubframePhaseEvent())
         return events
@@ -188,8 +191,8 @@ class NavigationMessageDecoder:
                     except Exception as e:
                         # TODO(PT): This will probably break everything because we stop parsing in the middle of a frame...
                         raise
-                        #print(f'*** swallowing exception {e}')
-                        #continue
+                        # print(f'*** swallowing exception {e}')
+                        # continue
                 else:
                     break
 
@@ -211,7 +214,9 @@ class NavigationMessageDecoder:
             # TODO(PT): It'd be pretty neat to be able to parse a subframe that contained unknown bits. Perhaps just
             # a few fields in the subframe could be unreadable due to bad bits, while the rest of the subframe can be
             # kept.
-            _logger.info(f'Skipping subframe that has at least one unknown bit: {failed_bit_count} / {len(subframe_bits)} bits failed')
+            _logger.info(
+                f"Skipping subframe that has at least one unknown bit: {failed_bit_count} / {len(subframe_bits)} bits failed"
+            )
             # We will need to recalculate our polarity.
             # Currently this also involves re-determining the subframe phase, but doesn't need to
             # This is because an unknown bit corresponds to a slip - we're no longer tracking the cycle exactly and there may have been an inversion due to the slip
@@ -219,6 +224,7 @@ class NavigationMessageDecoder:
 
             if failed_bit_count > 150:
                 import gypsum.utils
+
                 gypsum.utils.DEBUG = True
             return None
 

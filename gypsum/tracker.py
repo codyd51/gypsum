@@ -1,33 +1,25 @@
 import collections
 import functools
 import logging
-from typing import Tuple
-
 import math
 from dataclasses import dataclass
 from enum import Enum, auto
+from typing import Tuple
 
 import numpy as np
 
 from gypsum.antenna_sample_provider import SampleProviderAttributes
-from gypsum.config import CONSTELLATION_BASED_FREQUENCY_ADJUSTMENT_MAGNITUDE
-from gypsum.config import CONSTELLATION_BASED_FREQUENCY_ADJUSTMENT_MAXIMUM_ALLOWED_ROTATION
-from gypsum.config import CONSTELLATION_BASED_FREQUENCY_ADJUSTMENT_PERIOD
-from gypsum.config import MAXIMUM_PHASE_ERROR_VARIANCE_FOR_LOCK_STATE
-from gypsum.config import MILLISECONDS_TO_CONSIDER_FOR_TRACKER_LOCK_STATE
+from gypsum.config import (
+    CONSTELLATION_BASED_FREQUENCY_ADJUSTMENT_MAGNITUDE,
+    CONSTELLATION_BASED_FREQUENCY_ADJUSTMENT_MAXIMUM_ALLOWED_ROTATION,
+    CONSTELLATION_BASED_FREQUENCY_ADJUSTMENT_PERIOD,
+    MAXIMUM_PHASE_ERROR_VARIANCE_FOR_LOCK_STATE,
+    MILLISECONDS_TO_CONSIDER_FOR_TRACKER_LOCK_STATE,
+)
 from gypsum.constants import PRN_CHIP_COUNT
 from gypsum.satellite import GpsSatellite
-from gypsum.units import (
-    Seconds,
-    CarrierWavePhaseInRadians,
-    PrnCodePhaseInSamples,
-    CoherentCorrelationPeak,
-)
-from gypsum.utils import (
-    AntennaSamplesSpanningOneMs,
-    DopplerShiftHz,
-    frequency_domain_correlation,
-)
+from gypsum.units import CarrierWavePhaseInRadians, CoherentCorrelationPeak, PrnCodePhaseInSamples, Seconds
+from gypsum.utils import AntennaSamplesSpanningOneMs, DopplerShiftHz, frequency_domain_correlation
 
 _logger = logging.getLogger(__name__)
 
@@ -38,7 +30,7 @@ class BitValue(Enum):
     ONE = auto()
 
     @classmethod
-    def from_val(cls, val: int) -> 'BitValue':
+    def from_val(cls, val: int) -> "BitValue":
         return {
             0: BitValue.ZERO,
             1: BitValue.ONE,
@@ -46,16 +38,16 @@ class BitValue(Enum):
 
     def as_val(self) -> int:
         if self == BitValue.UNKNOWN:
-            raise ValueError(f'Cannot convert an unknown bit value into an integer')
+            raise ValueError(f"Cannot convert an unknown bit value into an integer")
 
         return {
             BitValue.ZERO: 0,
             BitValue.ONE: 1,
         }[self]
 
-    def inverted(self) -> 'BitValue':
+    def inverted(self) -> "BitValue":
         if self == BitValue.UNKNOWN:
-            raise ValueError(f'Cannot invert an unknown bit value')
+            raise ValueError(f"Cannot invert an unknown bit value")
 
         return {
             BitValue.ZERO: BitValue.ONE,
@@ -76,7 +68,7 @@ class NavigationBitPseudosymbol(Enum):
     ONE = auto()
 
     @classmethod
-    def from_val(cls, val: int) -> 'NavigationBitPseudosymbol':
+    def from_val(cls, val: int) -> "NavigationBitPseudosymbol":
         return {
             -1: NavigationBitPseudosymbol.MINUS_ONE,
             1: NavigationBitPseudosymbol.ONE,
@@ -97,6 +89,7 @@ _TRACKER_ITERATIONS_PER_SECOND = 1000
 class GpsSatelliteTrackingParameters:
     """This also maintains state about the tracking history / various tracking metrics.
     This is used both as part of the tracker's fundamental work, and for data visualization."""
+
     satellite: GpsSatellite
     current_doppler_shift: DopplerShiftHz
     current_carrier_wave_phase_shift: CarrierWavePhaseInRadians
@@ -119,7 +112,7 @@ class GpsSatelliteTrackingParameters:
             self.carrier_wave_phase_errors,
         ]:
             if field is not None:
-                raise RuntimeError(f'This field is not intended to be initialized at a call site.')
+                raise RuntimeError(f"This field is not intended to be initialized at a call site.")
         # Maintain a rolling buffer of the last few correlation peaks we've seen. Integrating these peaks over time
         # allows us to track the signal modulation (i.e. in a constellation plot).
         # The tracker runs at 1000Hz, so this represents the last n seconds of tracking.
@@ -178,7 +171,9 @@ class GpsSatelliteTrackingParameters:
 
 
 class GpsSatelliteTracker:
-    def __init__(self, tracking_params: GpsSatelliteTrackingParameters, stream_attributes: SampleProviderAttributes) -> None:
+    def __init__(
+        self, tracking_params: GpsSatelliteTrackingParameters, stream_attributes: SampleProviderAttributes
+    ) -> None:
         self.tracking_params = tracking_params
         self.stream_attributes = stream_attributes
         # PT: Small optimization here. Each time we process a millisecond of samples, we need to generate a time
@@ -186,7 +181,9 @@ class GpsSatelliteTracker:
         # range below, plus a phase offset representing the current offset from when we started tracking. We save work
         # by generating the correctly-spaced range just once upfront, then applying the phase offset for the current
         # time each iteration.
-        self.time_domain_for_1ms = np.arange(stream_attributes.samples_per_prn_transmission) / stream_attributes.samples_per_second
+        self.time_domain_for_1ms = (
+            np.arange(stream_attributes.samples_per_prn_transmission) / stream_attributes.samples_per_second
+        )
 
         self._time_since_last_constellation_rotation_induced_adjustment = 0.0
 
@@ -206,7 +203,7 @@ class GpsSatelliteTracker:
         # which applies to the estimate of the Doppler shifted frequency.
         # Also called 'beta'.
         # This is the 'second order' of the loop (as frequency is the derivative of phase).
-        loop_gain_freq = 4 * (loop_bandwidth ** 2) * time_per_sample
+        loop_gain_freq = 4 * (loop_bandwidth**2) * time_per_sample
 
         return loop_gain_phase, loop_gain_freq
 
@@ -226,12 +223,10 @@ class GpsSatelliteTracker:
         self.tracking_params.current_carrier_wave_phase_shift %= math.tau
         self.tracking_params.current_doppler_shift += error * beta
         self.tracking_params.carrier_wave_phase_errors.append(error)
-        self.tracking_params.correlation_peak_angles.append(np.angle(correlation_peak)) # type: ignore
+        self.tracking_params.correlation_peak_angles.append(np.angle(correlation_peak))  # type: ignore
 
     def _run_prn_code_tracking_loop_iteration(
-        self,
-        seconds_since_start: Seconds,
-        samples: AntennaSamplesSpanningOneMs
+        self, seconds_since_start: Seconds, samples: AntennaSamplesSpanningOneMs
     ) -> Tuple[CoherentCorrelationPeak, NavigationBitPseudosymbol]:
         params = self.tracking_params
         # Adjust the time domain based on our current time
@@ -249,7 +244,7 @@ class GpsSatelliteTracker:
 
         # Correlate early, prompt, and late phase versions of the PRN
         unslid_prn = params.satellite.prn_as_complex
-        prompt_prn = np.roll(unslid_prn, params.current_prn_code_phase_shift)   # type: ignore
+        prompt_prn = np.roll(unslid_prn, params.current_prn_code_phase_shift)  # type: ignore
 
         coherent_prompt_correlation = frequency_domain_correlation(doppler_shifted_samples, prompt_prn)
         non_coherent_prompt_correlation = np.abs(coherent_prompt_correlation)
@@ -280,7 +275,9 @@ class GpsSatelliteTracker:
 
         return coherent_prompt_prn_correlation_peak, navigation_bit_pseudosymbol
 
-    def process_samples(self, seconds_since_start: Seconds, samples: AntennaSamplesSpanningOneMs) -> NavigationBitPseudosymbol:
+    def process_samples(
+        self, seconds_since_start: Seconds, samples: AntennaSamplesSpanningOneMs
+    ) -> NavigationBitPseudosymbol:
         params = self.tracking_params
 
         # First, run an iteration of the PRN code tracking loop
@@ -301,7 +298,10 @@ class GpsSatelliteTracker:
         params.carrier_wave_phases.append(params.current_carrier_wave_phase_shift)
 
         # TODO(PT): Extract the logic to get the rotation of a constellation plot into utils
-        if seconds_since_start - self._time_since_last_constellation_rotation_induced_adjustment >= CONSTELLATION_BASED_FREQUENCY_ADJUSTMENT_PERIOD:
+        if (
+            seconds_since_start - self._time_since_last_constellation_rotation_induced_adjustment
+            >= CONSTELLATION_BASED_FREQUENCY_ADJUSTMENT_PERIOD
+        ):
             self._time_since_last_constellation_rotation_induced_adjustment = seconds_since_start
             points = np.array(self.tracking_params.correlation_peaks_rolling_buffer)
             points_on_left_pole = points[points.real < 0]
@@ -314,7 +314,7 @@ class GpsSatelliteTracker:
 
                 if abs(rotation) > CONSTELLATION_BASED_FREQUENCY_ADJUSTMENT_MAXIMUM_ALLOWED_ROTATION:
                     adjustment = -np.sign(rotation) * CONSTELLATION_BASED_FREQUENCY_ADJUSTMENT_MAGNITUDE
-                    print(f'** Adjusting by {adjustment}')
+                    print(f"** Adjusting by {adjustment}")
                     self.tracking_params.current_doppler_shift += adjustment
 
         return navigation_bit_pseudosymbol

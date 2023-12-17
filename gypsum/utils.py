@@ -5,11 +5,13 @@ from typing import Any, Collection, Iterator, TypeVar
 import numpy as np
 
 from gypsum.antenna_sample_provider import SampleProviderAttributes
-from gypsum.units import AntennaSamplesSpanningAcquisitionIntegrationPeriodMs
-from gypsum.units import AntennaSamplesSpanningOneMs
-from gypsum.units import CorrelationProfile
-from gypsum.units import DopplerShiftHz
-from gypsum.units import PrnReplicaCodeSamplesSpanningOneMs
+from gypsum.units import (
+    AntennaSamplesSpanningAcquisitionIntegrationPeriodMs,
+    AntennaSamplesSpanningOneMs,
+    CorrelationProfile,
+    DopplerShiftHz,
+    PrnReplicaCodeSamplesSpanningOneMs,
+)
 
 _IterType = TypeVar("_IterType")
 
@@ -30,7 +32,7 @@ def chunks(li: Collection[_IterType], chunk_size: int, step: int | None = None) 
         if len(li) - i < chunk_size:
             # print(f'breaking because were on the last chunk, len={len(li)}, chunk_size={chunk_size}, i={i}')
             break
-        yield li[i : i + chunk_size]    # type: ignore
+        yield li[i : i + chunk_size]  # type: ignore
 
 
 def round_to_previous_multiple_of(val: int, multiple: int) -> int:
