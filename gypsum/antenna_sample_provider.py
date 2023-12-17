@@ -70,6 +70,7 @@ class AntennaSampleProviderBackedByFile(AntennaSampleProvider):
         self.cursor = 0
         self.sample_rate = file_info.sdr_sample_rate
         self.utc_start_time = file_info.utc_start_time.timestamp()
+        self.sample_component_data_type = file_info.sample_component_data_type
 
     def seconds_since_start(self) -> Seconds:
         timestamp_in_seconds_since_start = self.cursor / self.sample_rate
@@ -84,11 +85,11 @@ class AntennaSampleProviderBackedByFile(AntennaSampleProvider):
 
         words = np.fromfile(
             self.path.as_posix(),
-            dtype=np.float32,
+            dtype=self.sample_component_data_type,
             # We have interleaved IQ samples, so the number of words to read will be the sample count * 2
             count=sample_count * 2,
             # Note the change in units: `count` is specified in terms of `dtype`, while `offset` is in bytes.
-            offset=self.cursor * 2 * np.dtype(np.float32).itemsize,
+            offset=self.cursor * 2 * np.dtype(self.sample_component_data_type).itemsize,
         )
         # Recombine the inline IQ samples into complex values
         iq_samples = (words[0::2]) + (1j * words[1::2])
