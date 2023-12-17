@@ -32,6 +32,10 @@ def _get_twos_complement(num: int, bit_count: int) -> int:
     return num - (1 << bit_count)
 
 
+class IncorrectPreludeBitsError(Exception):
+    pass
+
+
 class GpsSubframeId(Enum):
     ONE = auto()
     TWO = auto()
@@ -381,7 +385,10 @@ class NavigationMessageSubframeParser:
         tlm_prelude = [1, 0, 0, 0, 1, 0, 1, 1]
         # TODO(PT): We need to be able to tell if the polarity of the bits has just flipped?
         # Maybe we could do it each time we detect some kind of cycle slip?
-        self.match_bits(tlm_prelude)
+        try:
+            self.match_bits(tlm_prelude)
+        except ValueError:
+            raise IncorrectPreludeBitsError()
         telemetry_message = self.get_bits(14)
         integrity_status_flag = self.get_bit()
         spare_bit = self.get_bit()
