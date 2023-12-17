@@ -81,7 +81,8 @@ class GpsReceiver:
         # If we need to perform acquisition, do so now
         seconds_since_start = self.antenna_samples_provider.seconds_since_start()
         if (
-            seconds_since_start - self._time_since_last_acquisition_scan
+            seconds_since_start == 0
+            or seconds_since_start - self._time_since_last_acquisition_scan
             >= ACQUISITION_SCAN_FREQUENCY
         ):
             # Update the timestamp even if we decide not to try to acquire more satellites
@@ -201,6 +202,7 @@ class GpsReceiver:
                     current_state=GpsReceiverState(
                         receiver_timestamp=receiver_timestamp,
                         satellite_ids_eligible_for_acquisition=self.satellite_ids_eligible_for_acquisition,
+                        dashboard_figures=[x.tracker_visualizer.rendered_dashboard_png_base64 for x in self.tracked_satellite_ids_to_processing_pipelines.values()],
                     )
                 ).model_dump_json()
             )
@@ -217,8 +219,9 @@ class GpsReceiver:
         # No work to do if we haven't waited long enough since our last scan
         seconds_since_start = self.antenna_samples_provider.seconds_since_start()
         if (
-                seconds_since_start - self._time_since_last_dashboard_server_scan
-                < DASHBOARD_WEBSERVER_SCAN_PERIOD
+            seconds_since_start == 0
+            or seconds_since_start - self._time_since_last_dashboard_server_scan
+            < DASHBOARD_WEBSERVER_SCAN_PERIOD
         ):
             return
 
