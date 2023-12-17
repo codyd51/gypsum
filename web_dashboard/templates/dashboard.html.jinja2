@@ -19,4 +19,9 @@
             <li>{{ sat_id }}</li>
         {% endfor %}
     </ul>
+    <ul>
+        {% for dashboard_image_base64 in state.dashboard_figures %}
+            <li><img src="data:image/png;base64, {{ dashboard_image_base64 }}" alt="matplotlib figure visualizing statistics, metrics, and graphs concerning the process of decoding a particular GPS satellite signal from the incoming antenna data." /></li>
+        {% endfor %}
+    </ul>
 {% endblock %}

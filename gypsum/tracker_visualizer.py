@@ -1,3 +1,5 @@
+import base64
+import io
 import logging
 import math
 from dataclasses import dataclass
@@ -169,8 +171,8 @@ class GpsSatelliteTrackerVisualizer:
             return
 
         # Enable interactive mode if not already done
-        if not plt.isinteractive():
-            plt.ion()
+        #if not plt.isinteractive():
+        #    plt.ion()
 
         self.visualizer_figure = plt.figure(figsize=(11, 6))
         self.visualizer_figure.suptitle(f"Satellite #{satellite_id.id} Tracking Dashboard")
@@ -190,6 +192,9 @@ class GpsSatelliteTrackerVisualizer:
 
         # All done, request tight layout
         self.grid_spec.tight_layout(self.visualizer_figure)
+
+        # Each step, the dashboard will be re-rendered and persisted here.
+        self.rendered_dashboard_png_base64: str = ''
 
     def _redraw_subplot_titles(self):
         """Unfortunately, plt.Axes.clear() also erases the subplot title.
@@ -360,4 +365,12 @@ class GpsSatelliteTrackerVisualizer:
 
         # We've just erased some of our axes titles via plt.Axes.clear(), so redraw them.
         self._redraw_subplot_titles()
-        plt.pause(0.001)
+        #plt.pause(0.001)
+
+        # Raster the figure to a base64-encoded image, so it can be rendered in the dashboard webserver.
+        pixel_buffer = io.BytesIO()
+        self.visualizer_figure.savefig(pixel_buffer, format="png")
+        pixel_buffer.seek(0)
+        figure_as_png = pixel_buffer.getvalue()
+        pixel_buffer.close()
+        self.rendered_dashboard_png_base64 = base64.b64encode(figure_as_png).decode('utf-8')
