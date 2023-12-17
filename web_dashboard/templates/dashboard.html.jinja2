@@ -6,27 +6,73 @@
 
 {% block content %}
     <style>
-        #tracker_visualizers {
+        .tracker_visualizers_iframe {
             width: 100%;
             height: 800px;
+            border-width: 0;
+        }
+
+        #tracker-visualizers1 {
+            visibility: visible;
+            max-height: inherit;
+        }
+
+        #tracker-visualizers2 {
+            visibility: hidden;
+            max-height: 0;
         }
     </style>
 
     <script>
         console.log(`Running script!`);
+
+        let _activeTrackerVisualizersIframe = undefined;
+        let _inactiveTrackerVisualizersIframe = undefined;
+
         window.setInterval("reloadTrackerVisualizers();", 1000);
 
         function reloadTrackerVisualizers() {
-            console.log(`Running reload!`);
-            document.getElementById("tracker_visualizers").contentWindow.location.reload();
+            // First reload, set up references
+            if (_activeTrackerVisualizersIframe == undefined) {
+                console.log(`setting up first time`);
+                _activeTrackerVisualizersIframe = document.getElementById("tracker-visualizers1");
+                _activeTrackerVisualizersIframe.style.visibility = "visible";
+
+                _inactiveTrackerVisualizersIframe = document.getElementById("tracker-visualizers2");
+                _inactiveTrackerVisualizersIframe.style.visibility = "hidden";
+            }
+
+            // Swap the active and inactive iframe references.
+            let tmp = _activeTrackerVisualizersIframe;
+            _activeTrackerVisualizersIframe = _inactiveTrackerVisualizersIframe;
+            _inactiveTrackerVisualizersIframe = tmp;
+
+            // Swap out which iframe is displayed.
+            // This is to prevent a white flicker while refreshing the iframe.
+            const container = document.getElementById('tracker-visualizers-iframe-container');
+            container.removeChild(_inactiveTrackerVisualizersIframe);
+            _activeTrackerVisualizersIframe.style.visibility = "visible";
+            _activeTrackerVisualizersIframe.style.maxHeight = "inherit";
+            _activeTrackerVisualizersIframe.style.height = _activeTrackerVisualizersIframe.contentWindow.document.documentElement.scrollHeight + 'px';
+
+            container.appendChild(_inactiveTrackerVisualizersIframe);
+            _inactiveTrackerVisualizersIframe.style.visibility = "hidden";
+            _inactiveTrackerVisualizersIframe.style.maxHeight = "0";
+
+            // Refresh the iframe that's just been swapped offscreen
+            // _inactiveTrackerVisualizersIframe.contentWindow.location.reload();
         }
+
     </script>
 
     <h1>
         Receiver timestamp: {{ state.receiver_timestamp }}
     </h1>
 
-    <iframe id="tracker_visualizers" src="/tracker_visualizers"></iframe>
+    <div id="tracker-visualizers-iframe-container">
+        <iframe class="tracker_visualizers_iframe" id="tracker-visualizers1" src="/tracker_visualizers"></iframe>
+        <iframe class="tracker_visualizers_iframe" id="tracker-visualizers2" src="/tracker_visualizers"></iframe>
+    </div>
     <h1>
         Satellite IDs eligible for acquisition:
     </h1>

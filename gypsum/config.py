@@ -52,6 +52,6 @@ RECALCULATE_PSEUDOSYMBOL_PHASE_BIT_HEALTH_MEMORY_SIZE = 10
 RECALCULATE_PSEUDOSYMBOL_PHASE_BIT_HEALTH_THRESHOLD: Percent = 50
 
 # Controls how often the receiver will check to see if the dashboard webserver is up and awaiting updates
-DASHBOARD_WEBSERVER_SCAN_PERIOD: Seconds = 10
+DASHBOARD_WEBSERVER_SCAN_PERIOD: Seconds = 3
 # The URL where the dashboard webapp is hosted. In the future, this will be determined automatically.
 DASHBOARD_WEBSERVER_URL = "http://0.0.0.0:8080/"
