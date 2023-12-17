@@ -263,10 +263,11 @@ class GpsSatelliteTracker:
         else:
             centered_non_coherent_prompt_peak_offset = non_coherent_prompt_peak_offset - samples_per_prn_transmission
 
+        spacing = (samples_per_prn_transmission // PRN_CHIP_COUNT) // 2
         if centered_non_coherent_prompt_peak_offset > 0:
-            params.current_prn_code_phase_shift += 1
+            params.current_prn_code_phase_shift += spacing
         elif centered_non_coherent_prompt_peak_offset < 0:
-            params.current_prn_code_phase_shift -= 1
+            params.current_prn_code_phase_shift -= spacing
 
         # Finally, ensure we're always sliding within one PRN transmission
         params.current_prn_code_phase_shift = int(params.current_prn_code_phase_shift) % samples_per_prn_transmission
