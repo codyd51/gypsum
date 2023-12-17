@@ -28,11 +28,12 @@ class GpsReceiver:
             satellite_id: GpsSatellite(
                 satellite_id=satellite_id,
                 prn_code=code,
-                scale_factor=antenna_samples_provider.samples_per_prn_transmission() // 1023,
+                scale_factor=antenna_samples_provider.get_attributes().samples_per_prn_transmission // PRN_CHIP_COUNT,
             )
             for satellite_id, code in satellites_to_replica_prn_signals.items()
         }
         # TODO(PT): Perhaps this state should belong to the detector.
+        # And further, perhaps it should be somewhere easy to configure?
         # The receiver can remove satellites from the pool when it decides a satellite has been acquired
         # self.satellite_ids_eligible_for_acquisition = deepcopy(ALL_SATELLITE_IDS)
         # PT: The phase isn't about the chip offset, it's about "the timestamp of where the PRN starts"
@@ -55,8 +56,9 @@ class GpsReceiver:
         """Run one 'iteration' of the GPS receiver. This consumes one millisecond of antenna data."""
         receiver_timestamp: ReceiverTimestampSeconds
         samples: AntennaSamplesSpanningOneMs
+        # TODO(PT): Cache this somewhere?
         receiver_timestamp, samples = self.antenna_samples_provider.get_samples(
-            self.antenna_samples_provider.samples_per_prn_transmission()
+            self.antenna_samples_provider.get_attributes().samples_per_prn_transmission,
         )
         # receiver_timestamp, samples = self.antenna_samples_provider.get_samples(SAMPLES_PER_PRN_TRANSMISSION)
         # Firstly, record this sample in our rolling buffer
