@@ -8,7 +8,6 @@ from gypsum.acquisition import GpsSatelliteDetector
 from gypsum.antenna_sample_provider import AntennaSampleProvider
 from gypsum.antenna_sample_provider import ReceiverTimestampSeconds
 from gypsum.config import ACQUISITION_INTEGRATION_PERIOD_MS
-from gypsum.constants import SAMPLES_PER_PRN_TRANSMISSION
 from gypsum.gps_ca_prn_codes import GpsSatelliteId, generate_replica_prn_signals
 from gypsum.navigation_bit_intergrator import Event
 from gypsum.navigation_message_decoder import EmitSubframeEvent
@@ -56,7 +55,8 @@ class GpsReceiver:
         """Run one 'iteration' of the GPS receiver. This consumes one millisecond of antenna data."""
         receiver_timestamp: ReceiverTimestampSeconds
         samples: AntennaSamplesSpanningOneMs
-        receiver_timestamp, samples = self.antenna_samples_provider.get_samples(SAMPLES_PER_PRN_TRANSMISSION)
+        receiver_timestamp, samples = self.antenna_samples_provider.get_samples(self.antenna_samples_provider.samples_per_prn_transmission())
+        #receiver_timestamp, samples = self.antenna_samples_provider.get_samples(SAMPLES_PER_PRN_TRANSMISSION)
         # Firstly, record this sample in our rolling buffer
         self.rolling_samples_buffer.append(samples)
 
@@ -119,12 +119,13 @@ class GpsReceiver:
         newly_acquired_satellites = self.satellite_detector.detect_satellites_in_antenna_data(
             satellite_ids,
             samples_for_integration_period,
+            self.antenna_samples_provider.get_attributes(),
         )
         for satellite_acquisition_result in newly_acquired_satellites:
             sat_id = satellite_acquisition_result.satellite_id
             satellite = self.satellites_by_id[sat_id]
             self.tracked_satellite_ids_to_processing_pipelines[sat_id] = GpsSatelliteSignalProcessingPipeline(
-                satellite, satellite_acquisition_result
+                satellite, satellite_acquisition_result, self.antenna_samples_provider.get_attributes()
             )
         return [n.satellite_id for n in newly_acquired_satellites]
 

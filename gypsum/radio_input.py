@@ -2,9 +2,13 @@ import datetime
 from dataclasses import dataclass
 from enum import Enum, auto
 from pathlib import Path
+from typing import Type
+
 import dateutil.parser
 
 import numpy as np
+
+from gypsum.units import SampleCount
 
 
 class InputFileType(Enum):
@@ -17,13 +21,9 @@ class InputFileType(Enum):
 class InputFileInfo:
     path: Path
     format: InputFileType
-    sdr_sample_rate: float
+    sdr_sample_rate: SampleCount
     utc_start_time: datetime.datetime
-
-    @property
-    def samples_in_prn_period(self) -> int:
-        """The PRN period is 1ms, and is retransmitted by GPS satellites continuously"""
-        return int(self.sdr_sample_rate // 1000)
+    sample_component_data_type: Type[np.number]
 
 
 # TODO(PT): In the future, this can be extended to provide an input representing a live radio
@@ -33,36 +33,41 @@ INPUT_SOURCES = [
     InputFileInfo(
         path=Path(__file__).parents[1] / "vendored_signals" / "2013_04_04_GNSS_SIGNAL_at_CTTC_SPAIN.dat",
         format=InputFileType.Raw,
-        sdr_sample_rate=4e6,
+        sdr_sample_rate=int(4e6),
         utc_start_time=datetime.datetime.utcnow(),
+        sample_component_data_type=np.float32,
     ),
     InputFileInfo(
         path=Path(__file__).parents[1] / "vendored_signals" / "baseband_1575420000Hz_16-12-07_07-10-2023.wav",
         format=InputFileType.Wav,
-        sdr_sample_rate=2.4e6,
+        sdr_sample_rate=int(2.4e6),
         utc_start_time=datetime.datetime.utcnow(),
+        sample_component_data_type=np.float32,
     ),
     InputFileInfo(
         path=Path(__file__).parents[1] / "vendored_signals" / "phillip.wav",
         format=InputFileType.Wav,
-        sdr_sample_rate=2.4e6,
+        sdr_sample_rate=int(2.4e6),
         utc_start_time=datetime.datetime.utcnow(),
+        sample_component_data_type=np.float32,
     ),
     InputFileInfo(
         path=Path(__file__).parents[1]
         / "vendored_signals"
         / "baseband_1575136000Hz_22-52-15_10-10-2023_Int16_BiasT_TunerAGC_IQCorrection_100PPMCorrection.wav",
         format=InputFileType.Wav,
-        sdr_sample_rate=2.4e6,
+        sdr_sample_rate=int(2.4e6),
         utc_start_time=datetime.datetime.utcnow(),
+        sample_component_data_type=np.float32,
     ),
     InputFileInfo(
         path=Path(__file__).parents[1]
         / "vendored_signals"
         / "baseband_1575420000Hz_23-21-28_10-10-2023_2048mhz_sample_rate.wav",
         format=InputFileType.Wav,
-        sdr_sample_rate=2.048e6,
+        sdr_sample_rate=int(2.048e6),
         utc_start_time=datetime.datetime.utcnow(),
+        sample_component_data_type=np.float32,
     ),
     InputFileInfo(
         path=Path(__file__).parents[1] / "vendored_signals" / "output_at_seven_wives",
@@ -70,6 +75,7 @@ INPUT_SOURCES = [
         # 2 * C/A PRN chip rate * 1k PRN repetitions per second
         sdr_sample_rate=2 * 1023 * 1000,
         utc_start_time=datetime.datetime.utcnow(),
+        sample_component_data_type=np.float32,
     ),
     InputFileInfo(
         # Satellites that should be up now (distances taken a few minutes after recording):
@@ -110,6 +116,7 @@ INPUT_SOURCES = [
         # 2 * C/A PRN chip rate * 1k PRN repetitions per second
         sdr_sample_rate=2 * 1023 * 1000,
         utc_start_time=datetime.datetime.utcnow(),
+        sample_component_data_type=np.float32,
     ),
     InputFileInfo(
         path=Path(__file__).parents[1] / "vendored_signals" / "nov_3_time_18_48_roof",
@@ -117,6 +124,7 @@ INPUT_SOURCES = [
         # 2 * C/A PRN chip rate * 1k PRN repetitions per second
         sdr_sample_rate=2 * 1023 * 1000,
         utc_start_time=dateutil.parser.parse("2023-11-03T18:48:00+00:00"),
+        sample_component_data_type=np.float32,
     ),
     InputFileInfo(
         path=Path(__file__).parents[1] / "vendored_signals" / "nov_30_15_00_30",
@@ -131,6 +139,7 @@ INPUT_SOURCES = [
         # 24 @ 1198Hz
         # 25 @ 6305Hz
         # 32 @ 5740Hz
+        sample_component_data_type=np.float32,
     ),
     InputFileInfo(
         path=Path(__file__).parents[1] / "vendored_signals" / "nov_30_15_04_10",
@@ -138,6 +147,7 @@ INPUT_SOURCES = [
         # 2 * C/A PRN chip rate * 1k PRN repetitions per second
         sdr_sample_rate=2 * 1023 * 1000,
         utc_start_time=datetime.datetime.fromtimestamp(1701356651.195427381),
+        sample_component_data_type=np.float32,
         # Visible sats appear to be:
         # 10 @ 1087Hz?
         # 12 @ 4478Hz
@@ -153,6 +163,7 @@ INPUT_SOURCES = [
         # 2 * C/A PRN chip rate * 1k PRN repetitions per second
         sdr_sample_rate=2 * 1023 * 1000,
         utc_start_time=datetime.datetime.fromtimestamp(1701358453.379840235),
+        sample_component_data_type=np.float32,
         # Visible sats appear to be:
         # 10 @ 287Hz
         # 12 @ 3386Hz
@@ -165,6 +176,7 @@ INPUT_SOURCES = [
         format=InputFileType.GnuRadioRecording,
         sdr_sample_rate=2 * 1023 * 1000,
         utc_start_time=datetime.datetime.fromtimestamp(1701421949.998035396),
+        sample_component_data_type=np.float32,
         # Visible sats appear to be:
         # 29 @ 973Hz, 97 -- maybe too low? Appears to be lost in short order
         # 7 @ 2248Hz, 121

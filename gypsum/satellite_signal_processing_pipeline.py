@@ -4,6 +4,7 @@ from typing import Callable, Type
 
 from gypsum.acquisition import SatelliteAcquisitionAttemptResult
 from gypsum.antenna_sample_provider import ReceiverTimestampSeconds
+from gypsum.antenna_sample_provider import SampleProviderAttributes
 from gypsum.events import UnknownEventError
 from gypsum.navigation_bit_intergrator import (
     CannotDetermineBitPhaseEvent,
@@ -48,7 +49,12 @@ class GpsSatelliteSignalProcessingPipeline:
     pseudosymbol_integrator: NavigationBitIntegrator
     navigation_message_decoder: NavigationMessageDecoder
 
-    def __init__(self, satellite: GpsSatellite, acquisition_result: SatelliteAcquisitionAttemptResult) -> None:
+    def __init__(
+        self,
+        satellite: GpsSatellite,
+        acquisition_result: SatelliteAcquisitionAttemptResult,
+        stream_attributes: SampleProviderAttributes
+    ) -> None:
         self.satellite = satellite
         self.state = TrackingState.PROVISIONAL_PROBE
         tracking_params = GpsSatelliteTrackingParameters(
@@ -59,7 +65,7 @@ class GpsSatelliteSignalProcessingPipeline:
             doppler_shifts=[],
             navigation_bit_pseudosymbols=[],
         )
-        self.tracker = GpsSatelliteTracker(tracking_params)
+        self.tracker = GpsSatelliteTracker(tracking_params, stream_attributes)
         self.tracker_visualizer = GpsSatelliteTrackerVisualizer(satellite.satellite_id, should_display=True)
         self.pseudosymbol_integrator = NavigationBitIntegrator()
         self.navigation_message_decoder = NavigationMessageDecoder()

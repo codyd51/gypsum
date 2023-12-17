@@ -8,6 +8,8 @@ Radians = float
 Degrees = float
 Percent = float
 
+SampleCount = int
+
 AntennaSamplesSpanningAcquisitionIntegrationPeriodMs = np.ndarray
 AntennaSamplesSpanningOneMs = np.ndarray
 PrnReplicaCodeSamplesSpanningOneMs = np.ndarray

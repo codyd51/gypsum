@@ -4,6 +4,7 @@ from typing import Any
 
 import numpy as np
 
+from gypsum.antenna_sample_provider import SampleProviderAttributes
 from gypsum.config import ACQUISITION_INTEGRATED_CORRELATION_STRENGTH_DETECTION_THRESHOLD
 from gypsum.gps_ca_prn_codes import GpsSatelliteId
 from gypsum.satellite import GpsSatellite
@@ -42,7 +43,10 @@ class SatelliteAcquisitionAttemptResult:
 
 
 class GpsSatelliteDetector:
-    def __init__(self, satellites_by_id: dict[GpsSatelliteId, GpsSatellite]) -> None:
+    def __init__(
+        self,
+        satellites_by_id: dict[GpsSatelliteId, GpsSatellite],
+    ) -> None:
         self.satellites_by_id = satellites_by_id
         self._cached_correlation_profiles: dict[Any, CorrelationProfile] = {}
 
@@ -50,12 +54,14 @@ class GpsSatelliteDetector:
         self,
         satellites_to_search_for: list[GpsSatelliteId],
         antenna_data: AntennaSamplesSpanningAcquisitionIntegrationPeriodMs,
+        stream_attributes: SampleProviderAttributes,
     ) -> list[SatelliteAcquisitionAttemptResult]:
         detected_satellites = []
         for satellite_id in satellites_to_search_for:
             result = self._attempt_acquisition_for_satellite_id(
                 satellite_id,
                 antenna_data,
+                stream_attributes,
             )
             if result.correlation_strength > ACQUISITION_INTEGRATED_CORRELATION_STRENGTH_DETECTION_THRESHOLD:
                 _logger.info(f"Correlation strength above threshold, successfully detected satellite {satellite_id}!")
@@ -66,6 +72,7 @@ class GpsSatelliteDetector:
         self,
         satellite_id: GpsSatelliteId,
         samples_for_integration_period: AntennaSamplesSpanningAcquisitionIntegrationPeriodMs,
+        stream_attributes: SampleProviderAttributes,
     ) -> SatelliteAcquisitionAttemptResult:
         _logger.info(f"Attempting acquisition of {satellite_id}...")
         best_non_coherent_correlation_profile_across_all_search_space = None
@@ -77,6 +84,7 @@ class GpsSatelliteDetector:
                 center_doppler_shift_estimation,
                 doppler_frequency_estimation_spread,
                 samples_for_integration_period,
+                stream_attributes,
                 satellite_id,
             )
             doppler_frequency_estimation_spread /= 2
@@ -116,6 +124,7 @@ class GpsSatelliteDetector:
         coherent_correlation_profile = self.get_integrated_correlation_with_doppler_shifted_prn(
             IntegrationType.Coherent,
             samples_for_integration_period,
+            stream_attributes,
             best_doppler_shift,
             self.satellites_by_id[satellite_id].prn_as_complex, # type: ignore
         )
@@ -149,6 +158,7 @@ class GpsSatelliteDetector:
         center_doppler_shift: float,
         doppler_shift_spread: float,
         antenna_data: AntennaSamplesSpanningAcquisitionIntegrationPeriodMs,
+        stream_attributes: SampleProviderAttributes,
         satellite_id: GpsSatelliteId,
     ) -> BestNonCoherentCorrelationProfile:
         doppler_shift_to_correlation_profile = {}
@@ -162,8 +172,9 @@ class GpsSatelliteDetector:
                 # This will give us the strongest SNR possible to detect peaks.
                 IntegrationType.NonCoherent,
                 antenna_data,
+                stream_attributes,
                 doppler_shift,
-                self.satellites_by_id[satellite_id].prn_as_complex, # type: ignore
+                self.satellites_by_id[satellite_id].prn_as_complex,     # type: ignore
             )
             doppler_shift_to_correlation_profile[doppler_shift] = correlation_profile
 
@@ -185,6 +196,7 @@ class GpsSatelliteDetector:
         self,
         integration_type: IntegrationType,
         antenna_data: AntennaSamplesSpanningAcquisitionIntegrationPeriodMs,
+        stream_attributes: SampleProviderAttributes,
         doppler_shift: DopplerShiftHz,
         prn_as_complex: PrnReplicaCodeSamplesSpanningOneMs,
     ) -> CorrelationProfile:
@@ -201,6 +213,7 @@ class GpsSatelliteDetector:
         correlation_profile = integrate_correlation_with_doppler_shifted_prn(
             integration_type,
             antenna_data,
+            stream_attributes,
             doppler_shift,
             prn_as_complex,
         )

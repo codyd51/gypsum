@@ -9,12 +9,13 @@ from enum import Enum, auto
 
 import numpy as np
 
+from gypsum.antenna_sample_provider import SampleProviderAttributes
 from gypsum.config import CONSTELLATION_BASED_FREQUENCY_ADJUSTMENT_MAGNITUDE
 from gypsum.config import CONSTELLATION_BASED_FREQUENCY_ADJUSTMENT_MAXIMUM_ALLOWED_ROTATION
 from gypsum.config import CONSTELLATION_BASED_FREQUENCY_ADJUSTMENT_PERIOD
 from gypsum.config import MAXIMUM_PHASE_ERROR_VARIANCE_FOR_LOCK_STATE
 from gypsum.config import MILLISECONDS_TO_CONSIDER_FOR_TRACKER_LOCK_STATE
-from gypsum.constants import SAMPLES_PER_PRN_TRANSMISSION, SAMPLES_PER_SECOND
+from gypsum.constants import PRN_CHIP_COUNT
 from gypsum.satellite import GpsSatellite
 from gypsum.units import (
     Seconds,
@@ -177,21 +178,22 @@ class GpsSatelliteTrackingParameters:
 
 
 class GpsSatelliteTracker:
-    def __init__(self, tracking_params: GpsSatelliteTrackingParameters) -> None:
+    def __init__(self, tracking_params: GpsSatelliteTrackingParameters, stream_attributes: SampleProviderAttributes) -> None:
         self.tracking_params = tracking_params
+        self.stream_attributes = stream_attributes
         # PT: Small optimization here. Each time we process a millisecond of samples, we need to generate a time
         # domain representing the time offset of the samples from when we began tracking. This involves creating the
         # range below, plus a phase offset representing the current offset from when we started tracking. We save work
         # by generating the correctly-spaced range just once upfront, then applying the phase offset for the current
         # time each iteration.
-        self.time_domain_for_1ms = np.arange(SAMPLES_PER_PRN_TRANSMISSION) / SAMPLES_PER_SECOND
+        self.time_domain_for_1ms = np.arange(stream_attributes.samples_per_prn_transmission) / stream_attributes.samples_per_second
 
         self._time_since_last_constellation_rotation_induced_adjustment = 0.0
 
     # We only have two PLL modes, so an LRU cache with 2 entries should be sufficient.
     @functools.lru_cache(maxsize=2)
     def _calculate_loop_filter_alpha_and_beta(self, loop_bandwidth: float) -> Tuple[float, float]:
-        time_per_sample = 1.0 / SAMPLES_PER_SECOND
+        time_per_sample = 1.0 / self.stream_attributes.samples_per_second
         # Common choice for zeta, considered optimal
         damping_factor = 1.0 / math.sqrt(2)
 
@@ -255,10 +257,11 @@ class GpsSatelliteTracker:
 
         # Recenter the code phase offset so that it looks positive or negative, depending on where the offset sits
         # in the period of the PRN.
-        if non_coherent_prompt_peak_offset <= SAMPLES_PER_PRN_TRANSMISSION / 2:
+        samples_per_prn_transmission = self.stream_attributes.samples_per_prn_transmission
+        if non_coherent_prompt_peak_offset <= samples_per_prn_transmission / 2:
             centered_non_coherent_prompt_peak_offset = non_coherent_prompt_peak_offset
         else:
-            centered_non_coherent_prompt_peak_offset = non_coherent_prompt_peak_offset - SAMPLES_PER_PRN_TRANSMISSION
+            centered_non_coherent_prompt_peak_offset = non_coherent_prompt_peak_offset - samples_per_prn_transmission
 
         if centered_non_coherent_prompt_peak_offset > 0:
             params.current_prn_code_phase_shift += 1
@@ -266,7 +269,7 @@ class GpsSatelliteTracker:
             params.current_prn_code_phase_shift -= 1
 
         # Finally, ensure we're always sliding within one PRN transmission
-        params.current_prn_code_phase_shift = int(params.current_prn_code_phase_shift) % SAMPLES_PER_PRN_TRANSMISSION
+        params.current_prn_code_phase_shift = int(params.current_prn_code_phase_shift) % samples_per_prn_transmission
 
         coherent_prompt_prn_correlation_peak = coherent_prompt_correlation[non_coherent_prompt_peak_offset]
 

@@ -4,7 +4,7 @@ from typing import Any, Collection, Iterator, TypeVar
 
 import numpy as np
 
-from gypsum.constants import SAMPLES_PER_PRN_TRANSMISSION, SAMPLES_PER_SECOND
+from gypsum.antenna_sample_provider import SampleProviderAttributes
 from gypsum.units import AntennaSamplesSpanningAcquisitionIntegrationPeriodMs
 from gypsum.units import AntennaSamplesSpanningOneMs
 from gypsum.units import CorrelationProfile
@@ -72,6 +72,7 @@ def frequency_domain_correlation(
 def integrate_correlation_with_doppler_shifted_prn(
     integration_type: IntegrationType,
     antenna_data: AntennaSamplesSpanningAcquisitionIntegrationPeriodMs,
+    stream_attributes: SampleProviderAttributes,
     doppler_shift: DopplerShiftHz,
     prn_as_complex: PrnReplicaCodeSamplesSpanningOneMs,
 ) -> CorrelationProfile:
@@ -79,11 +80,13 @@ def integrate_correlation_with_doppler_shifted_prn(
         IntegrationType.Coherent: complex,
         IntegrationType.NonCoherent: np.float64,
     }[integration_type]
-    integrated_correlation_result: np.ndarray = np.zeros(SAMPLES_PER_PRN_TRANSMISSION, dtype=correlation_data_type)
-    for i, chunk_that_may_contain_one_prn in enumerate(chunks(antenna_data, SAMPLES_PER_PRN_TRANSMISSION)):
-        sample_index = i * SAMPLES_PER_PRN_TRANSMISSION
-        integration_time_domain = (np.arange(SAMPLES_PER_PRN_TRANSMISSION) / SAMPLES_PER_SECOND) + (
-            sample_index / SAMPLES_PER_SECOND
+    samples_per_second = stream_attributes.samples_per_second
+    samples_per_prn_transmission = stream_attributes.samples_per_prn_transmission
+    integrated_correlation_result: np.ndarray = np.zeros(samples_per_prn_transmission, dtype=correlation_data_type)
+    for i, chunk_that_may_contain_one_prn in enumerate(chunks(antenna_data, samples_per_prn_transmission)):
+        sample_index = i * samples_per_prn_transmission
+        integration_time_domain = (np.arange(samples_per_prn_transmission) / samples_per_second) + (
+            sample_index / samples_per_second
         )
         doppler_shift_carrier = np.exp(-1j * math.tau * doppler_shift * integration_time_domain)
         doppler_shifted_antenna_data_chunk = chunk_that_may_contain_one_prn * doppler_shift_carrier
