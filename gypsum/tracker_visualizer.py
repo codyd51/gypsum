@@ -263,6 +263,7 @@ class GpsSatelliteTrackerVisualizer:
         # _logger.info(f'Seconds since start: {seconds_since_start} ({locked_state}), Variance {variance:.2f}')
 
         params = current_tracking_params
+        self.graph_for_type(GraphTypeEnum.DOPPLER_SHIFT).clear()
         self.graph_for_type(GraphTypeEnum.DOPPLER_SHIFT).plot(params.doppler_shifts[::10])
 
         points = np.array(params.correlation_peaks_rolling_buffer)
