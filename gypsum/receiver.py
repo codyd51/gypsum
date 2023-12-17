@@ -7,6 +7,9 @@ import numpy as np
 from gypsum.acquisition import GpsSatelliteDetector
 from gypsum.antenna_sample_provider import AntennaSampleProvider, ReceiverTimestampSeconds
 from gypsum.config import ACQUISITION_INTEGRATION_PERIOD_MS
+from gypsum.config import ACQUISITION_SCAN_FREQUENCY
+from gypsum.constants import MINIMUM_TRACKED_SATELLITES_FOR_POSITION_FIX
+from gypsum.constants import PRN_CHIP_COUNT
 from gypsum.gps_ca_prn_codes import GpsSatelliteId, generate_replica_prn_signals
 from gypsum.navigation_bit_intergrator import Event
 from gypsum.navigation_message_decoder import EmitSubframeEvent
@@ -52,6 +55,8 @@ class GpsReceiver:
 
         self.world_model = GpsWorldModel()
 
+        self._time_since_last_acquisition_scan = 0.0
+
     def step(self) -> None:
         """Run one 'iteration' of the GPS receiver. This consumes one millisecond of antenna data."""
         receiver_timestamp: ReceiverTimestampSeconds
@@ -65,14 +70,20 @@ class GpsReceiver:
         self.rolling_samples_buffer.append(samples)
 
         # If we need to perform acquisition, do so now
-        # if len(self.tracked_satellite_ids_to_processing_pipelines) < MINIMUM_TRACKED_SATELLITES_FOR_POSITION_FIX:
-        if len(self.tracked_satellite_ids_to_processing_pipelines) < 1:
-            _logger.info(
-                f"Will perform acquisition search because we're only "
-                f"tracking {len(self.tracked_satellite_ids_to_processing_pipelines)} satellites."
-            )
-            _logger.info(f"{receiver_timestamp}: Subframe count: {self.subframe_count}")
-            self._perform_acquisition()
+        seconds_since_start = self.antenna_samples_provider.seconds_since_start()
+        if (
+            seconds_since_start - self._time_since_last_acquisition_scan
+            >= ACQUISITION_SCAN_FREQUENCY
+        ):
+            # Update the timestamp even if we decide not to try to acquire more satellites
+            self._time_since_last_acquisition_scan = seconds_since_start
+            if len(self.tracked_satellite_ids_to_processing_pipelines) < MINIMUM_TRACKED_SATELLITES_FOR_POSITION_FIX:
+                _logger.info(
+                    f"Will perform acquisition search because we're only "
+                    f"tracking {len(self.tracked_satellite_ids_to_processing_pipelines)} satellites."
+                )
+                _logger.info(f"{receiver_timestamp}: Subframe count: {self.subframe_count}")
+                self._perform_acquisition()
 
         # Continue tracking each acquired satellite
         satellite_ids_to_tracker_events = self._track_acquired_satellites(receiver_timestamp, samples)
