@@ -99,9 +99,6 @@ class AntennaSampleProviderBackedByFile(AntennaSampleProvider):
         self.cursor += sample_count
         return receiver_timestamp, file_data
 
-    def samples_per_prn_transmission(self) -> SampleCount:
-        return self.sample_rate // PRN_REPETITIONS_PER_SECOND
-
     def get_attributes(self) -> SampleProviderAttributes:
         return SampleProviderAttributes(
             samples_per_second=self.sample_rate,

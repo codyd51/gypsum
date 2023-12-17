@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from gypsum.antenna_sample_provider import AntennaSampleProviderBackedByFile
-from gypsum.radio_input import INPUT_SOURCES
+from gypsum.radio_input import INPUT_SOURCES, get_input_file_with_name
 from gypsum.receiver import GpsReceiver
 
 _AntennaSamplesSpanningOneMs = np.ndarray
@@ -18,6 +18,7 @@ def main():
     logging.basicConfig(level=logging.INFO)
 
     input_source = INPUT_SOURCES[7]
+    input_source = get_input_file_with_name("test_rtl_new2")
     antenna_samples_provider = AntennaSampleProviderBackedByFile(input_source)
     _logger.info(f"Set up antenna sample stream backed by file: {input_source.path.as_posix()}")
 
