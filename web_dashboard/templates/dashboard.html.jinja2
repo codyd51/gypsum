@@ -1,0 +1,22 @@
+{% extends "base.html.jinja2" %}
+
+{% block title %}
+    Test Title
+{% endblock %}
+
+{% block content %}
+    <h1>
+        {{ generated_at }}
+    </h1>
+    <h1>
+        Receiver timestamp: {{ state.receiver_timestamp }}
+    </h1>
+    <h1>
+        Satellite IDs eligible for acquisition:
+    </h1>
+    <ul>
+        {% for sat_id in state.satellite_ids_eligible_for_acquisition %}
+            <li>{{ sat_id }}</li>
+        {% endfor %}
+    </ul>
+{% endblock %}
