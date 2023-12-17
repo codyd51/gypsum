@@ -1,6 +1,8 @@
 import collections
 import logging
 from copy import deepcopy
+# PT: requests is just used to communicate with our own dashboard webserver and display the current receiver state.
+import requests
 
 import numpy as np
 
@@ -8,6 +10,8 @@ from gypsum.acquisition import GpsSatelliteDetector
 from gypsum.antenna_sample_provider import AntennaSampleProvider, ReceiverTimestampSeconds
 from gypsum.config import ACQUISITION_INTEGRATION_PERIOD_MS
 from gypsum.config import ACQUISITION_SCAN_FREQUENCY
+from gypsum.config import DASHBOARD_WEBSERVER_SCAN_PERIOD
+from gypsum.config import DASHBOARD_WEBSERVER_URL
 from gypsum.constants import MINIMUM_TRACKED_SATELLITES_FOR_POSITION_FIX
 from gypsum.constants import PRN_CHIP_COUNT
 from gypsum.gps_ca_prn_codes import GpsSatelliteId, generate_replica_prn_signals
@@ -17,6 +21,8 @@ from gypsum.satellite import ALL_SATELLITE_IDS, GpsSatellite
 from gypsum.satellite_signal_processing_pipeline import GpsSatelliteSignalProcessingPipeline, LostSatelliteLockError
 from gypsum.utils import AntennaSamplesSpanningOneMs
 from gypsum.world_model import DeterminedSatelliteOrbitEvent, GpsWorldModel
+from web_dashboard.messages import GpsReceiverState
+from web_dashboard.messages import SetCurrentReceiverStateRequest
 
 _logger = logging.getLogger(__name__)
 
@@ -56,6 +62,9 @@ class GpsReceiver:
         self.world_model = GpsWorldModel()
 
         self._time_since_last_acquisition_scan = 0.0
+
+        self._time_since_last_dashboard_server_scan = 0.0
+        self._is_connected_to_dashboard_server = False
 
     def step(self) -> None:
         """Run one 'iteration' of the GPS receiver. This consumes one millisecond of antenna data."""
@@ -114,6 +123,11 @@ class GpsReceiver:
                 if isinstance(world_model_event, DeterminedSatelliteOrbitEvent):
                     print(f"Determined the orbit of {satellite_id}! {world_model_event.orbital_parameters}")
                     orbit_params = world_model_event.orbital_parameters
+
+        # Hook up to the dashboard webserver. Periodically try to connect to the dashboard, and send our state
+        # update if we're connected.
+        self._scan_for_dashboard_webserver_if_necessary()
+        self._send_receiver_state_to_dashboard_if_necessary(receiver_timestamp)
 
     def _perform_acquisition(self) -> None:
         newly_acquired_satellite_ids = self._perform_acquisition_on_satellite_ids(self.satellite_ids_eligible_for_acquisition)
@@ -174,3 +188,49 @@ class GpsReceiver:
                 print(f"Failed to re-acquire!")
                 # TODO(PT): Put it back on the queue of available-to-acquire?
         return satellite_ids_to_events
+
+    def _send_receiver_state_to_dashboard_if_necessary(self, receiver_timestamp: ReceiverTimestampSeconds) -> None:
+        # Nothing to do if we're not connected to the webserver
+        if not self._is_connected_to_dashboard_server:
+            return
+
+        try:
+            resp = requests.post(
+                DASHBOARD_WEBSERVER_URL,
+                json=SetCurrentReceiverStateRequest(
+                    current_state=GpsReceiverState(
+                        receiver_timestamp=receiver_timestamp,
+                        satellite_ids_eligible_for_acquisition=self.satellite_ids_eligible_for_acquisition,
+                    )
+                ).model_dump_json()
+            )
+            resp.raise_for_status()
+        except:
+            _logger.info('Lost connection to webserver while pushing receiver state update.')
+            self._is_connected_to_dashboard_server = False
+
+    def _scan_for_dashboard_webserver_if_necessary(self):
+        # No work to do if we're already connected
+        if self._is_connected_to_dashboard_server:
+            return
+
+        # No work to do if we haven't waited long enough since our last scan
+        seconds_since_start = self.antenna_samples_provider.seconds_since_start()
+        if (
+                seconds_since_start - self._time_since_last_dashboard_server_scan
+                < DASHBOARD_WEBSERVER_SCAN_PERIOD
+        ):
+            return
+
+        # Time to scan for the dashboard webserver
+        _logger.info(f'Scanning for dashboard webserver...')
+        # TODO(PT): seconds_since_start() is currently "recording seconds", but here we actually want "process seconds"
+        self._time_since_last_dashboard_server_scan = seconds_since_start
+        try:
+            resp = requests.get(DASHBOARD_WEBSERVER_URL)
+            resp.raise_for_status()
+        except (requests.ConnectionError, requests.HTTPError):
+            _logger.info(f'Did not detect the webserver.')
+        else:
+            _logger.info(f'Detected that the webserver is now live.')
+            self._is_connected_to_dashboard_server = True
