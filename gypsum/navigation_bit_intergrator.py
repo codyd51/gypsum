@@ -220,7 +220,7 @@ class NavigationBitIntegrator:
             proportion_failures = failed_bit_count / len(last_few_bits)
             percent_failures = proportion_failures * 100
             if percent_failures >= RECALCULATE_PSEUDOSYMBOL_PHASE_BIT_HEALTH_THRESHOLD:
-                _logger.info(f"Resynchronizing bit phase because too many of the last few bits were unresolved")
+                # _logger.info(f"Resynchronizing bit phase because too many of the last few bits were unresolved")
                 return True
 
         return False
@@ -250,7 +250,7 @@ class NavigationBitIntegrator:
             )
             if did_change_bit_phase:
                 diff = new_bit_phase - previous_bit_phase_decision
-                print(f"******* CHANGED bit phase {new_bit_phase}, prev {previous_bit_phase_decision}, diff {diff}!")
+                # print(f"******* CHANGED bit phase {new_bit_phase}, prev {previous_bit_phase_decision}, diff {diff}!")
                 self.history.pseudosymbol_cursor_within_queue += diff
 
         return events

@@ -174,7 +174,7 @@ class GpsSatelliteTrackerVisualizer:
         #if not plt.isinteractive():
         #    plt.ion()
 
-        self.visualizer_figure = plt.figure(figsize=(11, 6))
+        self.visualizer_figure = plt.figure(figsize=(11, 7))
         self.visualizer_figure.suptitle(f"Satellite #{satellite_id.id} Tracking Dashboard")
         self.grid_spec = plt.GridSpec(nrows=5, ncols=4, figure=self.visualizer_figure)
 
@@ -242,7 +242,10 @@ class GpsSatelliteTrackerVisualizer:
         if not self.should_display:
             return
 
-        if seconds_since_start - self._timestamp_of_last_dashboard_update < _UPDATE_PERIOD:
+        if (
+            self._timestamp_of_last_dashboard_update != 0
+            and seconds_since_start - self._timestamp_of_last_dashboard_update < _UPDATE_PERIOD
+        ):
             # It hasn't been long enough since our last GUI update
             return
 

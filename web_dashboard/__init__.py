@@ -4,6 +4,7 @@ The receiver will periodically POST updates to this process, which will display 
 """
 import logging
 import os
+from pathlib import Path
 
 import falcon
 
@@ -29,6 +30,7 @@ _STATE_PROVIDER = GpsReceiverDashboardStateProvider()
 
 def main():
     _logger.info(f'Starting up under gunicorn...')
+    _APP.add_static_route("/static", Path(__file__).parent / "static")
     _APP.add_route("/", GpsReceiverDashboard(_STATE_PROVIDER))
     _APP.add_route("/tracker_visualizers", GpsReceiverDashboardTrackerVisualizers(_STATE_PROVIDER))
 
