@@ -29,7 +29,7 @@ class GpsReceiver:
         # Generate the replica signals that we'll use to correlate against the received antenna signals upfront
         satellites_to_replica_prn_signals = generate_replica_prn_signals()
         self.satellites_by_id = {
-            satellite_id: GpsSatellite(satellite_id=satellite_id, prn_code=code)
+            satellite_id: GpsSatellite(satellite_id=satellite_id, prn_code=code, scale_factor=antenna_samples_provider.samples_per_prn_transmission()//1023)
             for satellite_id, code in satellites_to_replica_prn_signals.items()
         }
         # TODO(PT): Perhaps this state should belong to the detector.
