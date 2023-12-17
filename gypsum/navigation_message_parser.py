@@ -36,6 +36,10 @@ class IncorrectPreludeBitsError(Exception):
     pass
 
 
+class InvalidSubframeIdError(Exception):
+    pass
+
+
 class GpsSubframeId(Enum):
     ONE = auto()
     TWO = auto()
@@ -45,13 +49,16 @@ class GpsSubframeId(Enum):
 
     @classmethod
     def from_bits(cls, bits: list[int]) -> 'GpsSubframeId':
-        return {
-            (0, 0, 1): GpsSubframeId.ONE,
-            (0, 1, 0): GpsSubframeId.TWO,
-            (0, 1, 1): GpsSubframeId.THREE,
-            (1, 0, 0): GpsSubframeId.FOUR,
-            (1, 0, 1): GpsSubframeId.FIVE,
-        }[*bits]    # type: ignore
+        try:
+            return {
+                (0, 0, 1): GpsSubframeId.ONE,
+                (0, 1, 0): GpsSubframeId.TWO,
+                (0, 1, 1): GpsSubframeId.THREE,
+                (1, 0, 0): GpsSubframeId.FOUR,
+                (1, 0, 1): GpsSubframeId.FIVE,
+            }[*bits]    # type: ignore
+        except KeyError:
+            raise InvalidSubframeIdError()
 
 
 @dataclass
@@ -404,11 +411,12 @@ class NavigationMessageSubframeParser:
         anti_spoof_flag = self.get_bit()
         subframe_id_codes = self.get_bits(3)
         to_be_solved = self.get_bits(2)
+        subframe_id = GpsSubframeId.from_bits(subframe_id_codes)
         return HandoverWord(
             time_of_week=time_of_week,
             alert_flag=alert_flag,
             anti_spoof_flag=anti_spoof_flag,
-            subframe_id=GpsSubframeId.from_bits(subframe_id_codes),
+            subframe_id=subframe_id,
             to_be_solved=to_be_solved,
         )
 
