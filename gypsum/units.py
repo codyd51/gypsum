@@ -8,8 +8,6 @@ Radians = float
 Degrees = float
 Percent = float
 
-SampleCount = int
-
 AntennaSamplesSpanningAcquisitionIntegrationPeriodMs = np.ndarray
 AntennaSamplesSpanningOneMs = np.ndarray
 PrnReplicaCodeSamplesSpanningOneMs = np.ndarray
@@ -22,3 +20,6 @@ Hertz = float
 DopplerShiftHz = float
 CarrierWavePhaseInRadians = float
 PrnCodePhaseInSamples = int
+
+SampleCount = int
+SampleRateHz = Hertz
