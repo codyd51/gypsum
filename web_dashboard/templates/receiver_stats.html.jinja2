@@ -1,0 +1,14 @@
+{% extends "base.html.jinja2" %}
+
+{% block content %}
+    <style>
+    .main-site-content {
+        max-width: 100%;
+    }
+    </style>
+
+    <h2>Blah! {{ generated_at }}</h2>
+    <h3>
+        Receiver timestamp: {{ state.receiver_timestamp }}
+    </h3>
+{% endblock %}

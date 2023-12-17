@@ -34,18 +34,24 @@ class GpsReceiverDashboardStateProvider:
         return self.last_seen_gps_state
 
 
-class GpsReceiverDashboard:
+class GpsReceiverDashboardResource:
     def __init__(self, state_provider: GpsReceiverDashboardStateProvider):
         self.state_provider = state_provider
 
-    def on_get(self, _request: falcon.Request, response: falcon.Response) -> None:
-        _logger.info(f"Serving dashboard page...")
-
+    def on_get(self, request: falcon.Request, response: falcon.Response) -> None:
         state = self.state_provider.get_state()
         if state is None:
             response.text = "No data from receiver yet"
             return
 
+        self.handle_on_get(state, request, response)
+
+    def handle_on_get(self, state: GpsReceiverState, _request: falcon.Request, response: falcon.Response) -> None:
+        ...
+
+
+class GpsReceiverDashboard(GpsReceiverDashboardResource):
+    def handle_on_get(self, state: GpsReceiverState, _request: falcon.Request, response: falcon.Response) -> None:
         now = datetime.datetime.utcnow()
         context = DashboardContext(
             generated_at=now.strftime("%B %d, %Y at %H:%M"),
@@ -64,16 +70,8 @@ class GpsReceiverDashboard:
         self.state_provider.handle_state_update(update.current_state)
 
 
-class GpsReceiverDashboardTrackerVisualizers:
-    def __init__(self, state_provider: GpsReceiverDashboardStateProvider):
-        self.state_provider = state_provider
-
-    def on_get(self, _request: falcon.Request, response: falcon.Response) -> None:
-        state = self.state_provider.get_state()
-        if state is None:
-            response.text = "No data from receiver yet"
-            return
-
+class GpsReceiverDashboardTrackerVisualizers(GpsReceiverDashboardResource):
+    def handle_on_get(self, state: GpsReceiverState, _request: falcon.Request, response: falcon.Response) -> None:
         now = datetime.datetime.utcnow()
         context = DashboardContext(
             generated_at=now.strftime("%B %d, %Y at %H:%M:%S"),
@@ -81,3 +79,14 @@ class GpsReceiverDashboardTrackerVisualizers:
         )
         response.content_type = falcon.MEDIA_HTML
         response.text = JINJA_ENVIRONMENT.get_template("tracker_visualizers.html.jinja2").render(asdict(context))
+
+
+class GpsReceiverStats(GpsReceiverDashboardResource):
+    def handle_on_get(self, state: GpsReceiverState, _request: falcon.Request, response: falcon.Response) -> None:
+        now = datetime.datetime.utcnow()
+        context = DashboardContext(
+            generated_at=now.strftime("%B %d, %Y at %H:%M:%S"),
+            state=state,
+        )
+        response.content_type = falcon.MEDIA_HTML
+        response.text = JINJA_ENVIRONMENT.get_template("receiver_stats.html.jinja2").render(asdict(context))
