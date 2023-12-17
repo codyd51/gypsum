@@ -10,6 +10,8 @@ cycler==0.12.1
     # via matplotlib
 fonttools==4.44.1
     # via matplotlib
+invoke==2.2.0
+    # via -r requirements.in
 kiwisolver==1.4.5
     # via matplotlib
 matplotlib==3.8.0

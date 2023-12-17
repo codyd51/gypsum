@@ -3,3 +3,4 @@ numpy==1.26.0
 matplotlib==3.8.0
 pyrtlsdr[lib]
 scipy
+invoke==2.2
