@@ -162,20 +162,22 @@ class GraphTypeEnum(Enum):
 
 
 class GpsSatelliteTrackerVisualizer:
-    def __init__(self, satellite_id: GpsSatelliteId, should_display: bool = True) -> None:
-        self.should_display = should_display
+    def __init__(self, satellite_id: GpsSatelliteId, should_render: bool = True, should_present: bool = False) -> None:
+        self.should_render = should_render
+        self.should_present = should_present
         self._timestamp_of_last_dashboard_update = 0
         self._timestamp_of_last_graph_reset = 0
 
-        if not should_display:
+        if not should_render:
             return
 
-        # Enable interactive mode if not already done
-        #if not plt.isinteractive():
-        #    plt.ion()
+        if should_present:
+            # Enable interactive mode if not already done
+            if not plt.isinteractive():
+                plt.ion()
 
         self.visualizer_figure = plt.figure(figsize=(11, 7))
-        self.visualizer_figure.suptitle(f"Satellite #{satellite_id.id} Tracking Dashboard")
+        self.visualizer_figure.suptitle(f"Satellite #{satellite_id.id} Tracking Dashboard", fontweight="bold")
         self.grid_spec = plt.GridSpec(nrows=5, ncols=4, figure=self.visualizer_figure)
 
         grid_spec_idx_iterator = iter(range(len(GraphTypeEnum)))
@@ -239,7 +241,7 @@ class GpsSatelliteTrackerVisualizer:
         bit_integrator_history: NavigationBitIntegratorHistory,
         navigation_message_decoder_history: NavigationMessageDecoderHistory,
     ) -> None:
-        if not self.should_display:
+        if not self.should_render:
             return
 
         if (
@@ -368,7 +370,6 @@ class GpsSatelliteTrackerVisualizer:
 
         # We've just erased some of our axes titles via plt.Axes.clear(), so redraw them.
         self._redraw_subplot_titles()
-        #plt.pause(0.001)
 
         # Raster the figure to a base64-encoded image, so it can be rendered in the dashboard webserver.
         pixel_buffer = io.BytesIO()
@@ -377,3 +378,7 @@ class GpsSatelliteTrackerVisualizer:
         figure_as_png = pixel_buffer.getvalue()
         pixel_buffer.close()
         self.rendered_dashboard_png_base64 = base64.b64encode(figure_as_png).decode('utf-8')
+
+        # Update the GUI loop if we're presenting directly from pyplot
+        if self.should_present:
+            plt.pause(0.001)

@@ -65,7 +65,11 @@ class GpsSatelliteSignalProcessingPipeline:
             navigation_bit_pseudosymbols=[],
         )
         self.tracker = GpsSatelliteTracker(tracking_params, stream_attributes)
-        self.tracker_visualizer = GpsSatelliteTrackerVisualizer(satellite.satellite_id, should_display=True)
+        self.tracker_visualizer = GpsSatelliteTrackerVisualizer(
+            satellite.satellite_id,
+            should_render=True,
+            should_present=False,
+        )
         self.pseudosymbol_integrator = NavigationBitIntegrator()
         self.navigation_message_decoder = NavigationMessageDecoder()
         self.current_receiver_timestamp = 0.0
