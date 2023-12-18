@@ -1,10 +1,17 @@
 {% extends "base.html.jinja2" %}
 
 {% block content %}
-    <h3>
+    <h4>Stats</h4>
+    <p>
         Receiver timestamp: {{ state.receiver_timestamp }}
+    </p>
+    <p>
         Tracked satellite count: {{ state.tracked_satellite_count }}
+    </p>
+    <p>
         Processed subframe count: {{ state.processed_subframe_count }}
-        Satellite IDs to orbital parameters: {{ state.satellite_ids_to_orbital_parameters }}
-    </h3>
+    </p>
+    <p>
+        Satellite IDs to orbital parameters: (TODO)
+    </p>
 {% endblock %}

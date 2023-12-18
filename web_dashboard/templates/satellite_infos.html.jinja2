@@ -1,37 +1,57 @@
 {% extends "base.html.jinja2" %}
 
 {% block content %}
-    <h3>
+    <style>
+        .satellite_infos_table {
+        }
+    </style>
+
+    <h4>
         Satellite Categories
-    </h3>
-    <table>
-        <tr>
-            <th scope="col">Tracked</th>
-            <th scope="col">Eligible for Acquisition</th>
-            <th scope="col">Cold</th>
-        </tr>
-        <tr>
-            <td>
-                <ul>
+    </h4>
+
+    <div>
+        <div>
+            <table class="table table-striped satellite_infos_table">
+                <thead>
+                    <tr>
+                        <th scope="col">Tracked</th>
+                    </tr>
+                </thead>
+                <tbody>
                     {% for sat_id in state.tracked_satellite_ids %}
-                        <li>{{sat_id.id}}</li>
+                        <tr><td>{{sat_id.id}}</td></tr>
                     {% endfor %}
-                </ul>
-            </td>
-            <td>
-                <ul>
+                </tbody>
+            </table>
+        </div>
+        <div>
+            <table class="table table-striped satellite_infos_table">
+                <thead>
+                <tr>
+                    <th scope="col">Eligible for Acquisition</th>
+                </tr>
+                </thead>
+                <tbody>
                     {% for sat_id in state.satellite_ids_eligible_for_acquisition %}
-                        <li>{{sat_id.id}}</li>
+                        <tr><td>{{sat_id.id}}</td></tr>
                     {% endfor %}
-                </ul>
-            </td>
-            <td>
-                <ul>
-                    <li>Gaz</li>
-                    <li>Zoz</li>
-                    <li>Moz</li>
-                </ul>
-            </td>
-        </tr>
-    </table>
+                </tbody>
+            </table>
+        </div>
+        <div>
+            <table class="table table-striped satellite_infos_table">
+                <thead>
+                <tr>
+                    <th scope="col">Cold</th>
+                </tr>
+                </thead>
+                <tbody>
+                    {% for sat_id in state.satellite_ids_ineligible_for_acquisition %}
+                        <tr><td>{{sat_id.id}}</td>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
 {% endblock %}

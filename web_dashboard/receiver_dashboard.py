@@ -74,7 +74,7 @@ class GpsReceiverDashboardTrackerVisualizers(GpsReceiverDashboardResource):
     def handle_on_get(self, state: GpsReceiverState, _request: falcon.Request, response: falcon.Response) -> None:
         now = datetime.datetime.utcnow()
         context = DashboardContext(
-            generated_at=now.strftime("%B %d, %Y at %H:%M:%S"),
+            generated_at=now.strftime("%H:%M:%S"),
             state=state,
         )
         response.content_type = falcon.MEDIA_HTML
@@ -85,7 +85,7 @@ class GpsReceiverStats(GpsReceiverDashboardResource):
     def handle_on_get(self, state: GpsReceiverState, _request: falcon.Request, response: falcon.Response) -> None:
         now = datetime.datetime.utcnow()
         context = DashboardContext(
-            generated_at=now.strftime("%B %d, %Y at %H:%M:%S"),
+            generated_at=now.strftime("%H:%M:%S"),
             state=state,
         )
         response.content_type = falcon.MEDIA_HTML
@@ -96,7 +96,7 @@ class GpsReceiverSatelliteInfos(GpsReceiverDashboardResource):
     def handle_on_get(self, state: GpsReceiverState, _request: falcon.Request, response: falcon.Response) -> None:
         now = datetime.datetime.utcnow()
         context = DashboardContext(
-            generated_at=now.strftime("%B %d, %Y at %H:%M:%S"),
+            generated_at=now.strftime("%H:%M:%S"),
             state=state,
         )
         response.content_type = falcon.MEDIA_HTML
