@@ -16,4 +16,12 @@ addEventListener("load", (event) => {
         document.getElementById("tracker_visualizers2"),
     );
     trackerVisualizerIFrame.enqueueDelayedSwap();
+
+    let satelliteInfosIFrame = new DoubleBufferedIFrame(
+        document.getElementById("satellite_infos_spacer"),
+        document.getElementById("satellite_infos_iframe_container"),
+        document.getElementById("satellite_infos1"),
+        document.getElementById("satellite_infos2"),
+    );
+    satelliteInfosIFrame.enqueueDelayedSwap();
 });

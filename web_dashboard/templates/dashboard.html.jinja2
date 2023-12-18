@@ -43,13 +43,11 @@
         </div>
         <div id="tracker_visualizers_spacer"></div>
 
-        <h1>
-            Satellite IDs eligible for acquisition:
-        </h1>
-        <ul>
-            {% for sat_id in state.satellite_ids_eligible_for_acquisition %}
-                <li>{{ sat_id }}</li>
-            {% endfor %}
-        </ul>
+        <div class="double_buffered_iframe_container" id="satellite_infos_iframe_container">
+            <iframe class="double_buffered_iframe satellite_infos_iframe" id="satellite_infos1" src="/satellite_infos"></iframe>
+            <iframe class="double_buffered_iframe satellite_infos_iframe" id="satellite_infos2" src="/satellite_infos"></iframe>
+        </div>
+        <div id="satellite_infos_spacer"></div>
+
     </main>
 {% endblock %}

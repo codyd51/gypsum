@@ -12,6 +12,8 @@ class GpsReceiverState(pydantic.BaseModel):
     tracked_satellite_count: int
     processed_subframe_count: int
     satellite_ids_to_orbital_parameters: dict[GpsSatelliteId, OrbitalParameters]
+    # PT: Should be inferred from the pipelines...
+    tracked_satellite_ids: list[GpsSatelliteId]
 
 
 class SetCurrentReceiverStateRequest(pydantic.BaseModel):

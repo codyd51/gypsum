@@ -1,0 +1,37 @@
+{% extends "base.html.jinja2" %}
+
+{% block content %}
+    <h3>
+        Satellite Categories
+    </h3>
+    <table>
+        <tr>
+            <th scope="col">Tracked</th>
+            <th scope="col">Eligible for Acquisition</th>
+            <th scope="col">Cold</th>
+        </tr>
+        <tr>
+            <td>
+                <ul>
+                    {% for sat_id in state.tracked_satellite_ids %}
+                        <li>{{sat_id.id}}</li>
+                    {% endfor %}
+                </ul>
+            </td>
+            <td>
+                <ul>
+                    {% for sat_id in state.satellite_ids_eligible_for_acquisition %}
+                        <li>{{sat_id.id}}</li>
+                    {% endfor %}
+                </ul>
+            </td>
+            <td>
+                <ul>
+                    <li>Gaz</li>
+                    <li>Zoz</li>
+                    <li>Moz</li>
+                </ul>
+            </td>
+        </tr>
+    </table>
+{% endblock %}

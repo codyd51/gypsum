@@ -90,3 +90,14 @@ class GpsReceiverStats(GpsReceiverDashboardResource):
         )
         response.content_type = falcon.MEDIA_HTML
         response.text = JINJA_ENVIRONMENT.get_template("receiver_stats.html.jinja2").render(asdict(context))
+
+
+class GpsReceiverSatelliteInfos(GpsReceiverDashboardResource):
+    def handle_on_get(self, state: GpsReceiverState, _request: falcon.Request, response: falcon.Response) -> None:
+        now = datetime.datetime.utcnow()
+        context = DashboardContext(
+            generated_at=now.strftime("%B %d, %Y at %H:%M:%S"),
+            state=state,
+        )
+        response.content_type = falcon.MEDIA_HTML
+        response.text = JINJA_ENVIRONMENT.get_template("satellite_infos.html.jinja2").render(asdict(context))

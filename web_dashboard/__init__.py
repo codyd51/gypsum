@@ -11,6 +11,7 @@ import falcon
 from web_dashboard.receiver_dashboard import GpsReceiverDashboard
 from web_dashboard.receiver_dashboard import GpsReceiverDashboardStateProvider
 from web_dashboard.receiver_dashboard import GpsReceiverDashboardTrackerVisualizers
+from web_dashboard.receiver_dashboard import GpsReceiverSatelliteInfos
 from web_dashboard.receiver_dashboard import GpsReceiverStats
 
 _logger = logging.getLogger(__name__)
@@ -35,6 +36,7 @@ def main():
     _APP.add_route("/", GpsReceiverDashboard(_STATE_PROVIDER))
     _APP.add_route("/tracker_visualizers", GpsReceiverDashboardTrackerVisualizers(_STATE_PROVIDER))
     _APP.add_route("/receiver_stats", GpsReceiverStats(_STATE_PROVIDER))
+    _APP.add_route("/satellite_infos", GpsReceiverSatelliteInfos(_STATE_PROVIDER))
 
 
 # Note that __name__ != __main__ here, since we're running via gunicorn
