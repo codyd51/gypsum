@@ -1,6 +1,10 @@
 from collections import defaultdict
 from enum import Enum, auto
+from typing import Any
+from typing import Callable
 from typing import Generic, Sequence, Type, TypeVar, cast
+from typing import Iterator
+from typing import Self
 
 from gypsum.antenna_sample_provider import ReceiverTimestampSeconds
 from gypsum.constants import SECONDS_PER_WEEK, UNIX_TIMESTAMP_OF_GPS_EPOCH
@@ -34,6 +38,18 @@ class ParameterSet(Generic[_ParameterType, _ParameterValueType]):
     def __init_subclass__(cls, **kwargs):
         if cls._PARAMETER_TYPE is None:
             raise RuntimeError(f"_PARAMETER_TYPE must be set by subclasses")
+
+    @classmethod
+    def __get_validators__(cls) -> Iterator[Callable[..., Any]]:
+        yield cls.validate
+
+    @classmethod
+    def validate(cls, v: Any, validation_info) -> Self:
+        return v
+        raise NotImplementedError(v, x)
+
+    def json_dump(self) -> dict[str, Any]:
+        return self.parameter_type_to_value
 
     def __init__(self) -> None:
         self.parameter_type_to_value: dict[_ParameterType, _ParameterValueType | None] = {
