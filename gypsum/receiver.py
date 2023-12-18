@@ -203,6 +203,13 @@ class GpsReceiver:
                         receiver_timestamp=receiver_timestamp,
                         satellite_ids_eligible_for_acquisition=self.satellite_ids_eligible_for_acquisition,
                         dashboard_figures=[x.tracker_visualizer.rendered_dashboard_png_base64 for x in self.tracked_satellite_ids_to_processing_pipelines.values()],
+                        tracked_satellite_count=len(self.tracked_satellite_ids_to_processing_pipelines),
+                        processed_subframe_count=self.subframe_count,
+                        # TODO(PT): Fix
+                        #satellite_ids_to_orbital_parameters=self.world_model.satellite_ids_to_orbital_parameters,
+                        satellite_ids_to_orbital_parameters={},
+                        tracked_satellite_ids=[x for x in self.tracked_satellite_ids_to_processing_pipelines.keys()],
+                        satellite_ids_ineligible_for_acquisition=[GpsSatelliteId(id=x) for x in range(0, 33) if x not in [32, 25, 28]]
                     )
                 ).model_dump_json()
             )

@@ -7,13 +7,14 @@ from gypsum.world_model import OrbitalParameters
 
 class GpsReceiverState(pydantic.BaseModel):
     receiver_timestamp: ReceiverTimestampSeconds
-    satellite_ids_eligible_for_acquisition: list[GpsSatelliteId]
     dashboard_figures: list[str]
     tracked_satellite_count: int
     processed_subframe_count: int
     satellite_ids_to_orbital_parameters: dict[GpsSatelliteId, OrbitalParameters]
-    # PT: Should be inferred from the pipelines...
+    # PT: Should be inferred from the pipelines?..
     tracked_satellite_ids: list[GpsSatelliteId]
+    satellite_ids_eligible_for_acquisition: list[GpsSatelliteId]
+    satellite_ids_ineligible_for_acquisition: list[GpsSatelliteId]
 
 
 class SetCurrentReceiverStateRequest(pydantic.BaseModel):
