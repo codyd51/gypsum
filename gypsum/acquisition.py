@@ -17,6 +17,7 @@ from gypsum.utils import (
     PrnReplicaCodeSamplesSpanningOneMs,
     integrate_correlation_with_doppler_shifted_prn,
 )
+from gypsum.utils import get_normalized_correlation_peak_strength
 
 _logger = logging.getLogger(__name__)
 
@@ -27,6 +28,7 @@ class BestNonCoherentCorrelationProfile:
     non_coherent_correlation_profile: CorrelationProfile
     # Just convenience accessors that can be derived from the correlation profile
     sample_offset_of_correlation_peak: int
+    # Represents the ratio of the correlation peak magnitude to the mean power of the correlation profile
     correlation_strength: float
 
 
@@ -181,12 +183,11 @@ class GpsSatelliteDetector:
         )
         best_correlation_profile = doppler_shift_to_correlation_profile[best_doppler_shift]
         sample_offset_of_correlation_peak = np.argmax(best_correlation_profile)
-        correlation_strength = best_correlation_profile[sample_offset_of_correlation_peak]
         return BestNonCoherentCorrelationProfile(
             doppler_shift=best_doppler_shift,
             non_coherent_correlation_profile=best_correlation_profile,
             sample_offset_of_correlation_peak=int(sample_offset_of_correlation_peak),
-            correlation_strength=correlation_strength,
+            correlation_strength=get_normalized_correlation_peak_strength(best_correlation_profile),
         )
 
     def get_integrated_correlation_with_doppler_shifted_prn(

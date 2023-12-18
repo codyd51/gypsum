@@ -12,6 +12,8 @@ from gypsum.units import (
     DopplerShiftHz,
     PrnReplicaCodeSamplesSpanningOneMs,
 )
+from gypsum.units import CorrelationStrength
+from gypsum.units import NonCoherentCorrelationProfile
 
 _IterType = TypeVar("_IterType")
 
@@ -103,3 +105,11 @@ def integrate_correlation_with_doppler_shifted_prn(
             raise ValueError("Unexpected integration type")
 
     return integrated_correlation_result
+
+
+def get_normalized_correlation_peak_strength(profile: NonCoherentCorrelationProfile) -> CorrelationStrength:
+    correlation_peak_magnitude = np.max(profile)
+    correlation_profile_excluding_peak = profile[profile != correlation_peak_magnitude]
+    mean_magnitude_excluding_peak = np.mean(correlation_profile_excluding_peak)
+    correlation_strength = correlation_peak_magnitude / mean_magnitude_excluding_peak
+    return correlation_strength

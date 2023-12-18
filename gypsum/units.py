@@ -13,6 +13,8 @@ AntennaSamplesSpanningOneMs = np.ndarray
 PrnReplicaCodeSamplesSpanningOneMs = np.ndarray
 
 CorrelationProfile = np.ndarray
+CoherentCorrelationProfile = CorrelationProfile
+NonCoherentCorrelationProfile = CorrelationProfile
 CorrelationStrength = float
 CoherentCorrelationPeak = complex
 
