@@ -286,7 +286,7 @@ INPUT_SOURCES = [
     #  (22, 9043.37046816484),
     #  (15, 12433.944236015503)]
     InputFileInfo.gnu_radio_recording_16x(path=_VENDORED_SIGNALS_ROOT / "test_hackrf_new3"),
-    InputFileInfo.gnu_radio_recording_2x(path=_VENDORED_SIGNALS_ROOT / "test_rtl_night"),
+    InputFileInfo.gnu_radio_recording_2x(path=_VENDORED_SIGNALS_ROOT / "test_rtl_night", utc_start_time=datetime.datetime.fromtimestamp(1702851337.874580792)),
 ]
 
 

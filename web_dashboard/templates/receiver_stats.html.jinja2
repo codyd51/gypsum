@@ -1,14 +1,10 @@
 {% extends "base.html.jinja2" %}
 
 {% block content %}
-    <style>
-    .main-site-content {
-        max-width: 100%;
-    }
-    </style>
-
-    <h2>Blah! {{ generated_at }}</h2>
     <h3>
         Receiver timestamp: {{ state.receiver_timestamp }}
+        Tracked satellite count: {{ state.tracked_satellite_count }}
+        Processed subframe count: {{ state.processed_subframe_count }}
+        Satellite IDs to orbital parameters: {{ state.satellite_ids_to_orbital_parameters }}
     </h3>
 {% endblock %}

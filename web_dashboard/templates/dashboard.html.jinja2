@@ -18,32 +18,38 @@
             height: 400px;
         }
 
+        .main-site-content {
+            max-width: 75%;
+            margin: 40px auto 0;
+        }
     </style>
 
     <script type="module" src="/static/js/dashboard.js"></script>
 
-    <h1>Gypsum Dashboard</h1>
-    <div style="stroke-width: 2px; border-bottom: 0.5px solid #333;"></div>
-    <br/>
+    <main class="main-site-content">
+        <h1>Gypsum Dashboard</h1>
+        <div style="stroke-width: 2px; border-bottom: 0.5px solid #333;"></div>
+        <br/>
 
-    <div class="double_buffered_iframe_container" id="receiver_stats_iframe_container">
-        <iframe class="double_buffered_iframe receiver_stats_iframe" id="receiver_stats1" src="/receiver_stats"></iframe>
-        <iframe class="double_buffered_iframe receiver_stats_iframe" id="receiver_stats2" src="/receiver_stats"></iframe>
-    </div>
-    <div id="receiver_stats_spacer"></div>
+        <div class="double_buffered_iframe_container" id="receiver_stats_iframe_container">
+            <iframe class="double_buffered_iframe receiver_stats_iframe" id="receiver_stats1" src="/receiver_stats"></iframe>
+            <iframe class="double_buffered_iframe receiver_stats_iframe" id="receiver_stats2" src="/receiver_stats"></iframe>
+        </div>
+        <div id="receiver_stats_spacer"></div>
 
-    <div class="double_buffered_iframe_container" id="tracker_visualizers_iframe_container">
-        <iframe class="double_buffered_iframe tracker_visualizers_iframe" id="tracker_visualizers1" src="/tracker_visualizers"></iframe>
-        <iframe class="double_buffered_iframe tracker_visualizers_iframe" id="tracker_visualizers2" src="/tracker_visualizers"></iframe>
-    </div>
-    <div id="tracker_visualizers_spacer"></div>
+        <div class="double_buffered_iframe_container" id="tracker_visualizers_iframe_container">
+            <iframe class="double_buffered_iframe tracker_visualizers_iframe" id="tracker_visualizers1" src="/tracker_visualizers"></iframe>
+            <iframe class="double_buffered_iframe tracker_visualizers_iframe" id="tracker_visualizers2" src="/tracker_visualizers"></iframe>
+        </div>
+        <div id="tracker_visualizers_spacer"></div>
 
-    <h1>
-        Satellite IDs eligible for acquisition:
-    </h1>
-    <ul>
-        {% for sat_id in state.satellite_ids_eligible_for_acquisition %}
-            <li>{{ sat_id }}</li>
-        {% endfor %}
-    </ul>
+        <h1>
+            Satellite IDs eligible for acquisition:
+        </h1>
+        <ul>
+            {% for sat_id in state.satellite_ids_eligible_for_acquisition %}
+                <li>{{ sat_id }}</li>
+            {% endfor %}
+        </ul>
+    </main>
 {% endblock %}
