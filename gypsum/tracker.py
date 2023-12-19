@@ -124,7 +124,8 @@ class GpsSatelliteTrackingParameters:
         # Maintain a rolling buffer of the last few correlation peaks we've seen. Integrating these peaks over time
         # allows us to track the signal modulation (i.e. in a constellation plot).
         # The tracker runs at 1000Hz, so this represents the last n seconds of tracking.
-        self.correlation_peaks_rolling_buffer = collections.deque(maxlen=_TRACKER_ITERATIONS_PER_SECOND)
+        self.correlation_peaks_rolling_buffer: collections.deque[CoherentCorrelationPeak] = collections.deque(maxlen=_TRACKER_ITERATIONS_PER_SECOND)
+        self.correlation_peak_strengths_rolling_buffer: collections.deque[CorrelationStrengthRatio] = collections.deque(maxlen=_TRACKER_ITERATIONS_PER_SECOND)
         self.correlation_peak_angles = collections.deque(maxlen=_TRACKER_ITERATIONS_PER_SECOND)
         self.carrier_wave_phases = collections.deque(maxlen=_TRACKER_ITERATIONS_PER_SECOND * 5)
         self.carrier_wave_phase_errors = collections.deque(maxlen=_TRACKER_ITERATIONS_PER_SECOND * 5)
@@ -236,7 +237,7 @@ class GpsSatelliteTracker:
 
     def _run_prn_code_tracking_loop_iteration(
         self, seconds_since_start: Seconds, samples: AntennaSamplesSpanningOneMs
-    ) -> Tuple[CoherentCorrelationPeak, NavigationBitPseudosymbol]:
+    ) -> Tuple[CoherentCorrelationPeak, CorrelationStrengthRatio, NavigationBitPseudosymbol]:
         params = self.tracking_params
         # Adjust the time domain based on our current time
         time_domain = self.time_domain_for_1ms + seconds_since_start
@@ -258,6 +259,7 @@ class GpsSatelliteTracker:
         coherent_prompt_correlation = frequency_domain_correlation(doppler_shifted_samples, prompt_prn)
         non_coherent_prompt_correlation = np.abs(coherent_prompt_correlation)
         non_coherent_prompt_peak_offset = np.argmax(non_coherent_prompt_correlation)
+        correlation_strength = get_normalized_correlation_peak_strength(non_coherent_prompt_correlation)
 
         # Recenter the code phase offset so that it looks positive or negative, depending on where the offset sits
         # in the period of the PRN.
@@ -282,7 +284,7 @@ class GpsSatelliteTracker:
         navigation_bit_pseudosymbol_value = int(np.sign(coherent_prompt_prn_correlation_peak.real))
         navigation_bit_pseudosymbol = NavigationBitPseudosymbol.from_val(navigation_bit_pseudosymbol_value)
 
-        return coherent_prompt_prn_correlation_peak, navigation_bit_pseudosymbol
+        return coherent_prompt_prn_correlation_peak, correlation_strength, navigation_bit_pseudosymbol
 
     def process_samples(
         self, seconds_since_start: Seconds, samples: AntennaSamplesSpanningOneMs
@@ -290,13 +292,14 @@ class GpsSatelliteTracker:
         params = self.tracking_params
 
         # First, run an iteration of the PRN code tracking loop
-        coherent_prompt_prn_correlation_peak, navigation_bit_pseudosymbol = self._run_prn_code_tracking_loop_iteration(
+        coherent_prompt_prn_correlation_peak, correlation_strength, navigation_bit_pseudosymbol = self._run_prn_code_tracking_loop_iteration(
             seconds_since_start,
             samples,
         )
         params.navigation_bit_pseudosymbols.append(navigation_bit_pseudosymbol)
 
         self.tracking_params.correlation_peaks_rolling_buffer.append(coherent_prompt_prn_correlation_peak)
+        self.tracking_params.correlation_peak_strengths_rolling_buffer.append(correlation_strength)
 
         # Next, run an iteration of the carrier wave tracking loop
         self._run_carrier_wave_tracking_loop_iteration(
@@ -307,12 +310,15 @@ class GpsSatelliteTracker:
         params.carrier_wave_phases.append(params.current_carrier_wave_phase_shift)
 
         # TODO(PT): Extract the logic to get the rotation of a constellation plot into utils
+        correlation_peaks = np.array(self.tracking_params.correlation_peaks_rolling_buffer)
         if (
             False and seconds_since_start - self._time_since_last_constellation_rotation_induced_adjustment
             >= CONSTELLATION_BASED_FREQUENCY_ADJUSTMENT_PERIOD
         ):
             self._time_since_last_constellation_rotation_induced_adjustment = seconds_since_start
-            iq_constellation_rotation = self._get_iq_constellation_rotation()
+            # TODO(PT): Could be cached somehow, in case two adjustment techniques both need to read the
+            #  current IQ constellation rotation.
+            iq_constellation_rotation = get_iq_constellation_rotation(correlation_peaks)
             if iq_constellation_rotation is not None and abs(iq_constellation_rotation) > CONSTELLATION_BASED_FREQUENCY_ADJUSTMENT_MAXIMUM_ALLOWED_ROTATION:
                 adjustment = -np.sign(iq_constellation_rotation) * CONSTELLATION_BASED_FREQUENCY_ADJUSTMENT_MAGNITUDE
                 print(f"** Adjusting by {adjustment}")
@@ -320,43 +326,21 @@ class GpsSatelliteTracker:
 
         if (
             seconds_since_start - self._time_since_last_constellation_circularity_induced_adjustment
-            >= 1
+            >= 6
         ):
             self._time_since_last_constellation_circularity_induced_adjustment = seconds_since_start
-            points = np.array(self.tracking_params.correlation_peaks_rolling_buffer)
-            if len(points) > 100:
-                cov_matrix = np.cov(np.real(points), np.imag(points))
-                eigenvalues, _ = np.linalg.eig(cov_matrix)
-                ratio = min(eigenvalues) / max(eigenvalues)
-                circularity = 1 - ratio
-
-                if circularity < 0.2:
+            iq_constellation_circularity = get_iq_constellation_circularity(correlation_peaks)
+            if iq_constellation_circularity is not None:
+                if iq_constellation_circularity < 0.2:
                     raise LostSatelliteLockError()
 
-                if circularity < 0.93:
-                    print(f'*** Circularity below threshold {self.tracking_params.satellite.satellite_id.id}: {circularity:.2f}')
+                if iq_constellation_circularity < 0.93:
+                    print(f'*** Circularity below threshold {self.tracking_params.satellite.satellite_id.id}: {iq_constellation_circularity:.2f}')
                     # Use the angle of rotation to determine the direction to adjust our Doppler shift estimate
-                    iq_constellation_rotation = self._get_iq_constellation_rotation()
+                    iq_constellation_rotation = get_iq_constellation_rotation(correlation_peaks)
                     if iq_constellation_rotation is not None:
-                        adjustment = -np.sign(iq_constellation_rotation) * CONSTELLATION_BASED_FREQUENCY_ADJUSTMENT_MAGNITUDE
+                        adjustment = -np.sign(iq_constellation_rotation) * 15
                         self.tracking_params.current_doppler_shift += adjustment
-                        self.tracking_params.current_carrier_wave_phase_shift += -np.sign(iq_constellation_rotation)*(math.pi/4)
+                        self.tracking_params.current_carrier_wave_phase_shift += np.sign(iq_constellation_rotation)*(math.pi/2)
 
         return navigation_bit_pseudosymbol
-
-    def _get_iq_constellation_rotation(self) -> Degrees | None:
-        # TODO(PT): Could be cached somehow, in case two adjustment techniques both need to read the
-        #  current IQ constellation rotation.
-        # Maybe at each tracking loop iteration we clear a cached version of this, and save the cache here.
-        points = np.array(self.tracking_params.correlation_peaks_rolling_buffer)
-        points_on_left_pole = points[points.real < 0]
-        if len(points_on_left_pole) < 2:
-            # Not enough data points to determine a rotation
-            return None
-
-        left_point = np.mean(points_on_left_pole)
-        angle = 180 - (((np.arctan2(left_point.imag, left_point.real) / math.tau) * 360) % 180)
-        rotation = angle
-        if angle > 90:
-            rotation = angle - 180
-        return rotation
