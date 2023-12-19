@@ -12,8 +12,10 @@ from gypsum.units import (
     DopplerShiftHz,
     PrnReplicaCodeSamplesSpanningOneMs,
 )
-from gypsum.units import CorrelationStrength
+from gypsum.units import CorrelationStrengthRatio
+from gypsum.units import Degrees
 from gypsum.units import NonCoherentCorrelationProfile
+from gypsum.units import Percent
 
 _IterType = TypeVar("_IterType")
 
@@ -107,9 +109,37 @@ def integrate_correlation_with_doppler_shifted_prn(
     return integrated_correlation_result
 
 
-def get_normalized_correlation_peak_strength(profile: NonCoherentCorrelationProfile) -> CorrelationStrength:
+def get_normalized_correlation_peak_strength(profile: NonCoherentCorrelationProfile) -> CorrelationStrengthRatio:
     correlation_peak_magnitude = np.max(profile)
     correlation_profile_excluding_peak = profile[profile != correlation_peak_magnitude]
     mean_magnitude_excluding_peak = np.mean(correlation_profile_excluding_peak)
     correlation_strength = correlation_peak_magnitude / mean_magnitude_excluding_peak
     return correlation_strength
+
+
+def get_iq_constellation_rotation(correlation_peaks: np.ndarray) -> Degrees | None:
+    # Maybe at each tracking loop iteration we clear a cached version of this, and save the cache here.
+    points_on_left_pole = correlation_peaks[correlation_peaks.real < 0]
+    if len(points_on_left_pole) < 2:
+        # Not enough data points to determine a rotation
+        return None
+
+    left_point = np.mean(points_on_left_pole)
+    angle = 180 - (((np.arctan2(left_point.imag, left_point.real) / math.tau) * 360) % 180)
+    rotation = angle
+    if angle > 90:
+        rotation = angle - 180
+    return rotation
+
+
+def get_iq_constellation_circularity(correlation_peaks: np.ndarray) -> Percent | None:
+    if len(correlation_peaks) < 2:
+        # Not enough data points to determine circularity
+        return None
+
+    # Ideally we want I to flip between poles while Q remains near zero, meaning we want low covariance.
+    covariance_matrix = np.cov(np.real(correlation_peaks), np.imag(correlation_peaks))
+    # Find the axes upon which the data rotates
+    eigenvalues, _ = np.linalg.eig(covariance_matrix)
+    circularity_ratio = 1 - (min(eigenvalues) / max(eigenvalues))
+    return circularity_ratio

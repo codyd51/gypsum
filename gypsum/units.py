@@ -18,7 +18,8 @@ PrnReplicaCodeSamplesSpanningOneMs = np.ndarray
 CorrelationProfile = np.ndarray
 CoherentCorrelationProfile = CorrelationProfile
 NonCoherentCorrelationProfile = CorrelationProfile
-CorrelationStrength = float
+# Represents the power of a correlation peak relative to the mean power of the correlation profile
+CorrelationStrengthRatio = float
 CoherentCorrelationPeak = complex
 
 Hertz = float

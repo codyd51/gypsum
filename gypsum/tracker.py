@@ -19,8 +19,11 @@ from gypsum.config import (
 from gypsum.constants import PRN_CHIP_COUNT
 from gypsum.satellite import GpsSatellite
 from gypsum.units import CarrierWavePhaseInRadians, CoherentCorrelationPeak, PrnCodePhaseInSamples, Seconds
-from gypsum.units import Degrees
+from gypsum.units import CorrelationStrengthRatio
 from gypsum.utils import AntennaSamplesSpanningOneMs, DopplerShiftHz, frequency_domain_correlation
+from gypsum.utils import get_iq_constellation_circularity
+from gypsum.utils import get_iq_constellation_rotation
+from gypsum.utils import get_normalized_correlation_peak_strength
 
 _logger = logging.getLogger(__name__)
 
