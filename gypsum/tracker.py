@@ -327,6 +327,9 @@ class GpsSatelliteTracker:
                 ratio = min(eigenvalues) / max(eigenvalues)
                 circularity = 1 - ratio
 
+                if circularity < 0.2:
+                    raise LostSatelliteLockError()
+
                 if circularity < 0.93:
                     print(f'*** Circularity below threshold {self.tracking_params.satellite.satellite_id.id}: {circularity:.2f}')
                     # Use the angle of rotation to determine the direction to adjust our Doppler shift estimate
