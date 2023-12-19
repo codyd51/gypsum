@@ -15,6 +15,8 @@ from gypsum.navigation_bit_intergrator import NavigationBitIntegratorHistory
 from gypsum.navigation_message_decoder import NavigationMessageDecoderHistory
 from gypsum.tracker import BitValue, GpsSatelliteTrackingParameters
 from gypsum.units import Seconds
+from gypsum.utils import get_iq_constellation_circularity
+from gypsum.utils import get_iq_constellation_rotation
 
 _logger = logging.getLogger(__name__)
 
@@ -70,8 +72,9 @@ class GraphTypeEnum(Enum):
     PRN_CODE_PHASE = auto()
     CORRELATION_STRENGTH = auto()
 
-    SPACER1 = auto()
-    SPACER2 = auto()
+    IQ_CONSTELLATION_CIRCULARITY = auto()
+    IQ_CONSTELLATION_ROTATION = auto()
+
     SPACER3 = auto()
 
     @property
@@ -94,8 +97,8 @@ class GraphTypeEnum(Enum):
             GraphTypeEnum.PRN_CODE_PHASE: GraphAttributes.text(background_color="#acdffc"),
             GraphTypeEnum.SUBFRAME_PHASE: GraphAttributes.text(background_color="#acdffc"),
             GraphTypeEnum.TRACK_DURATION: GraphAttributes.text(background_color="#c4fcac"),
-            GraphTypeEnum.SPACER1: GraphAttributes.spacer(),
-            GraphTypeEnum.SPACER2: GraphAttributes.spacer(),
+            GraphTypeEnum.IQ_CONSTELLATION_CIRCULARITY: GraphAttributes.text(background_color="#c4fcac"),
+            GraphTypeEnum.IQ_CONSTELLATION_ROTATION: GraphAttributes.text(background_color="#c4fcac"),
             GraphTypeEnum.SPACER3: GraphAttributes.spacer(),
         }[self]
 
@@ -113,7 +116,7 @@ class GraphTypeEnum(Enum):
                 cls.I_COMPONENT,
                 cls.IQ_CONSTELLATION,
                 cls.CORRELATION_STRENGTH,
-                cls.SPACER1,
+                cls.IQ_CONSTELLATION_ROTATION,
             ],
             [
                 cls.PSEUDOSYMBOLS,
@@ -123,7 +126,7 @@ class GraphTypeEnum(Enum):
             ],
             [
                 cls.BITS,
-                cls.SPACER2,
+                cls.SPACER3,
                 cls.BIT_PHASE,
                 cls.PRN_CODE_PHASE,
             ],
@@ -131,7 +134,7 @@ class GraphTypeEnum(Enum):
                 cls.Q_COMPONENT,
                 cls.CARRIER_PHASE_ERROR,
                 cls.SUBFRAME_PHASE,
-                cls.SPACER3,
+                cls.IQ_CONSTELLATION_CIRCULARITY,
             ],
         ]
 
@@ -155,8 +158,8 @@ class GraphTypeEnum(Enum):
             self.EMITTED_SUBFRAMES: "Emitted Subframes",
             self.FAILED_BITS: "Failed Bits",
             self.CORRELATION_STRENGTH: "PRN Correlation Strength",
-            self.SPACER1: "",
-            self.SPACER2: "",
+            self.IQ_CONSTELLATION_CIRCULARITY: "IQ Circularity",
+            self.IQ_CONSTELLATION_ROTATION: "IQ Rotation",
             self.SPACER3: "",
         }[self]
 
@@ -166,7 +169,6 @@ class GpsSatelliteTrackerVisualizer:
         self.should_render = should_render
         self.should_present = should_present
         self._timestamp_of_last_dashboard_update = 0
-        self._timestamp_of_last_graph_reset = 0
 
         if not should_render:
             return
@@ -251,13 +253,6 @@ class GpsSatelliteTrackerVisualizer:
             # It hasn't been long enough since our last GUI update
             return
 
-        if seconds_since_start - self._timestamp_of_last_graph_reset >= _RESET_DISPLAYED_DATA_PERIOD:
-            self._timestamp_of_last_graph_reset = seconds_since_start
-
-            # Reset the graphs that clear periodically (so the old data doesn't clutter things up).
-            self.graph_for_type(GraphTypeEnum.IQ_CONSTELLATION).clear()
-            self.graph_for_type(GraphTypeEnum.CARRIER_PHASE_ERROR).clear()
-
         # Time to update the GUI
         self._timestamp_of_last_dashboard_update = seconds_since_start
 
@@ -270,31 +265,36 @@ class GpsSatelliteTrackerVisualizer:
         self.graph_for_type(GraphTypeEnum.DOPPLER_SHIFT).clear()
         self.graph_for_type(GraphTypeEnum.DOPPLER_SHIFT).plot(params.doppler_shifts[::10])
 
-        points = np.array(params.correlation_peaks_rolling_buffer)
-        self.graph_for_type(GraphTypeEnum.IQ_CONSTELLATION).scatter(np.real(points), np.imag(points))
+        correlation_peaks = np.array(params.correlation_peaks_rolling_buffer)
+        points_i = np.real(correlation_peaks)
+        points_q = np.imag(correlation_peaks)
+        self.graph_for_type(GraphTypeEnum.IQ_CONSTELLATION).clear()
+        self.graph_for_type(GraphTypeEnum.IQ_CONSTELLATION).scatter(points_i, points_q)
 
-        if len(points) > 2:
-            # Draw the 'average' / mean point of each pole
-            points_on_left_pole = points[points.real < 0]
-            points_on_right_pole = points[points.real >= 0]
+        iq_constellation_rotation = get_iq_constellation_rotation(correlation_peaks)
+        if iq_constellation_rotation is not None:
+            self.graph_for_type(GraphTypeEnum.IQ_CONSTELLATION_ROTATION).clear()
+            self.draw_text(GraphTypeEnum.IQ_CONSTELLATION_ROTATION, f'{iq_constellation_rotation:.2f}°')
 
-            left_point = np.mean(points_on_left_pole) if len(points_on_left_pole) >= 2 else 0
-            right_point = np.mean(points_on_right_pole) if len(points_on_right_pole) >= 2 else 0
-
-            angle = 180 - (((np.arctan2(left_point.imag, left_point.real) / math.tau) * 360) % 180)
-            rotation = angle
-            if angle > 90:
-                rotation = angle - 180
-            # _logger.info(f'Angle {angle:.2f} Rotation {rotation:.2f} Doppler {params.current_doppler_shift:.2f}')
+            # Draw the mean point of each pole
+            peaks_on_left_pole = correlation_peaks[correlation_peaks.real < 0]
+            peaks_on_right_pole = correlation_peaks[correlation_peaks.real >= 0]
+            left_pole = np.mean(peaks_on_left_pole) if len(peaks_on_left_pole) >= 2 else 0
+            right_pole = np.mean(peaks_on_right_pole) if len(peaks_on_right_pole) >= 2 else 0
             self.graph_for_type(GraphTypeEnum.IQ_CONSTELLATION).scatter(
-                [left_point.real, right_point.real], [left_point.imag, right_point.imag]
+                [left_pole.real, right_pole.real], [left_pole.imag, right_pole.imag]
             )
 
+        iq_constellation_circularity = get_iq_constellation_circularity(correlation_peaks)
+        if iq_constellation_circularity is not None:
+            self.graph_for_type(GraphTypeEnum.IQ_CONSTELLATION_CIRCULARITY).clear()
+            self.draw_text(GraphTypeEnum.IQ_CONSTELLATION_CIRCULARITY, f'{iq_constellation_circularity:.2f}%')
+
         self.graph_for_type(GraphTypeEnum.I_COMPONENT).clear()
-        self.graph_for_type(GraphTypeEnum.I_COMPONENT).plot(np.real(points))
+        self.graph_for_type(GraphTypeEnum.I_COMPONENT).plot(np.real(correlation_peaks))
 
         self.graph_for_type(GraphTypeEnum.Q_COMPONENT).clear()
-        self.graph_for_type(GraphTypeEnum.Q_COMPONENT).plot(np.imag(points))
+        self.graph_for_type(GraphTypeEnum.Q_COMPONENT).plot(np.imag(correlation_peaks))
 
         self.graph_for_type(GraphTypeEnum.IQ_ANGLE).clear()
         self.graph_for_type(GraphTypeEnum.IQ_ANGLE).plot(params.correlation_peak_angles)
