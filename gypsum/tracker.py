@@ -19,9 +19,14 @@ from gypsum.config import (
 from gypsum.constants import PRN_CHIP_COUNT
 from gypsum.satellite import GpsSatellite
 from gypsum.units import CarrierWavePhaseInRadians, CoherentCorrelationPeak, PrnCodePhaseInSamples, Seconds
+from gypsum.units import Degrees
 from gypsum.utils import AntennaSamplesSpanningOneMs, DopplerShiftHz, frequency_domain_correlation
 
 _logger = logging.getLogger(__name__)
+
+
+class LostSatelliteLockError(Exception):
+    pass
 
 
 class BitValue(Enum):
@@ -303,18 +308,29 @@ class GpsSatelliteTracker:
             >= CONSTELLATION_BASED_FREQUENCY_ADJUSTMENT_PERIOD
         ):
             self._time_since_last_constellation_rotation_induced_adjustment = seconds_since_start
-            points = np.array(self.tracking_params.correlation_peaks_rolling_buffer)
-            points_on_left_pole = points[points.real < 0]
-            if len(points_on_left_pole) > 2:
-                left_point = np.mean(points_on_left_pole)
-                angle = 180 - (((np.arctan2(left_point.imag, left_point.real) / math.tau) * 360) % 180)
-                rotation = angle
-                if angle > 90:
-                    rotation = angle - 180
+            iq_constellation_rotation = self._get_iq_constellation_rotation()
+            if iq_constellation_rotation is not None and abs(iq_constellation_rotation) > CONSTELLATION_BASED_FREQUENCY_ADJUSTMENT_MAXIMUM_ALLOWED_ROTATION:
+                adjustment = -np.sign(iq_constellation_rotation) * CONSTELLATION_BASED_FREQUENCY_ADJUSTMENT_MAGNITUDE
+                print(f"** Adjusting by {adjustment}")
+                self.tracking_params.current_doppler_shift += adjustment
 
-                if abs(rotation) > CONSTELLATION_BASED_FREQUENCY_ADJUSTMENT_MAXIMUM_ALLOWED_ROTATION:
-                    adjustment = -np.sign(rotation) * CONSTELLATION_BASED_FREQUENCY_ADJUSTMENT_MAGNITUDE
-                    print(f"** Adjusting by {adjustment}")
-                    self.tracking_params.current_doppler_shift += adjustment
+            points = np.array(self.tracking_params.correlation_peaks_rolling_buffer)
 
         return navigation_bit_pseudosymbol
+
+    def _get_iq_constellation_rotation(self) -> Degrees | None:
+        # TODO(PT): Could be cached somehow, in case two adjustment techniques both need to read the
+        #  current IQ constellation rotation.
+        # Maybe at each tracking loop iteration we clear a cached version of this, and save the cache here.
+        points = np.array(self.tracking_params.correlation_peaks_rolling_buffer)
+        points_on_left_pole = points[points.real < 0]
+        if len(points_on_left_pole) < 2:
+            # Not enough data points to determine a rotation
+            return None
+
+        left_point = np.mean(points_on_left_pole)
+        angle = 180 - (((np.arctan2(left_point.imag, left_point.real) / math.tau) * 360) % 180)
+        rotation = angle
+        if angle > 90:
+            rotation = angle - 180
+        return rotation

@@ -19,16 +19,12 @@ from gypsum.navigation_message_decoder import (
     NavigationMessageDecoder,
 )
 from gypsum.satellite import GpsSatellite
-from gypsum.tracker import GpsSatelliteTracker, GpsSatelliteTrackingParameters
+from gypsum.tracker import GpsSatelliteTracker, GpsSatelliteTrackingParameters, LostSatelliteLockError
 from gypsum.tracker_visualizer import GpsSatelliteTrackerVisualizer
 from gypsum.units import Seconds
 from gypsum.utils import AntennaSamplesSpanningOneMs
 
 _logger = logging.getLogger(__name__)
-
-
-class LostSatelliteLockError(Exception):
-    pass
 
 
 class TrackingState(Enum):
