@@ -10,6 +10,7 @@ import numpy as np
 from gypsum.config import UTC_LEAP_SECONDS_COUNT
 from gypsum.constants import PRN_REPETITIONS_PER_SECOND
 from gypsum.radio_input import InputFileInfo
+from gypsum.units import ReceiverDataSeconds
 from gypsum.units import SampleCount, Seconds
 
 # Expressed as seconds since the UTC epoch, as measured by the local clock (i.e. including the receiver clock bias)
@@ -35,7 +36,7 @@ class AntennaSampleProvider(ABC):
         ...
 
     @abstractmethod
-    def seconds_since_start(self) -> Seconds:
+    def seconds_since_start(self) -> ReceiverDataSeconds:
         ...
 
     @abstractmethod
