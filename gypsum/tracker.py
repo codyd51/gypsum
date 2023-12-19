@@ -191,6 +191,7 @@ class GpsSatelliteTracker:
         )
 
         self._time_since_last_constellation_rotation_induced_adjustment = 0.0
+        self._time_since_last_constellation_circularity_induced_adjustment = 0.0
 
     # We only have two PLL modes, so an LRU cache with 2 entries should be sufficient.
     @functools.lru_cache(maxsize=2)
@@ -304,7 +305,7 @@ class GpsSatelliteTracker:
 
         # TODO(PT): Extract the logic to get the rotation of a constellation plot into utils
         if (
-            seconds_since_start - self._time_since_last_constellation_rotation_induced_adjustment
+            False and seconds_since_start - self._time_since_last_constellation_rotation_induced_adjustment
             >= CONSTELLATION_BASED_FREQUENCY_ADJUSTMENT_PERIOD
         ):
             self._time_since_last_constellation_rotation_induced_adjustment = seconds_since_start
@@ -314,7 +315,26 @@ class GpsSatelliteTracker:
                 print(f"** Adjusting by {adjustment}")
                 self.tracking_params.current_doppler_shift += adjustment
 
+        if (
+            seconds_since_start - self._time_since_last_constellation_circularity_induced_adjustment
+            >= 1
+        ):
+            self._time_since_last_constellation_circularity_induced_adjustment = seconds_since_start
             points = np.array(self.tracking_params.correlation_peaks_rolling_buffer)
+            if len(points) > 100:
+                cov_matrix = np.cov(np.real(points), np.imag(points))
+                eigenvalues, _ = np.linalg.eig(cov_matrix)
+                ratio = min(eigenvalues) / max(eigenvalues)
+                circularity = 1 - ratio
+
+                if circularity < 0.93:
+                    print(f'*** Circularity below threshold {self.tracking_params.satellite.satellite_id.id}: {circularity:.2f}')
+                    # Use the angle of rotation to determine the direction to adjust our Doppler shift estimate
+                    iq_constellation_rotation = self._get_iq_constellation_rotation()
+                    if iq_constellation_rotation is not None:
+                        adjustment = -np.sign(iq_constellation_rotation) * CONSTELLATION_BASED_FREQUENCY_ADJUSTMENT_MAGNITUDE
+                        self.tracking_params.current_doppler_shift += adjustment
+                        self.tracking_params.current_carrier_wave_phase_shift += -np.sign(iq_constellation_rotation)*(math.pi/4)
 
         return navigation_bit_pseudosymbol
 
