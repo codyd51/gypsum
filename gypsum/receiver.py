@@ -67,7 +67,7 @@ class GpsReceiver:
 
         self.world_model = GpsWorldModel()
 
-        self._time_since_last_acquisition_scan = 0.0
+        self._time_since_last_acquisition_scan: ReceiverDataSeconds | None = None
 
         self._time_since_last_dashboard_server_scan = 0.0
         self._is_connected_to_dashboard_server = False
@@ -95,19 +95,21 @@ class GpsReceiver:
         # If we need to perform acquisition, do so now
         seconds_since_start = self.antenna_samples_provider.seconds_since_start()
         if (
-            seconds_since_start == 0
+            self._time_since_last_acquisition_scan is None
             or seconds_since_start - self._time_since_last_acquisition_scan
             >= ACQUISITION_SCAN_FREQUENCY
         ):
-            # Update the timestamp even if we decide not to try to acquire more satellites
-            self._time_since_last_acquisition_scan = seconds_since_start
-            if len(self.tracked_satellite_ids_to_processing_pipelines) < MINIMUM_TRACKED_SATELLITES_FOR_POSITION_FIX:
-                _logger.info(
-                    f"Will perform acquisition search because we're only "
-                    f"tracking {len(self.tracked_satellite_ids_to_processing_pipelines)} satellites."
-                )
-                _logger.info(f"{receiver_timestamp}: Subframe count: {self.subframe_count}")
-                self._perform_acquisition()
+            # Don't update the timestamp unless we'll really have an opportunity to run acquisition
+            if self._can_perform_acquisition():
+                # Update the timestamp even if we decide not to try to acquire more satellites
+                self._time_since_last_acquisition_scan = seconds_since_start
+                if len(self.tracked_satellite_ids_to_processing_pipelines) < MINIMUM_TRACKED_SATELLITES_FOR_POSITION_FIX:
+                    _logger.info(
+                        f"Will perform acquisition search because we're only "
+                        f"tracking {len(self.tracked_satellite_ids_to_processing_pipelines)} satellites."
+                    )
+                    _logger.info(f"{receiver_timestamp}: Subframe count: {self.subframe_count}")
+                    self._perform_acquisition()
 
         # Continue tracking each acquired satellite
         satellite_ids_to_tracker_events = self._track_acquired_satellites(receiver_timestamp, samples)
@@ -144,12 +146,18 @@ class GpsReceiver:
         # The satellites that we've just acquired no longer need to be searched for in the acquisition stage
         self.satellite_ids_eligible_for_acquisition = [x for x in self.satellite_ids_eligible_for_acquisition if x not in newly_acquired_satellite_ids]
 
-    def _perform_acquisition_on_satellite_ids(self, satellite_ids: list[GpsSatelliteId]) -> list[GpsSatelliteId]:
-        # To improve signal-to-noise ratio during acquisition, we integrate antenna data over 20ms.
-        # Therefore, we keep a rolling buffer of the last few samples.
+    def _can_perform_acquisition(self) -> bool:
         # If this buffer isn't primed yet, we can't do any work yet.
         if len(self.rolling_samples_buffer) < ACQUISITION_INTEGRATION_PERIOD_MS:
             # _logger.info(f"Skipping acquisition attempt because the history buffer isn't primed yet.")
+            return False
+
+        return True
+
+    def _perform_acquisition_on_satellite_ids(self, satellite_ids: list[GpsSatelliteId]) -> list[GpsSatelliteId]:
+        # To improve signal-to-noise ratio during acquisition, we integrate antenna data over 20ms.
+        # Therefore, we keep a rolling buffer of the last few samples.
+        if not self._can_perform_acquisition():
             return []
 
         # TODO(PT): Properly model the cursor field
