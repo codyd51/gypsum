@@ -2,6 +2,9 @@ import numpy as np
 
 # TODO(PT): Rename this (or introduce a new type) to reflect that it represents 'seconds since startup'?
 Seconds = float
+WallClockSeconds = float
+ReceiverDataSeconds = float
+
 MetersPerSecond = float
 RadiansPerSecond = float
 Radians = float
