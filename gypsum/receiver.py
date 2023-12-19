@@ -18,7 +18,10 @@ from gypsum.gps_ca_prn_codes import GpsSatelliteId, generate_replica_prn_signals
 from gypsum.navigation_bit_intergrator import Event
 from gypsum.navigation_message_decoder import EmitSubframeEvent
 from gypsum.satellite import ALL_SATELLITE_IDS, GpsSatellite
-from gypsum.satellite_signal_processing_pipeline import GpsSatelliteSignalProcessingPipeline, LostSatelliteLockError
+from gypsum.tracker import LostSatelliteLockError
+from gypsum.satellite_signal_processing_pipeline import GpsSatelliteSignalProcessingPipeline
+from gypsum.units import ReceiverDataSeconds
+from gypsum.units import Seconds
 from gypsum.utils import AntennaSamplesSpanningOneMs
 from gypsum.world_model import DeterminedSatelliteOrbitEvent, GpsWorldModel
 from web_dashboard.messages import GpsReceiverState
@@ -44,12 +47,15 @@ class GpsReceiver:
         # TODO(PT): Perhaps this state should belong to the detector.
         # And further, perhaps it should be somewhere easy to configure?
         # The receiver can remove satellites from the pool when it decides a satellite has been acquired
-        # self.satellite_ids_eligible_for_acquisition = deepcopy(ALL_SATELLITE_IDS)
         # PT: The phase isn't about the chip offset, it's about "the timestamp of where the PRN starts"
         # Literally they're the same, but the latter makes more sense conceptually in terms of 'measuring the delay' -
         # you look at the timestamp where the PRN starts.
         # Example: timestamped HOW and we receive it 7 milliseconds later (for 20km distance)
-        self.satellite_ids_eligible_for_acquisition = [GpsSatelliteId(id=32)]
+        self.satellite_ids_eligible_for_acquisition = [
+            GpsSatelliteId(id=28),
+            #GpsSatelliteId(id=31),
+        ]
+        self.satellite_ids_eligible_for_acquisition = deepcopy(ALL_SATELLITE_IDS)
         self.satellite_detector = GpsSatelliteDetector(self.satellites_by_id)
         # Used during acquisition to integrate correlation over a longer period than a millisecond.
         self.rolling_samples_buffer: collections.deque = collections.deque(maxlen=ACQUISITION_INTEGRATION_PERIOD_MS)
@@ -74,6 +80,14 @@ class GpsReceiver:
         receiver_timestamp, samples = self.antenna_samples_provider.get_samples(
             self.antenna_samples_provider.get_attributes().samples_per_prn_transmission,
         )
+
+        # Hook up to the dashboard webserver. Periodically try to connect to the dashboard, and send our state
+        # update if we're connected.
+        # Do this before we process the samples. The only reason for this is so that the dashboard can get some
+        # initial state to display before we perform the initial acquisition scan.
+        self._scan_for_dashboard_webserver_if_necessary()
+        self._send_receiver_state_to_dashboard_if_necessary(receiver_timestamp)
+
         # receiver_timestamp, samples = self.antenna_samples_provider.get_samples(SAMPLES_PER_PRN_TRANSMISSION)
         # Firstly, record this sample in our rolling buffer
         self.rolling_samples_buffer.append(samples)
@@ -124,11 +138,6 @@ class GpsReceiver:
                 if isinstance(world_model_event, DeterminedSatelliteOrbitEvent):
                     print(f"Determined the orbit of {satellite_id}! {world_model_event.orbital_parameters}")
                     orbit_params = world_model_event.orbital_parameters
-
-        # Hook up to the dashboard webserver. Periodically try to connect to the dashboard, and send our state
-        # update if we're connected.
-        self._scan_for_dashboard_webserver_if_necessary()
-        self._send_receiver_state_to_dashboard_if_necessary(receiver_timestamp)
 
     def _perform_acquisition(self) -> None:
         newly_acquired_satellite_ids = self._perform_acquisition_on_satellite_ids(self.satellite_ids_eligible_for_acquisition)

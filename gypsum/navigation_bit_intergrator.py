@@ -196,7 +196,7 @@ class NavigationBitIntegrator:
 
     def _should_resynchronize_bit_phase(self) -> bool:
         if self.history.processed_pseudosymbol_count % self.resynchronize_bit_phase_period == 0:
-            _logger.info(f"Resynchronizing bit phase because the periodic job has fired")
+            # _logger.info(f"Resynchronizing bit phase because the periodic job has fired")
             return True
 
         # Can't determine bit phase without any pseudosymbols to work with
@@ -209,7 +209,7 @@ class NavigationBitIntegrator:
 
         # Have we never detected a bit phase?
         if self.history.previous_bit_phase_decision is None:
-            _logger.info(f"Resynchronizing bit phase because we've never selected a phase before")
+            # _logger.info(f"Resynchronizing bit phase because we've never selected a phase before")
             return True
 
         # Have we failed too many bits in a row?
@@ -239,7 +239,7 @@ class NavigationBitIntegrator:
 
         did_determine_first_bit_phase = previous_bit_phase_decision is None and new_bit_phase is not None
         if did_determine_first_bit_phase:
-            print(f"******* FIRST Bit phase! {new_bit_phase}")
+            # print(f"******* FIRST Bit phase! {new_bit_phase}")
             if new_bit_phase > 0:
                 self.history.pseudosymbol_cursor_within_queue = new_bit_phase
         else:
