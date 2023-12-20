@@ -214,6 +214,10 @@ class GpsWorldModel:
         subframe = emit_subframe_event.subframe
         subframe_id = subframe.subframe_id
 
+        # We've just observed a handover timestamp, so reset our counter tracking how many PRNs we've observed since
+        # then.
+        self.satellite_ids_to_prn_observations_since_last_handover_timestamp[satellite_id] = 0
+
         orbital_params_for_this_satellite = self.satellite_ids_to_orbital_parameters[satellite_id]
 
         # Keep track of whether we already had all the orbital parameters for this satellite, so we know whether
