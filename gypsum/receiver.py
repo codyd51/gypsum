@@ -195,6 +195,7 @@ class GpsReceiver:
     ) -> dict[GpsSatelliteId, list[Event]]:
         satellite_ids_to_events = {}
         satellite_ids_to_reacquire = []
+        satellite_ids_to_drop = []
         for satellite_id, pipeline in self.tracked_satellite_ids_to_processing_pipelines.items():
             try:
                 if events := pipeline.process_samples(
@@ -205,16 +206,30 @@ class GpsReceiver:
                     satellite_ids_to_events[satellite_id] = events
             except LostSatelliteLockError:
                 satellite_ids_to_reacquire.append(satellite_id)
+                # Don't modify the mapping while iterating it
+                satellite_ids_to_drop.append(satellite_id)
 
-        for satellite_id in satellite_ids_to_reacquire:
-            del self.tracked_satellite_ids_to_processing_pipelines[satellite_id]
-            print("Trying to re-acquire...")
-            acquired_satellite_ids = self._perform_acquisition_on_satellite_ids([satellite_id])
-            if len(acquired_satellite_ids) != 1:
-                # Failed to re-acquire this satellite
-                print(f"Failed to re-acquire!")
-                # TODO(PT): Put it back on the queue of available-to-acquire?
+        for satellite_id in satellite_ids_to_drop:
+            self._drop_satellite(satellite_id)
+
+        if False:
+            for satellite_id in satellite_ids_to_reacquire:
+                print("Trying to re-acquire...")
+                acquired_satellite_ids = self._perform_acquisition_on_satellite_ids([satellite_id])
+                if len(acquired_satellite_ids) != 1:
+                    # Failed to re-acquire this satellite
+                    print(f"Failed to re-acquire!")
+                    # TODO(PT): Put it back on the queue of available-to-acquire?
+
         return satellite_ids_to_events
+
+    def _drop_satellite(self, satellite_id: GpsSatelliteId) -> None:
+        if satellite_id not in self.tracked_satellite_ids_to_processing_pipelines:
+            raise ValueError(f'Tried to drop an untracked satellite {satellite_id}')
+
+        del self.tracked_satellite_ids_to_processing_pipelines[satellite_id]
+        # Inform the world model that we're no longer reliably counting PRNs for this satellite
+        self.world_model.handle_lost_satellite_lock(satellite_id)
 
     def _send_receiver_state_to_dashboard_if_necessary(self, receiver_timestamp: ReceiverTimestampSeconds) -> None:
         # Nothing to do if we're not connected to the webserver

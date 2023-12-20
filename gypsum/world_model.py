@@ -209,6 +209,17 @@ class GpsWorldModel:
             self.satellite_ids_to_prn_observations_since_last_handover_timestamp[satellite_id] = 0
         self.satellite_ids_to_prn_observations_since_last_handover_timestamp[satellite_id] += 1
 
+    def handle_lost_satellite_lock(self, satellite_id: GpsSatelliteId) -> None:
+        # We're no longer reliably counting PRNs, so clear our counter state
+        del self.satellite_ids_to_prn_observations_since_last_handover_timestamp[satellite_id]
+        # And clear the last timestamp for this satellite
+        # Otherwise, when we reacquire this satellite, we'll think we have a reliable time reference to work with.
+        # Instead, once we start re-tracking this satellite, we'll need to find out from the satellite what its
+        # current timestamp is.
+        self.satellite_ids_to_orbital_parameters[satellite_id].set_parameter(
+            OrbitalParameterType.GPS_TIME_AT_LAST_TIMESTAMP, None
+        )
+
 
     def handle_subframe_emitted(
         self, satellite_id: GpsSatelliteId, emit_subframe_event: EmitSubframeEvent
