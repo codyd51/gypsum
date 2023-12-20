@@ -22,7 +22,9 @@ from gypsum.navigation_message_parser import (
     SemiCircles,
     SemiCirclesPerSecond,
 )
+from gypsum.units import GpsSatelliteSeconds
 from gypsum.units import MetersPerSecond, Radians, RadiansPerSecond, Seconds
+from gypsum.units import ReceiverDataSeconds
 
 _ParameterType = TypeVar("_ParameterType")
 _ParameterValueType = TypeVar("_ParameterValueType")
@@ -163,7 +165,7 @@ class OrbitalParameters(ParameterSet[OrbitalParameterType, _OrbitalParameterValu
         return self._get_parameter_infallibly(OrbitalParameterType.WEEK_NUMBER)
 
     @property
-    def ephemeris_reference_time(self) -> Seconds:
+    def ephemeris_reference_time(self) -> GpsSatelliteSeconds:
         """Expressed in seconds since start of week"""
         return self._get_parameter_infallibly(OrbitalParameterType.EPHEMERIS_REFERENCE_TIME)
 
@@ -172,7 +174,7 @@ class OrbitalParameters(ParameterSet[OrbitalParameterType, _OrbitalParameterValu
         return self._get_parameter_infallibly(OrbitalParameterType.RECEIVER_TIME_AT_LAST_TIMESTAMP)
 
     @property
-    def gps_time_at_last_timestamp(self) -> Seconds:
+    def gps_time_at_last_timestamp(self) -> GpsSatelliteSeconds:
         return self._get_parameter_infallibly(OrbitalParameterType.GPS_TIME_AT_LAST_TIMESTAMP)
 
 

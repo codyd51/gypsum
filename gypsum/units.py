@@ -4,6 +4,7 @@ import numpy as np
 Seconds = float
 WallClockSeconds = float
 ReceiverDataSeconds = float
+GpsSatelliteSeconds = float
 
 MetersPerSecond = float
 RadiansPerSecond = float
