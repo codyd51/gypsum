@@ -362,7 +362,7 @@ class GpsSatelliteTrackerVisualizer:
         self.draw_text(GraphTypeEnum.PRN_CODE_PHASE, prn_code_phase_text)
 
         self.graph_for_type(GraphTypeEnum.CORRELATION_STRENGTH).clear()
-        mean_correlation_strenth = np.mean(np.array(params.correlation_peak_strengths_rolling_buffer))
+        mean_correlation_strength = np.mean(np.array(params.correlation_peak_strengths_rolling_buffer))
         correlation_strength_text = f"{mean_correlation_strength:.2f}"
         self.draw_text(GraphTypeEnum.CORRELATION_STRENGTH, correlation_strength_text)
 

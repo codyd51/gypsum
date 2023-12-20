@@ -339,7 +339,7 @@ class GpsSatelliteTracker:
                     # Use the angle of rotation to determine the direction to adjust our Doppler shift estimate
                     iq_constellation_rotation = get_iq_constellation_rotation(correlation_peaks)
                     if iq_constellation_rotation is not None:
-                        adjustment = -np.sign(iq_constellation_rotation) * 15
+                        adjustment = -np.sign(iq_constellation_rotation) * 5
                         self.tracking_params.current_doppler_shift += adjustment
                         self.tracking_params.current_carrier_wave_phase_shift += np.sign(iq_constellation_rotation)*(math.pi/2)
 

@@ -114,6 +114,11 @@ class GpsReceiver:
         # Continue tracking each acquired satellite
         satellite_ids_to_tracker_events = self._track_acquired_satellites(receiver_timestamp, samples)
         # And keep track of updates to our world model
+        # Firstly, note that each of these satellites has emitted another PRN.
+        # This allows us to keep track of the passage of satellite time with reference to the HOW timestamp.
+        for satellite_id in self.tracked_satellite_ids_to_processing_pipelines.keys():
+            self.world_model.handle_prn_observed(satellite_id)
+
         satellite_ids_to_world_model_events = {}
         for satellite_id, events in satellite_ids_to_tracker_events.items():
             for event in events:

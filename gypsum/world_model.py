@@ -196,6 +196,14 @@ class GpsWorldModel:
         self.satellite_ids_to_orbital_parameters: dict[GpsSatelliteId, OrbitalParameters] = defaultdict(
             OrbitalParameters
         )
+        # PT: Not a defaultdict, because it matters whether the satellite tracked in this map.
+        self.satellite_ids_to_prn_observations_since_last_handover_timestamp: dict[GpsSatelliteId, int] = {}
+
+    def handle_prn_observed(self, satellite_id: GpsSatelliteId) -> None:
+        if satellite_id not in self.satellite_ids_to_prn_observations_since_last_handover_timestamp:
+            self.satellite_ids_to_prn_observations_since_last_handover_timestamp[satellite_id] = 0
+        self.satellite_ids_to_prn_observations_since_last_handover_timestamp[satellite_id] += 1
+
 
     def handle_subframe_emitted(
         self, satellite_id: GpsSatelliteId, emit_subframe_event: EmitSubframeEvent
