@@ -198,6 +198,8 @@ class GpsWorldModel:
         )
         # PT: Not a defaultdict, because it matters whether the satellite tracked in this map.
         self.satellite_ids_to_prn_observations_since_last_handover_timestamp: dict[GpsSatelliteId, int] = {}
+        self.receiver_current_timestamp: ReceiverTimestampSeconds | None = None
+
 
     def handle_prn_observed(self, satellite_id: GpsSatelliteId) -> None:
         if satellite_id not in self.satellite_ids_to_prn_observations_since_last_handover_timestamp:
@@ -230,6 +232,13 @@ class GpsWorldModel:
             orbital_params_for_this_satellite.set_parameter(
                 OrbitalParameterType.GPS_TIME_AT_LAST_TIMESTAMP, gps_satellite_time
             )
+            # If we've never synchronized the receiver clock, synchronize it now.
+            # This will result in the receiver thinking this satellite is "~0" transmission time away, which is
+            # obviously incorrect. However, this clock bias isn't so bad, as GPS should be able to cope with clock
+            # bias upwards of several seconds, whereas this clock bias would only represent however much time the
+            # signal actually took to reach the receiver, which should be on the order of < 100ms.
+            if self.receiver_current_timestamp is None:
+                self.receiver_current_timestamp = gps_satellite_time
 
         # Extract more orbital parameters, discriminating based on the type of subframe we've just seen
         # Casts because the subframe is currently typed as the subframe base class
