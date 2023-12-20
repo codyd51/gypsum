@@ -200,6 +200,9 @@ class GpsWorldModel:
         self.satellite_ids_to_prn_observations_since_last_handover_timestamp: dict[GpsSatelliteId, int] = {}
         self.receiver_current_timestamp: ReceiverTimestampSeconds | None = None
 
+    def handle_processed_1ms_of_antenna_data(self) -> None:
+        if self.receiver_current_timestamp is not None:
+            self.receiver_current_timestamp += 0.001
 
     def handle_prn_observed(self, satellite_id: GpsSatelliteId) -> None:
         if satellite_id not in self.satellite_ids_to_prn_observations_since_last_handover_timestamp:

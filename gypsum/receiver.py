@@ -146,6 +146,10 @@ class GpsReceiver:
                     print(f"Determined the orbit of {satellite_id}! {world_model_event.orbital_parameters}")
                     orbit_params = world_model_event.orbital_parameters
 
+
+        # Inform the world model that another millisecond has elapsed for our receiver
+        self.world_model.handle_processed_1ms_of_antenna_data()
+
     def _perform_acquisition(self) -> None:
         newly_acquired_satellite_ids = self._perform_acquisition_on_satellite_ids(self.satellite_ids_eligible_for_acquisition)
         # The satellites that we've just acquired no longer need to be searched for in the acquisition stage
