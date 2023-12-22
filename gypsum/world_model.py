@@ -298,12 +298,13 @@ class GpsWorldModel:
                 OrbitalParameterType.GPS_TIME_OF_WEEK_AT_LAST_TIMESTAMP, satellite_time_of_week_in_seconds
             )
             # If we've never synchronized the receiver clock, synchronize it now.
-            # This will result in the receiver thinking this satellite is "~0" transmission time away, which is
-            # obviously incorrect. However, this clock bias isn't so bad, as GPS should be able to cope with clock
-            # bias upwards of several seconds, whereas this clock bias would only represent however much time the
-            # signal actually took to reach the receiver, which should be on the order of < 100ms.
+            # As an initial estimate of our clock offset, set our clock to be the GPS system time, plus a
+            # typical (but currently unmeasured) transmission delay. This should give us a receiver time estimate
+            # that's not massively different from reality (as transmission times are in the realm of 60-80ms).
+            # This guess will then be refined when we carry out our position fix. The magnitude of error here
+            # shouldn't be too bad, as GPS should be able to cope with clock bias upwards of several seconds.
             if self.receiver_current_timestamp is None:
-                self.receiver_current_timestamp = gps_satellite_time
+                self.receiver_current_timestamp = satellite_time_of_week_in_seconds + (0.001 * 68)
 
         # Extract more orbital parameters, discriminating based on the type of subframe we've just seen
         # Casts because the subframe is currently typed as the subframe base class
