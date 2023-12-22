@@ -259,7 +259,39 @@ class GpsWorldModel:
             OrbitalParameterType.GPS_TIME_OF_WEEK_AT_LAST_TIMESTAMP
         )
 
+    def get_eccentric_anomaly(
+        self,
+        orbital_params: OrbitalParameters,
+        time_of_week: GpsSatelliteSecondsIntoWeek
+    ) -> float:
+        earth_gravitational_constant = 3.986005e14
+        eccentricity = orbital_params.eccentricity
+        semi_major_axis = orbital_params.semi_major_axis
+
+        computed_mean_motion = math.sqrt(earth_gravitational_constant / (math.pow(semi_major_axis, 3)))
+        mean_motion_difference = orbital_params.get_parameter(OrbitalParameterType.MEAN_MOTION_DIFFERENCE)
+        corrected_mean_motion = computed_mean_motion + mean_motion_difference
+        # M0
+        mean_anomaly_at_reference_time = orbital_params.get_parameter(
+            OrbitalParameterType.MEAN_ANOMALY_AT_REFERENCE_TIME
         )
+        ephemeris_reference_time = orbital_params.get_parameter(OrbitalParameterType.EPHEMERIS_REFERENCE_TIME)
+        time_from_ephemeris_reference_time = time_of_week - ephemeris_reference_time
+        mean_anomaly_now = mean_anomaly_at_reference_time + (
+            corrected_mean_motion * time_from_ephemeris_reference_time
+        )
+
+        eccentric_anomaly_now_estimation = mean_anomaly_now
+        for i in range(10):
+            numerator = (
+                mean_anomaly_now
+                - eccentric_anomaly_now_estimation
+                + (eccentricity * math.sin(eccentric_anomaly_now_estimation))
+            )
+            denominator = 1 - (eccentricity * math.cos(eccentric_anomaly_now_estimation))
+            eccentric_anomaly_now_estimation = eccentric_anomaly_now_estimation + (numerator / denominator)
+        eccentric_anomaly_now = eccentric_anomaly_now_estimation
+        return eccentric_anomaly_now
 
 
     def handle_subframe_emitted(
