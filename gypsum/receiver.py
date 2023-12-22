@@ -89,8 +89,7 @@ class GpsReceiver:
         self._scan_for_dashboard_webserver_if_necessary()
         self._send_receiver_state_to_dashboard_if_necessary(receiver_timestamp)
 
-        # receiver_timestamp, samples = self.antenna_samples_provider.get_samples(SAMPLES_PER_PRN_TRANSMISSION)
-        # Firstly, record this sample in our rolling buffer
+        # Record this sample in our rolling buffer
         self.rolling_samples_buffer.append(samples)
 
         # If we need to perform acquisition, do so now
@@ -118,7 +117,8 @@ class GpsReceiver:
         # Firstly, note that each of these satellites has emitted another PRN.
         # This allows us to keep track of the passage of satellite time with reference to the HOW timestamp.
         for satellite_id in self.tracked_satellite_ids_to_processing_pipelines.keys():
-            self.world_model.handle_prn_observed(satellite_id)
+            tracker_params = self.tracked_satellite_ids_to_processing_pipelines[satellite_id].tracker.tracking_params
+            self.world_model.handle_prn_observed(satellite_id, tracker_params.current_prn_code_phase_shift)
 
         satellite_ids_to_world_model_events = {}
         for satellite_id, events in satellite_ids_to_tracker_events.items():

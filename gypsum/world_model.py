@@ -27,6 +27,7 @@ from gypsum.navigation_message_parser import (
     SemiCirclesPerSecond,
 )
 from gypsum.units import GpsSatelliteSeconds
+from gypsum.units import GpsSatelliteSecondsIntoWeek
 from gypsum.units import MetersPerSecond, Radians, RadiansPerSecond, Seconds
 from gypsum.units import ReceiverDataSeconds
 from gypsum.units import SampleCount
@@ -228,6 +229,8 @@ class GpsWorldModel:
         )
         # PT: Not a defaultdict, because it matters whether the satellite tracked in this map.
         self.satellite_ids_to_prn_observations_since_last_handover_timestamp: dict[GpsSatelliteId, int] = {}
+        # PT: Update this to a code phase newtype
+        self.satellite_ids_to_prn_code_phases: dict[GpsSatelliteId, int] = {}
         self.receiver_current_timestamp: ReceiverTimestampSeconds | None = None
         self.samples_per_prn_transmission = samples_per_prn_transmission
 
@@ -235,20 +238,27 @@ class GpsWorldModel:
         if self.receiver_current_timestamp is not None:
             self.receiver_current_timestamp += 0.001
 
-    def handle_prn_observed(self, satellite_id: GpsSatelliteId) -> None:
+    def handle_prn_observed(self, satellite_id: GpsSatelliteId, prn_code_phase) -> None:
         if satellite_id not in self.satellite_ids_to_prn_observations_since_last_handover_timestamp:
             self.satellite_ids_to_prn_observations_since_last_handover_timestamp[satellite_id] = 0
         self.satellite_ids_to_prn_observations_since_last_handover_timestamp[satellite_id] += 1
+        self.satellite_ids_to_prn_code_phases[satellite_id] = prn_code_phase
 
     def handle_lost_satellite_lock(self, satellite_id: GpsSatelliteId) -> None:
         # We're no longer reliably counting PRNs, so clear our counter state
         del self.satellite_ids_to_prn_observations_since_last_handover_timestamp[satellite_id]
+        del self.satellite_ids_to_prn_code_phases[satellite_id]
         # And clear the last timestamp for this satellite
         # Otherwise, when we reacquire this satellite, we'll think we have a reliable time reference to work with.
         # Instead, once we start re-tracking this satellite, we'll need to find out from the satellite what its
         # current timestamp is.
-        self.satellite_ids_to_orbital_parameters[satellite_id].set_parameter(
-            OrbitalParameterType.GPS_TIME_AT_LAST_TIMESTAMP, None
+        self.satellite_ids_to_orbital_parameters[satellite_id].clear_parameter(
+            OrbitalParameterType.GPS_TIME_AT_LAST_TIMESTAMP
+        )
+        self.satellite_ids_to_orbital_parameters[satellite_id].clear_parameter(
+            OrbitalParameterType.GPS_TIME_OF_WEEK_AT_LAST_TIMESTAMP
+        )
+
         )
 
 
