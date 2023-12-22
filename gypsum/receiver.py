@@ -68,6 +68,7 @@ class GpsReceiver:
         self.world_model = GpsWorldModel()
 
         self._time_since_last_acquisition_scan: ReceiverDataSeconds | None = None
+        self._timestamp_of_last_dashboard_update: ReceiverDataSeconds | None = None
 
         self._time_since_last_dashboard_server_scan = 0.0
         self._is_connected_to_dashboard_server = False
@@ -235,6 +236,17 @@ class GpsReceiver:
         # Nothing to do if we're not connected to the webserver
         if not self._is_connected_to_dashboard_server:
             return
+
+        # TODO(PT): Promote to config file item?
+        dashboard_refresh_interval = 1
+        if (
+            self._timestamp_of_last_dashboard_update is not None
+            and receiver_timestamp - self._timestamp_of_last_dashboard_update < dashboard_refresh_interval
+        ):
+            #print(f'{receiver_timestamp=}, {self._timestamp_of_last_dashboard_update=}')
+            return
+
+        self._timestamp_of_last_dashboard_update = receiver_timestamp
 
         try:
             resp = requests.post(
