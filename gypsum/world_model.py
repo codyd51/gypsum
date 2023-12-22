@@ -29,6 +29,7 @@ from gypsum.navigation_message_parser import (
 from gypsum.units import GpsSatelliteSeconds
 from gypsum.units import MetersPerSecond, Radians, RadiansPerSecond, Seconds
 from gypsum.units import ReceiverDataSeconds
+from gypsum.units import SampleCount
 
 _ParameterType = TypeVar("_ParameterType")
 _ParameterValueType = TypeVar("_ParameterValueType")
@@ -221,13 +222,14 @@ class DeterminedSatelliteOrbitEvent(Event):
 class GpsWorldModel:
     """Integrates satellite subframes to maintain a model of satellite orbits around Earth"""
 
-    def __init__(self) -> None:
+    def __init__(self, samples_per_prn_transmission: SampleCount) -> None:
         self.satellite_ids_to_orbital_parameters: dict[GpsSatelliteId, OrbitalParameters] = defaultdict(
             OrbitalParameters
         )
         # PT: Not a defaultdict, because it matters whether the satellite tracked in this map.
         self.satellite_ids_to_prn_observations_since_last_handover_timestamp: dict[GpsSatelliteId, int] = {}
         self.receiver_current_timestamp: ReceiverTimestampSeconds | None = None
+        self.samples_per_prn_transmission = samples_per_prn_transmission
 
     def handle_processed_1ms_of_antenna_data(self) -> None:
         if self.receiver_current_timestamp is not None:

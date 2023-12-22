@@ -65,7 +65,7 @@ class GpsReceiver:
         ] = {}
         self.subframe_count = 0
 
-        self.world_model = GpsWorldModel()
+        self.world_model = GpsWorldModel(self.antenna_samples_provider.get_attributes().samples_per_prn_transmission)
 
         self._time_since_last_acquisition_scan: ReceiverDataSeconds | None = None
         self._timestamp_of_last_dashboard_update: ReceiverDataSeconds | None = None
