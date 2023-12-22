@@ -277,6 +277,51 @@ class GpsWorldModel:
 
         return True
 
+    def get_pseudorange_for_satellite(self, satellite_id: GpsSatelliteId) -> Seconds | None:
+        if not self._can_interrogate_precise_timings_for_satellite(satellite_id):
+            return None
+
+        # We need to compare the satellite's timestamp to our receiver's time
+        if self.receiver_current_timestamp is None:
+            return None
+
+        current_receiver_time = self.receiver_current_timestamp
+        gps_system_time_of_week_for_satellite = self._gps_system_time_of_week_for_satellite(satellite_id)
+
+        # Just assume that 1ms always passes for the receiver
+        # current_receiver_time = satellite_timestamp_at_last_subframe + (prn_observations_since_last_subframe * 0.001)
+        # Add in the current PRN chip phase
+        # This represents the 'fractional delay' of the PRN
+        # PT: No, this doesn't work, because it'd only tell us the offset within a single millisecond. Where does the
+        # other 70ms come from? I guess we really need to measure it.
+        # *** It's because other satellites would have seen less ticks!!! ***
+        # e.g. 70ms for one satellite and 63ms for another
+
+        time_for_signal_to_arrive = current_receiver_time - gps_system_time_of_week_for_satellite
+        #print(f'')
+        #print(f'*** Pseudorange for satellite         {satellite_id} ***')
+        #print(f'Sat timestamp at last subframe:       {satellite_timestamp_at_last_subframe}')
+        #print(f'PRN observations since last subframe: {prn_observations_since_last_subframe}')
+        #print(f'Current receiver time:                {current_receiver_time}')
+        #print(f'Current satellite time:               {current_satellite_time}')
+        #print(f'*** End pseudorange ***')
+        #print(f'')
+
+        # PT: I guess this can only tell you the pseudorange at 1ms boundaries, not continuously... doesn't seem like a
+        # blocker...
+        # TODO(PT): Add code phase
+        #code_phase = self.satellite_ids_to_prn_code_phases[satellite_id]
+        # TODO(PT): Pass in 2046
+        # TODO(PT): Maybe this should be a subtraction..?
+        #code_phase_fraction = code_phase / self.samples_per_prn_transmission
+        #contribution_from_code_phase = code_phase_fraction * 0.001
+        #print(f'Code phase {code_phase}')
+        #print(f'Code phase fraction {code_phase_fraction}')
+        #print(f'Offset from code phase {contribution_from_code_phase}')
+        #time_for_signal_to_arrive += contribution_from_code_phase
+        #print(f'Time for signal to arrive:            {time_for_signal_to_arrive} seconds')
+        return time_for_signal_to_arrive
+
     def get_eccentric_anomaly(
         self,
         orbital_params: OrbitalParameters,
