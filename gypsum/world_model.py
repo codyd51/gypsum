@@ -6,7 +6,6 @@ from typing import Callable
 from typing import Generic, Sequence, Type, TypeVar, cast
 from typing import Iterator
 from typing import Self
-from typing import Tuple
 
 import math
 
@@ -28,8 +27,7 @@ from gypsum.navigation_message_parser import (
 )
 from gypsum.units import GpsSatelliteSeconds
 from gypsum.units import GpsSatelliteSecondsIntoWeek
-from gypsum.units import MetersPerSecond, Radians, RadiansPerSecond, Seconds
-from gypsum.units import ReceiverDataSeconds
+from gypsum.units import MetersPerSecond, Seconds
 from gypsum.units import SampleCount
 
 _ParameterType = TypeVar("_ParameterType")
@@ -137,8 +135,6 @@ class OrbitalParameterType(Enum):
     # Time synchronization parameters
     WEEK_NUMBER = auto()
     EPHEMERIS_REFERENCE_TIME = auto()
-    RECEIVER_TIME_AT_LAST_TIMESTAMP = auto()
-    GPS_TIME_AT_LAST_TIMESTAMP = auto()
     GPS_TIME_OF_WEEK_AT_LAST_TIMESTAMP = auto()
 
     A_F0 = auto()
@@ -148,6 +144,7 @@ class OrbitalParameterType(Enum):
 
     @property
     def unit(self) -> Type[_OrbitalParameterValueType]:
+        # TODO(PT): Update
         return {
             self.SEMI_MAJOR_AXIS: Meters,
             self.ECCENTRICITY: float,
@@ -157,8 +154,6 @@ class OrbitalParameterType(Enum):
             self.MEAN_ANOMALY_AT_REFERENCE_TIME: SemiCircles,
             self.WEEK_NUMBER: int,
             self.EPHEMERIS_REFERENCE_TIME: Seconds,
-            self.RECEIVER_TIME_AT_LAST_TIMESTAMP: ReceiverTimestampSeconds,
-            self.GPS_TIME_AT_LAST_TIMESTAMP: Seconds,
             self.MEAN_MOTION_DIFFERENCE: SemiCirclesPerSecond,
         }[
             self
@@ -207,14 +202,6 @@ class OrbitalParameters(ParameterSet[OrbitalParameterType, _OrbitalParameterValu
         """Expressed in seconds since start of week"""
         return self._get_parameter_infallibly(OrbitalParameterType.EPHEMERIS_REFERENCE_TIME)
 
-    @property
-    def receiver_timestamp_at_last_timestamp(self) -> ReceiverTimestampSeconds:
-        return self._get_parameter_infallibly(OrbitalParameterType.RECEIVER_TIME_AT_LAST_TIMESTAMP)
-
-    @property
-    def gps_time_at_last_timestamp(self) -> GpsSatelliteSeconds:
-        return self._get_parameter_infallibly(OrbitalParameterType.GPS_TIME_AT_LAST_TIMESTAMP)
-
 
 # TODO(PT): We should probably have a base class for "decoder events", "world model events", etc., for better typing
 class DeterminedSatelliteOrbitEvent(Event):
@@ -260,9 +247,6 @@ class GpsWorldModel:
         # Instead, once we start re-tracking this satellite, we'll need to find out from the satellite what its
         # current timestamp is.
         self.satellite_ids_to_orbital_parameters[satellite_id].clear_parameter(
-            OrbitalParameterType.GPS_TIME_AT_LAST_TIMESTAMP
-        )
-        self.satellite_ids_to_orbital_parameters[satellite_id].clear_parameter(
             OrbitalParameterType.GPS_TIME_OF_WEEK_AT_LAST_TIMESTAMP
         )
 
@@ -279,7 +263,7 @@ class GpsWorldModel:
             raise RuntimeError(f'Expected to have a code phase if we\'re tracking PRNs')
 
         orbital_parameters = self.satellite_ids_to_orbital_parameters[satellite_id]
-        if not orbital_parameters.is_parameter_set(OrbitalParameterType.GPS_TIME_AT_LAST_TIMESTAMP):
+        if not orbital_parameters.is_parameter_set(OrbitalParameterType.GPS_TIME_OF_WEEK_AT_LAST_TIMESTAMP):
             return False
 
         return True
@@ -547,21 +531,14 @@ class GpsWorldModel:
         # we've just completed a full set.
         were_orbit_params_already_complete = orbital_params_for_this_satellite.is_complete()
 
-        # Always store the receiver timestamp
-        orbital_params_for_this_satellite.set_parameter(
-            OrbitalParameterType.RECEIVER_TIME_AT_LAST_TIMESTAMP, emit_subframe_event.receiver_timestamp
-        )
-        # If we have enough parameters to know the GPS time, store that too
+        # If we have enough parameters to know the satellite's time, store it
         if orbital_params_for_this_satellite.is_parameter_set(OrbitalParameterType.WEEK_NUMBER):
             gps_week_number = orbital_params_for_this_satellite.week_number
             # The HOW gives the timestamp of the leading edge of the *next* subframe.
             # But since we just finished processing this subframe in full, we *are* at the leading edge of the
             # next subframe. Therefore, we don't need to do any adjustment to this timestamp.
             satellite_time_of_week_in_seconds = emit_subframe_event.handover_word.time_of_week_in_seconds
-            gps_satellite_time = (gps_week_number * SECONDS_PER_WEEK) + satellite_time_of_week_in_seconds
-            orbital_params_for_this_satellite.set_parameter(
-                OrbitalParameterType.GPS_TIME_AT_LAST_TIMESTAMP, gps_satellite_time
-            )
+            # gps_satellite_time = (gps_week_number * SECONDS_PER_WEEK) + satellite_time_of_week_in_seconds
             orbital_params_for_this_satellite.set_parameter(
                 OrbitalParameterType.GPS_TIME_OF_WEEK_AT_LAST_TIMESTAMP, satellite_time_of_week_in_seconds
             )

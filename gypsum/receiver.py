@@ -125,17 +125,8 @@ class GpsReceiver:
             for world_model_event in world_model_events:
                 if isinstance(world_model_event, DeterminedSatelliteOrbitEvent):
                     print(f"Determined the orbit of {satellite_id}! {world_model_event.orbital_parameters}")
-                    orbit_params = world_model_event.orbital_parameters
-
-        # Now that we've processed all the subframes emitted after this millisecond of data, we can compute pseudoranges
-        # (It's important to calculate this after processing all the subframes - one subframe from one satellite might
-        # give us the ability to calculate pseudoranges, but we've yet to process the next timestamp that gives us the
-        # current time at another satellite, so the intermediary pseudorange in between processing those two subframes
-        # can have a massive time discrepency of 6 seconds, since we haven't caught up with the other subframe's
-        # timestamp.)
-        #if len(satellite_ids_to_tracker_events):
-        #    for satellite_id in self.tracked_satellite_ids_to_processing_pipelines.keys():
-        #        self.world_model.get_pseudorange_for_satellite(satellite_id)
+                else:
+                    raise NotImplementedError(f'Unhandled event type: {type(world_model_event)}')
 
     def _perform_acquisition_if_necessary(self):
         seconds_since_start = self.antenna_samples_provider.seconds_since_start()
@@ -185,9 +176,9 @@ class GpsReceiver:
         self.satellite_ids_eligible_for_acquisition = [x for x in self.satellite_ids_eligible_for_acquisition if x not in newly_acquired_satellite_ids]
 
     def _can_perform_acquisition(self) -> bool:
-        # If this buffer isn't primed yet, we can't do any work yet.
+        # If we haven't seen enough samples to integrate the PRN correlation over a few milliseconds,
+        # we can't do any work yet.
         if len(self.rolling_samples_buffer) < ACQUISITION_INTEGRATION_PERIOD_MS:
-            # _logger.info(f"Skipping acquisition attempt because the history buffer isn't primed yet.")
             return False
 
         return True
@@ -200,7 +191,9 @@ class GpsReceiver:
 
         # TODO(PT): Properly model the cursor field
         _logger.info(
-            f"{self.antenna_samples_provider.seconds_since_start() + self.antenna_samples_provider.utc_start_time}: Performing acquisition search over {len(satellite_ids)} satellites ({self.subframe_count} subframes so far)."
+            f"{self.antenna_samples_provider.seconds_since_start() + self.antenna_samples_provider.utc_start_time}: "
+            f"Performing acquisition search over {len(satellite_ids)} "
+            f"satellites ({self.subframe_count} subframes so far)."
         )
 
         samples_for_integration_period = np.concatenate(self.rolling_samples_buffer)
@@ -241,15 +234,6 @@ class GpsReceiver:
         for satellite_id in satellite_ids_to_drop:
             self._drop_satellite(satellite_id)
 
-        if False:
-            for satellite_id in satellite_ids_to_reacquire:
-                print("Trying to re-acquire...")
-                acquired_satellite_ids = self._perform_acquisition_on_satellite_ids([satellite_id])
-                if len(acquired_satellite_ids) != 1:
-                    # Failed to re-acquire this satellite
-                    print(f"Failed to re-acquire!")
-                    # TODO(PT): Put it back on the queue of available-to-acquire?
-
         return satellite_ids_to_events
 
     def _drop_satellite(self, satellite_id: GpsSatelliteId) -> None:
@@ -271,7 +255,6 @@ class GpsReceiver:
             self._timestamp_of_last_dashboard_update is not None
             and receiver_timestamp - self._timestamp_of_last_dashboard_update < dashboard_refresh_interval
         ):
-            #print(f'{receiver_timestamp=}, {self._timestamp_of_last_dashboard_update=}')
             return
 
         self._timestamp_of_last_dashboard_update = receiver_timestamp
