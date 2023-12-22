@@ -5,6 +5,7 @@ Seconds = float
 WallClockSeconds = float
 ReceiverDataSeconds = float
 GpsSatelliteSeconds = float
+GpsSatelliteSecondsIntoWeek = float
 
 MetersPerSecond = float
 RadiansPerSecond = float

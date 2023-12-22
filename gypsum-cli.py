@@ -18,7 +18,7 @@ def main():
     logging.basicConfig(level=logging.INFO)
 
     input_source = INPUT_SOURCES[7]
-    #input_source = get_input_source_by_file_name("test_rtl_night")
+    #input_source = get_input_source_by_file_name("nov_30_15_34_10")
     antenna_samples_provider = AntennaSampleProviderBackedByFile(input_source)
     _logger.info(f"Set up antenna sample stream backed by file: {input_source.path.as_posix()}")
 
