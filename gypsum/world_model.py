@@ -435,6 +435,52 @@ class GpsWorldModel:
             ecef_z
         )
 
+    def _compute_position(self) -> None:
+        print('**** _compute_position **** ')
+        #print(f'Satellite time of week: {satellite_time_of_week}')
+        satellites_with_complete_orbital_parameters = {
+            sv_id: op for sv_id, op in self.satellite_ids_to_orbital_parameters.items() if op.is_complete()
+        }
+        out = []
+        positions_at_ref_time = []
+        # Filter down to satellites we're actively tracking
+        # TODO(PT): Improve this?
+        sats = {sv_id: op for sv_id, op in satellites_with_complete_orbital_parameters.items() if sv_id in self.satellite_ids_to_prn_observations_since_last_handover_timestamp and self.satellite_ids_to_prn_observations_since_last_handover_timestamp[sv_id] <= 6000}
+        #newest_sat_time = 0
+        #for sv_id, op in sats.items():
+        #    newest_sat_time = max(newest_sat_time, op.get_parameter(OrbitalParameterType.GPS_TIME_OF_WEEK_AT_LAST_TIMESTAMP))
+        for satellite_id, orbital_params in sats.items():
+            print(f"*** {satellite_id}")
+            print("{")
+            for param_type, param_value in orbital_params.parameter_type_to_value.items():
+                print(f'\tOrbitalParameterType.{param_type.name}: {param_value},')
+            print("}")
+            #print(f'*** Pseudorange for {satellite_id}: {self.get_pseudorange_for_satellite(satellite_id)}')
+            pseudo_transmission_time = self.get_pseudorange_for_satellite(satellite_id)
+            satellite_time_of_week_now = self._gps_system_time_of_week_for_satellite(satellite_id)
+
+            satellite_pos_now = self._get_satellite_position_at_time_of_week(satellite_id, satellite_time_of_week_now)
+            reference_time = orbital_params.get_parameter(OrbitalParameterType.EPHEMERIS_REFERENCE_TIME)
+            satellite_pos_at_reference_time = self._get_satellite_position_at_time_of_week(satellite_id, reference_time)
+            #print(f'*** Pseudo transmission time for {satellite_id}: {pseudo_transmission_time}')
+            #print(f'*** ECF for {satellite_id}:')
+            #print(f'{ecf_coords.x}')
+            #print(f'{ecf_coords.y}')
+            #print(f'{ecf_coords.z}')
+            out.append((pseudo_transmission_time, (satellite_pos_now.x, satellite_pos_now.y, satellite_pos_now.z)))
+            positions_at_ref_time.append((satellite_pos_at_reference_time.x, satellite_pos_at_reference_time.y, satellite_pos_at_reference_time.z))
+            #out.append((tup[0], (ecf_coords.x,ecf_coords.y,ecf_coords.z)))
+            #out2 =
+            print()
+            print()
+
+        from pprint import pprint
+        print(f'*** Pseudo transmission times and satellite coordinates now')
+        print(out)
+        print(f'*** Satellite positions at reference time')
+        print(positions_at_ref_time)
+        raise NotImplementedError()
+
     def _gps_system_time_of_week_for_satellite(self, satellite_id: GpsSatelliteId) -> GpsSatelliteSecondsIntoWeek:
         """Since GPS time is intended to be synchronized across all the satellites, this 'should' give the same
         result for any tracked satellite.
@@ -577,6 +623,12 @@ class GpsWorldModel:
         satellites_with_complete_orbital_parameters = {
             sv_id: op for sv_id, op in self.satellite_ids_to_orbital_parameters.items() if op.is_complete()
         }
+        # TODO(PT): Improve
+        sats_ready = {
+            sv_id: op for sv_id, op in satellites_with_complete_orbital_parameters.items() if self.satellite_ids_to_prn_observations_since_last_handover_timestamp[sv_id] <= 6000
+        }
+        if len(sats_ready) >= 4:
+            self._compute_position()
 
         return events_to_return
 
