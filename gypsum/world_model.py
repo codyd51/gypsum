@@ -1,10 +1,14 @@
 from collections import defaultdict
+from dataclasses import dataclass
 from enum import Enum, auto
 from typing import Any
 from typing import Callable
 from typing import Generic, Sequence, Type, TypeVar, cast
 from typing import Iterator
 from typing import Self
+from typing import Tuple
+
+import math
 
 from gypsum.antenna_sample_provider import ReceiverTimestampSeconds
 from gypsum.constants import SECONDS_PER_WEEK, UNIX_TIMESTAMP_OF_GPS_EPOCH
@@ -101,12 +105,34 @@ class OrbitalParameterType(Enum):
     # Correction parameters
     # Also called 'delta n'
     MEAN_MOTION_DIFFERENCE = auto()
+    # Also called Cuc
+    CORRECTION_TO_ARGUMENT_OF_LATITUDE_COS = auto()
+    # Also called Cus
+    CORRECTION_TO_ARGUMENT_OF_LATITUDE_SIN = auto()
+    # Also called Crc
+    CORRECTION_TO_ORBITAL_RADIUS_COS = auto()
+    # Also called Crs
+    CORRECTION_TO_ORBITAL_RADIUS_SIN = auto()
+    # Also called Cic
+    CORRECTION_TO_INCLINATION_ANGLE_COS = auto()
+    # Also called Cis
+    CORRECTION_TO_INCLINATION_ANGLE_SIN = auto()
+    # Also called 'Omega dot'
+    RATE_OF_RIGHT_ASCENSION = auto()
+    # Also called 'IDOT'
+    RATE_OF_INCLINATION_ANGLE = auto()
 
     # Time synchronization parameters
     WEEK_NUMBER = auto()
     EPHEMERIS_REFERENCE_TIME = auto()
     RECEIVER_TIME_AT_LAST_TIMESTAMP = auto()
     GPS_TIME_AT_LAST_TIMESTAMP = auto()
+    GPS_TIME_OF_WEEK_AT_LAST_TIMESTAMP = auto()
+
+    A_F0 = auto()
+    A_F1 = auto()
+    A_F2 = auto()
+    T_OC = auto()
 
     @property
     def unit(self) -> Type[_OrbitalParameterValueType]:
@@ -245,10 +271,16 @@ class GpsWorldModel:
         # If we have enough parameters to know the GPS time, store that too
         if orbital_params_for_this_satellite.is_parameter_set(OrbitalParameterType.WEEK_NUMBER):
             gps_week_number = orbital_params_for_this_satellite.week_number
+            # The HOW gives the timestamp of the leading edge of the *next* subframe.
+            # But since we just finished processing this subframe in full, we *are* at the leading edge of the
+            # next subframe. Therefore, we don't need to do any adjustment to this timestamp.
             satellite_time_of_week_in_seconds = emit_subframe_event.handover_word.time_of_week_in_seconds
             gps_satellite_time = (gps_week_number * SECONDS_PER_WEEK) + satellite_time_of_week_in_seconds
             orbital_params_for_this_satellite.set_parameter(
                 OrbitalParameterType.GPS_TIME_AT_LAST_TIMESTAMP, gps_satellite_time
+            )
+            orbital_params_for_this_satellite.set_parameter(
+                OrbitalParameterType.GPS_TIME_OF_WEEK_AT_LAST_TIMESTAMP, satellite_time_of_week_in_seconds
             )
             # If we've never synchronized the receiver clock, synchronize it now.
             # This will result in the receiver thinking this satellite is "~0" transmission time away, which is
@@ -393,6 +425,10 @@ class GpsWorldModel:
 
     def _process_subframe1(self, orbital_parameters: OrbitalParameters, subframe: NavigationMessageSubframe1) -> None:
         orbital_parameters.set_parameter(OrbitalParameterType.WEEK_NUMBER, subframe.week_num)
+        orbital_parameters.set_parameter(OrbitalParameterType.A_F0, subframe.a_f0)
+        orbital_parameters.set_parameter(OrbitalParameterType.A_F1, subframe.a_f1)
+        orbital_parameters.set_parameter(OrbitalParameterType.A_F2, subframe.a_f2)
+        orbital_parameters.set_parameter(OrbitalParameterType.T_OC, subframe.t_oc)
 
     def _process_subframe2(self, orbital_parameters: OrbitalParameters, subframe: NavigationMessageSubframe2) -> None:
         orbital_parameters.set_parameter(
@@ -400,12 +436,21 @@ class GpsWorldModel:
         )
         orbital_parameters.set_parameter(OrbitalParameterType.ECCENTRICITY, subframe.eccentricity)
         # The satellite transmits the square root of the semi-major axis, so square it now.
-        orbital_parameters.set_parameter(OrbitalParameterType.SEMI_MAJOR_AXIS, subframe.sqrt_semi_major_axis**2)
+        orbital_parameters.set_parameter(OrbitalParameterType.SEMI_MAJOR_AXIS, math.pow(subframe.sqrt_semi_major_axis, 2))
         orbital_parameters.set_parameter(
             OrbitalParameterType.MEAN_MOTION_DIFFERENCE, subframe.mean_motion_difference_from_computed_value
         )
         orbital_parameters.set_parameter(
             OrbitalParameterType.EPHEMERIS_REFERENCE_TIME, subframe.reference_time_ephemeris
+        )
+        orbital_parameters.set_parameter(
+            OrbitalParameterType.CORRECTION_TO_ARGUMENT_OF_LATITUDE_COS, subframe.correction_to_latitude_cos
+        )
+        orbital_parameters.set_parameter(
+            OrbitalParameterType.CORRECTION_TO_ARGUMENT_OF_LATITUDE_SIN, subframe.correction_to_latitude_sin
+        )
+        orbital_parameters.set_parameter(
+            OrbitalParameterType.CORRECTION_TO_ORBITAL_RADIUS_SIN, subframe.correction_to_orbital_radius_sin
         )
 
     def _process_subframe3(self, orbital_parameters: OrbitalParameters, subframe: NavigationMessageSubframe3) -> None:
@@ -413,6 +458,21 @@ class GpsWorldModel:
         orbital_parameters.set_parameter(OrbitalParameterType.ARGUMENT_OF_PERIGEE, subframe.argument_of_perigee)
         orbital_parameters.set_parameter(
             OrbitalParameterType.LONGITUDE_OF_ASCENDING_NODE, subframe.longitude_of_ascending_node
+        )
+        orbital_parameters.set_parameter(
+            OrbitalParameterType.CORRECTION_TO_INCLINATION_ANGLE_COS, subframe.correction_to_inclination_angle_cos
+        )
+        orbital_parameters.set_parameter(
+            OrbitalParameterType.CORRECTION_TO_INCLINATION_ANGLE_SIN, subframe.correction_to_inclination_angle_sin
+        )
+        orbital_parameters.set_parameter(
+            OrbitalParameterType.RATE_OF_RIGHT_ASCENSION, subframe.rate_of_right_ascension
+        )
+        orbital_parameters.set_parameter(
+            OrbitalParameterType.RATE_OF_INCLINATION_ANGLE, subframe.rate_of_inclination_angle
+        )
+        orbital_parameters.set_parameter(
+            OrbitalParameterType.CORRECTION_TO_ORBITAL_RADIUS_COS, subframe.correction_to_orbital_radius_cos
         )
 
     def _process_subframe4(self, orbital_parameters: OrbitalParameters, subframe: NavigationMessageSubframe4) -> None:
