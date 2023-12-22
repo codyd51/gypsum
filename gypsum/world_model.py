@@ -36,6 +36,13 @@ _ParameterType = TypeVar("_ParameterType")
 _ParameterValueType = TypeVar("_ParameterValueType")
 
 
+@dataclass
+class EcefCoordinates:
+    x: float
+    y: float
+    z: float
+
+
 class ParameterSet(Generic[_ParameterType, _ParameterValueType]):
     """Tracks a 'set' of parameters that are progressively fleshed out"""
 
@@ -355,6 +362,78 @@ class GpsWorldModel:
             eccentric_anomaly_now_estimation = eccentric_anomaly_now_estimation + (numerator / denominator)
         eccentric_anomaly_now = eccentric_anomaly_now_estimation
         return eccentric_anomaly_now
+
+    def _get_satellite_position_at_time_of_week(self, satellite_id: GpsSatelliteId, satellite_time_of_week: GpsSatelliteSecondsIntoWeek) -> EcefCoordinates:
+        orbit_params = self.satellite_ids_to_orbital_parameters[satellite_id]
+        if not orbit_params.is_complete():
+            raise RuntimeError(f'Expected complete orbital parameters')
+        cuc = orbit_params.get_parameter(OrbitalParameterType.CORRECTION_TO_ARGUMENT_OF_LATITUDE_COS)
+        cus = orbit_params.get_parameter(OrbitalParameterType.CORRECTION_TO_ARGUMENT_OF_LATITUDE_SIN)
+        crc = orbit_params.get_parameter(OrbitalParameterType.CORRECTION_TO_ORBITAL_RADIUS_COS)
+        crs = orbit_params.get_parameter(OrbitalParameterType.CORRECTION_TO_ORBITAL_RADIUS_SIN)
+        cic = orbit_params.get_parameter(OrbitalParameterType.CORRECTION_TO_INCLINATION_ANGLE_COS)
+        cis = orbit_params.get_parameter(OrbitalParameterType.CORRECTION_TO_INCLINATION_ANGLE_SIN)
+        i0 = orbit_params.get_parameter(OrbitalParameterType.INCLINATION)
+        IDOT = orbit_params.get_parameter(OrbitalParameterType.RATE_OF_INCLINATION_ANGLE)
+        eccentricity = orbit_params.get_parameter(OrbitalParameterType.ECCENTRICITY)
+        semi_major_axis = orbit_params.get_parameter(OrbitalParameterType.SEMI_MAJOR_AXIS)
+        ephemeris_reference_time = orbit_params.get_parameter(OrbitalParameterType.EPHEMERIS_REFERENCE_TIME)
+        w = orbit_params.get_parameter(OrbitalParameterType.ARGUMENT_OF_PERIGEE)
+        # Omega0
+        longitude_of_ascending_node_at_week_start = orbit_params.get_parameter(OrbitalParameterType.LONGITUDE_OF_ASCENDING_NODE)
+        # Omega dot
+        rate_of_right_ascension = orbit_params.get_parameter(OrbitalParameterType.RATE_OF_RIGHT_ASCENSION)
+
+        earth_rotation_rate = 7.2921151467e-5
+        time_from_ephemeris_reference_time = satellite_time_of_week - ephemeris_reference_time
+        if time_from_ephemeris_reference_time > 302_400 or time_from_ephemeris_reference_time < -302_400:
+            # That is, if tk is greater than 302,400 seconds, subtract 604,800 seconds from tk. If tk is less than -
+            # 302,400 seconds, add 604,800 seconds to tk.
+            print(f'Time from ephemeris ref time {time_from_ephemeris_reference_time}')
+            if time_from_ephemeris_reference_time > 302_400:
+                time_from_ephemeris_reference_time -= 604_800
+            elif time_from_ephemeris_reference_time < -302_400:
+                time_from_ephemeris_reference_time += 604_800
+            print(f'Adjusted time from ephemeris ref time {time_from_ephemeris_reference_time}')
+
+        #satellite_time_of_week2 = orbit_params.get_parameter(OrbitalParameterType.GPS_TIME_OF_WEEK_AT_LAST_TIMESTAMP)
+        #satellite_time_of_week = 499758.0
+        #print(f'Sat TOW  {satellite_time_of_week}')
+        #print(f'Sat TOW2 {satellite_time_of_week2}')
+
+        eccentric_anomaly_now = self.get_eccentric_anomaly(orbit_params, satellite_time_of_week)
+        term1 = math.sqrt((1 + eccentricity) / (1 - eccentricity))
+        term2 = math.tan(eccentric_anomaly_now / 2)
+        true_anomaly = 2 * math.atan(term1 * term2)
+        vk = true_anomaly
+
+        argument_of_latitude = vk + w
+
+        duk = (cus * math.sin(2 * argument_of_latitude)) + (cuc * math.cos(2 * argument_of_latitude))
+        drk = (crs * math.sin(2 * argument_of_latitude)) + (crc * math.cos(2 * argument_of_latitude))
+        dik = (cis * math.sin(2 * argument_of_latitude)) + (cic * math.cos(2 * argument_of_latitude))
+
+        uk = argument_of_latitude + duk
+        rk = (semi_major_axis * (1 - (eccentricity * math.cos(eccentric_anomaly_now)))) + drk
+        ik = i0 + dik + (IDOT * time_from_ephemeris_reference_time)
+
+        orbital_plane_x = rk * math.cos(uk)
+        orbital_plane_y = rk * math.sin(uk)
+
+        omega0 = longitude_of_ascending_node_at_week_start
+        omega_at_ref_time = omega0 + ((rate_of_right_ascension - earth_rotation_rate) * time_from_ephemeris_reference_time) - (earth_rotation_rate * ephemeris_reference_time)
+        corrected_longitude_of_ascending_node = omega_at_ref_time
+
+        ecef_x = (orbital_plane_x * math.cos(corrected_longitude_of_ascending_node)) - (
+                orbital_plane_y * math.cos(ik) * math.sin(corrected_longitude_of_ascending_node))
+        ecef_y = (orbital_plane_x * math.sin(corrected_longitude_of_ascending_node)) + (
+                orbital_plane_y * math.cos(ik) * math.cos(corrected_longitude_of_ascending_node))
+        ecef_z = orbital_plane_y * math.sin(ik)
+        return EcefCoordinates(
+            ecef_x,
+            ecef_y,
+            ecef_z
+        )
 
     def _gps_system_time_of_week_for_satellite(self, satellite_id: GpsSatelliteId) -> GpsSatelliteSecondsIntoWeek:
         """Since GPS time is intended to be synchronized across all the satellites, this 'should' give the same
