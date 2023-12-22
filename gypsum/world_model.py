@@ -66,6 +66,9 @@ class ParameterSet(Generic[_ParameterType, _ParameterValueType]):
         """Returns whether we have a 'full set' of parameters (i.e. no None values)."""
         return not any(x is None for x in self.parameter_type_to_value.values())
 
+    def clear_parameter(self, param_type: _ParameterType) -> None:
+        self.parameter_type_to_value[param_type] = None
+
     def set_parameter(self, param_type: _ParameterType, param_value: _ParameterValueType) -> None:
         self.parameter_type_to_value[param_type] = param_value
 
