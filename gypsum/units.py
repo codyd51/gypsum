@@ -24,10 +24,12 @@ NonCoherentCorrelationProfile = CorrelationProfile
 CorrelationStrengthRatio = float
 CoherentCorrelationPeak = complex
 
+SampleCount = int
+
 Hertz = float
 DopplerShiftHz = float
 CarrierWavePhaseInRadians = float
-PrnCodePhaseInSamples = int
+PrnChipCount = int
+PrnCodePhaseInSamples = SampleCount
 
-SampleCount = int
 SampleRateHz = Hertz
