@@ -259,6 +259,24 @@ class GpsWorldModel:
             OrbitalParameterType.GPS_TIME_OF_WEEK_AT_LAST_TIMESTAMP
         )
 
+    def _can_interrogate_precise_timings_for_satellite(self, satellite_id: GpsSatelliteId) -> bool:
+        # We can only rely on precise timings for a satellite if:
+        # 1) We're currently counting PRN observations
+        # 2) We've received at least one handover word
+        # 3) We have enough data from the satellite to interpret the time represented in the handover word's timestamp
+        if satellite_id not in self.satellite_ids_to_prn_observations_since_last_handover_timestamp:
+            return False
+
+        if satellite_id not in self.satellite_ids_to_prn_code_phases:
+            # Should never happen if we're counting PRNs
+            raise RuntimeError(f'Expected to have a code phase if we\'re tracking PRNs')
+
+        orbital_parameters = self.satellite_ids_to_orbital_parameters[satellite_id]
+        if not orbital_parameters.is_parameter_set(OrbitalParameterType.GPS_TIME_AT_LAST_TIMESTAMP):
+            return False
+
+        return True
+
     def get_eccentric_anomaly(
         self,
         orbital_params: OrbitalParameters,
@@ -293,6 +311,54 @@ class GpsWorldModel:
         eccentric_anomaly_now = eccentric_anomaly_now_estimation
         return eccentric_anomaly_now
 
+    def _gps_system_time_of_week_for_satellite(self, satellite_id: GpsSatelliteId) -> GpsSatelliteSecondsIntoWeek:
+        """Since GPS time is intended to be synchronized across all the satellites, this 'should' give the same
+        result for any tracked satellite.
+        However, the GPS spec (20.3.4.2) specifies that the time emitted by each satellite represents the SV time,
+        not the GPS system time. Therefore, there can be small variations due to each SV's clock error and other minor
+        effects. Since we want the most exact possible measurement of the SV time, we'll interrogate each SV's emitted
+        time directly, rather than making any assumptions about GPS system time.
+        """
+        if not self._can_interrogate_precise_timings_for_satellite(satellite_id):
+            raise RuntimeError(f'Cannot call this now!')
+        orbital_params = self.satellite_ids_to_orbital_parameters[satellite_id]
+        satellite_time_of_week_at_last_subframe = orbital_params.get_parameter(OrbitalParameterType.GPS_TIME_OF_WEEK_AT_LAST_TIMESTAMP)
+        prn_observations_since_last_subframe = self.satellite_ids_to_prn_observations_since_last_handover_timestamp[satellite_id]
+        if prn_observations_since_last_subframe > 6000:
+            raise RuntimeError(f'More than 6 seconds since we last saw a subframe, giving up! {prn_observations_since_last_subframe}')
+        current_satellite_time_of_week = satellite_time_of_week_at_last_subframe
+        # Each PRN observation represents 1ms of elapsed time
+        current_satellite_time_of_week += prn_observations_since_last_subframe * 0.001
+
+        # TODO(PT): I think it's necessary to include code phase here...
+        # TODO(PT): I'm really unsure whether it's appropriate to include the code phase here - maybe that should only be used for pseudoranges, but not for selecting the current GPS time at time of transmission?!
+        code_phase = self.satellite_ids_to_prn_code_phases[satellite_id]
+        code_phase_fraction = code_phase / self.samples_per_prn_transmission
+        contribution_from_code_phase = code_phase_fraction * 0.001
+        current_satellite_time_of_week += contribution_from_code_phase
+
+        # Correct the time of last transmission based on the clock correction factors sent by the satellite
+        # t can be approximated by tsv
+        t = current_satellite_time_of_week
+        F = -4.442807633e-10
+        e = orbital_params.eccentricity
+        # PT: Retain the original sqrt(A)?
+        sqrt_A = math.sqrt(orbital_params.semi_major_axis)
+        # PT: Circular dependency between current time and current eccentric anomaly...
+        # Use an approximation of current time
+        Ek = self.get_eccentric_anomaly(orbital_params, current_satellite_time_of_week)
+        delta_tr = F * e * sqrt_A * math.sin(Ek)
+
+        af0 = orbital_params.get_parameter(OrbitalParameterType.A_F0)
+        af1 = orbital_params.get_parameter(OrbitalParameterType.A_F1)
+        af2 = orbital_params.get_parameter(OrbitalParameterType.A_F2)
+        toc = orbital_params.get_parameter(OrbitalParameterType.T_OC)
+        delta_sv_time = af0 + (af1 * (t - toc)) + (af2 * math.pow(t - toc, 2)) + delta_tr
+        print(f'*** Delta SV time {delta_sv_time}')
+
+        corrected_current_satellite_time_of_week = current_satellite_time_of_week - delta_sv_time
+
+        return corrected_current_satellite_time_of_week
 
     def handle_subframe_emitted(
         self, satellite_id: GpsSatelliteId, emit_subframe_event: EmitSubframeEvent
