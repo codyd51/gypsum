@@ -19,6 +19,10 @@ ReceiverTimestampSeconds = Seconds
 _logger = logging.getLogger(__name__)
 
 
+class NoMoreSamplesError(Exception):
+    pass
+
+
 @dataclass
 class SampleProviderAttributes:
     samples_per_second: SampleCount
@@ -71,6 +75,7 @@ class AntennaSampleProviderBackedByFile(AntennaSampleProvider):
         self.sample_rate = file_info.sdr_sample_rate
         self.utc_start_time = file_info.utc_start_time.timestamp()
         self.sample_component_data_type = file_info.sample_component_data_type
+        self.file_size_in_bytes = self.path.stat().st_size
 
     def seconds_since_start(self) -> Seconds:
         timestamp_in_seconds_since_start = self.cursor / self.sample_rate
@@ -83,13 +88,21 @@ class AntennaSampleProviderBackedByFile(AntennaSampleProvider):
         # GPS differs from UTC by an integer number of leap seconds.
         receiver_gps_timestamp = receiver_utc_timestamp + UTC_LEAP_SECONDS_COUNT
 
+        # We have interleaved IQ samples, so the number of words to read will be the sample count * 2
+        word_count_to_read = sample_count * 2
+        # Note the change in units: `count` is specified in terms of `dtype`, while `offset` is in bytes.
+        bytes_per_word = np.dtype(self.sample_component_data_type).itemsize
+        file_offset_start = self.cursor * 2 * bytes_per_word
+        file_offset_end = file_offset_start + (word_count_to_read * bytes_per_word)
+
+        if file_offset_end >= self.file_size_in_bytes:
+            raise NoMoreSamplesError(f'Ran out of samples at {self.file_size_in_bytes/1024/1024:.2f}MB')
+
         words = np.fromfile(
             self.path.as_posix(),
             dtype=self.sample_component_data_type,
-            # We have interleaved IQ samples, so the number of words to read will be the sample count * 2
-            count=sample_count * 2,
-            # Note the change in units: `count` is specified in terms of `dtype`, while `offset` is in bytes.
-            offset=self.cursor * 2 * np.dtype(self.sample_component_data_type).itemsize,
+            count=word_count_to_read,
+            offset=file_offset_start,
         )
         # Recombine the inline IQ samples into complex values
         iq_samples = (words[0::2]) + (1j * words[1::2])

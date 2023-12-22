@@ -2,6 +2,8 @@ import logging
 from dataclasses import dataclass
 from enum import Enum, auto
 
+import math
+
 from gypsum.config import GPS_EPOCH_BASE_WEEK_NUMBER
 from gypsum.units import Seconds
 
@@ -85,7 +87,7 @@ class HandoverWord:
         # Each bit represents (1.5*(2^(bit_position+2))) seconds
         # Start with the LSB
         for i, bit in enumerate(reversed(self.time_of_week)):
-            bit_granularity = 1.5 * (2 ** (i + 2))
+            bit_granularity = 1.5 * (math.pow(2, i + 2))
             if bit == 1:
                 time_of_week_accumulator += bit_granularity
         return time_of_week_accumulator
@@ -181,6 +183,7 @@ class NavigationMessageSubframe5(NavigationMessageSubframe):
     right_ascension_rate: SemiCirclesPerSecond
     sv_health: list[int]
     semi_major_axis_sqrt: Meters
+    # TODO(PT): Typo? Should be ascending_node?
     longitude_of_ascension_mode: SemiCircles
     argument_of_perigree: SemiCircles
     mean_anomaly_at_reference_time: SemiCircles
