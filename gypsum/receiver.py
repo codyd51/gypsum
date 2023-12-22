@@ -53,6 +53,9 @@ class GpsReceiver:
         # Example: timestamped HOW and we receive it 7 milliseconds later (for 20km distance)
         self.satellite_ids_eligible_for_acquisition = [
             GpsSatelliteId(id=28),
+            GpsSatelliteId(id=31),
+            GpsSatelliteId(id=25),
+            GpsSatelliteId(id=32),
             #GpsSatelliteId(id=31),
         ]
         self.satellite_ids_eligible_for_acquisition = deepcopy(ALL_SATELLITE_IDS)
@@ -82,6 +85,10 @@ class GpsReceiver:
             self.antenna_samples_provider.get_attributes().samples_per_prn_transmission,
         )
 
+        # Inform the world model that another millisecond has elapsed for our receiver, since we just listened
+        # to the antenna for 1ms.
+        self.world_model.handle_processed_1ms_of_antenna_data()
+
         # Hook up to the dashboard webserver. Periodically try to connect to the dashboard, and send our state
         # update if we're connected.
         # Do this before we process the samples. The only reason for this is so that the dashboard can get some
@@ -93,23 +100,7 @@ class GpsReceiver:
         self.rolling_samples_buffer.append(samples)
 
         # If we need to perform acquisition, do so now
-        seconds_since_start = self.antenna_samples_provider.seconds_since_start()
-        if (
-            self._time_since_last_acquisition_scan is None
-            or seconds_since_start - self._time_since_last_acquisition_scan
-            >= ACQUISITION_SCAN_FREQUENCY
-        ):
-            # Don't update the timestamp unless we'll really have an opportunity to run acquisition
-            if self._can_perform_acquisition():
-                # Update the timestamp even if we decide not to try to acquire more satellites
-                self._time_since_last_acquisition_scan = seconds_since_start
-                if len(self.tracked_satellite_ids_to_processing_pipelines) < MINIMUM_TRACKED_SATELLITES_FOR_POSITION_FIX:
-                    _logger.info(
-                        f"Will perform acquisition search because we're only "
-                        f"tracking {len(self.tracked_satellite_ids_to_processing_pipelines)} satellites."
-                    )
-                    _logger.info(f"{receiver_timestamp}: Subframe count: {self.subframe_count}")
-                    self._perform_acquisition()
+        self._perform_acquisition_if_necessary()
 
         # Continue tracking each acquired satellite
         satellite_ids_to_tracker_events = self._track_acquired_satellites(receiver_timestamp, samples)
@@ -124,19 +115,8 @@ class GpsReceiver:
         for satellite_id, events in satellite_ids_to_tracker_events.items():
             for event in events:
                 if isinstance(event, EmitSubframeEvent):
-                    self.subframe_count += 1
-                    emit_subframe_event: EmitSubframeEvent = event
-                    subframe = emit_subframe_event.subframe
-                    print(f"*** Subframe {subframe.subframe_id.name} from {satellite_id}:")
-                    from dataclasses import fields
-
-                    for field in fields(subframe):
-                        print(f"\t{field.name}: {getattr(subframe, field.name)}")
-
-                    world_model_events_from_this_satellite = self.world_model.handle_subframe_emitted(
-                        satellite_id, emit_subframe_event
-                    )
-                    satellite_ids_to_world_model_events[satellite_id] = world_model_events_from_this_satellite
+                    events = self._handle_subframe_emitted_event(satellite_id, event)
+                    satellite_ids_to_world_model_events[satellite_id] = events
                 else:
                     raise NotImplementedError(f"Unhandled event type: {type(event)}")
 
@@ -147,9 +127,57 @@ class GpsReceiver:
                     print(f"Determined the orbit of {satellite_id}! {world_model_event.orbital_parameters}")
                     orbit_params = world_model_event.orbital_parameters
 
+        # Now that we've processed all the subframes emitted after this millisecond of data, we can compute pseudoranges
+        # (It's important to calculate this after processing all the subframes - one subframe from one satellite might
+        # give us the ability to calculate pseudoranges, but we've yet to process the next timestamp that gives us the
+        # current time at another satellite, so the intermediary pseudorange in between processing those two subframes
+        # can have a massive time discrepency of 6 seconds, since we haven't caught up with the other subframe's
+        # timestamp.)
+        #if len(satellite_ids_to_tracker_events):
+        #    for satellite_id in self.tracked_satellite_ids_to_processing_pipelines.keys():
+        #        self.world_model.get_pseudorange_for_satellite(satellite_id)
 
-        # Inform the world model that another millisecond has elapsed for our receiver
-        self.world_model.handle_processed_1ms_of_antenna_data()
+    def _perform_acquisition_if_necessary(self):
+        seconds_since_start = self.antenna_samples_provider.seconds_since_start()
+        if (
+            self._time_since_last_acquisition_scan is not None
+            and seconds_since_start - self._time_since_last_acquisition_scan < ACQUISITION_SCAN_FREQUENCY
+        ):
+            # We're not scheduled to run acquisition now
+            return
+
+        if not self._can_perform_acquisition():
+            return
+
+        # Don't update the last acquisition timestamp unless we'll really have an opportunity to run acquisition
+        # But do update the timestamp even if we decide not to try to acquire more satellites
+        self._time_since_last_acquisition_scan = seconds_since_start
+
+        # TODO(PT): We could introduce a 'channel count' config parameter that controls how many satellites we'll
+        # simultaneously track
+        #if len(self.tracked_satellite_ids_to_processing_pipelines) >= MINIMUM_TRACKED_SATELLITES_FOR_POSITION_FIX:
+        #    return
+
+        _logger.info(
+            f"Will perform acquisition search because we're only "
+            f"tracking {len(self.tracked_satellite_ids_to_processing_pipelines)} satellites."
+        )
+        self._perform_acquisition()
+
+    def _handle_subframe_emitted_event(self, satellite_id: GpsSatelliteId, event: EmitSubframeEvent) -> list[Event]:
+        self.subframe_count += 1
+        emit_subframe_event: EmitSubframeEvent = event
+        subframe = emit_subframe_event.subframe
+        print(f"*** Subframe {subframe.subframe_id.name} from {satellite_id}:")
+        from dataclasses import fields
+
+        for field in fields(subframe):
+            print(f"\t{field.name}: {getattr(subframe, field.name)}")
+
+        world_model_events_from_this_satellite = self.world_model.handle_subframe_emitted(
+            satellite_id, emit_subframe_event
+        )
+        return list(world_model_events_from_this_satellite)
 
     def _perform_acquisition(self) -> None:
         newly_acquired_satellite_ids = self._perform_acquisition_on_satellite_ids(self.satellite_ids_eligible_for_acquisition)
