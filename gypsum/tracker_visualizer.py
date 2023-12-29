@@ -27,7 +27,8 @@ _RESET_DISPLAYED_DATA_PERIOD: Seconds = 5.0
 
 @dataclass
 class GraphAttributes:
-    display_axes: bool = False
+    display_x_axis: bool = False
+    display_y_axis: bool = False
     is_text_only: bool = False
     # The below fields are only relevant if this is a 'text-only' graph
     # Expressed as a hex RGB color, prefixed with '#'
@@ -35,19 +36,44 @@ class GraphAttributes:
 
     @staticmethod
     def spacer() -> "GraphAttributes":
-        return GraphAttributes(is_text_only=True, display_axes=False)
+        return GraphAttributes(
+            is_text_only=True,
+            display_x_axis=False,
+            display_y_axis=False,
+        )
 
     @staticmethod
     def text(background_color: str) -> "GraphAttributes":
-        return GraphAttributes(is_text_only=True, display_axes=False, background_color=background_color)
+        return GraphAttributes(
+            is_text_only=True,
+            display_x_axis=False,
+            display_y_axis=False,
+            background_color=background_color,
+        )
 
     @staticmethod
     def with_axes() -> "GraphAttributes":
-        return GraphAttributes(display_axes=True, is_text_only=False)
+        return GraphAttributes(
+            display_x_axis=True,
+            display_y_axis=True,
+            is_text_only=False,
+        )
+
+    @staticmethod
+    def with_y_axis() -> "GraphAttributes":
+        return GraphAttributes(
+            display_x_axis=False,
+            display_y_axis=True,
+            is_text_only=False,
+        )
 
     @staticmethod
     def without_axes() -> "GraphAttributes":
-        return GraphAttributes(display_axes=False, is_text_only=False)
+        return GraphAttributes(
+            display_x_axis=False,
+            display_y_axis=False,
+            is_text_only=False,
+        )
 
 
 class GraphTypeEnum(Enum):
@@ -80,15 +106,15 @@ class GraphTypeEnum(Enum):
     @property
     def attributes(self) -> GraphAttributes:
         return {
-            GraphTypeEnum.CARRIER_PHASE: GraphAttributes.with_axes(),
-            GraphTypeEnum.DOPPLER_SHIFT: GraphAttributes.with_axes(),
+            GraphTypeEnum.CARRIER_PHASE: GraphAttributes.with_y_axis(),
+            GraphTypeEnum.DOPPLER_SHIFT: GraphAttributes.with_y_axis(),
             GraphTypeEnum.BITS: GraphAttributes.without_axes(),
-            GraphTypeEnum.CARRIER_PHASE_ERROR: GraphAttributes.without_axes(),
+            GraphTypeEnum.CARRIER_PHASE_ERROR: GraphAttributes.with_y_axis(),
             GraphTypeEnum.IQ_ANGLE: GraphAttributes.without_axes(),
             GraphTypeEnum.IQ_CONSTELLATION: GraphAttributes.without_axes(),
-            GraphTypeEnum.I_COMPONENT: GraphAttributes.without_axes(),
+            GraphTypeEnum.I_COMPONENT: GraphAttributes.with_y_axis(),
             GraphTypeEnum.PSEUDOSYMBOLS: GraphAttributes.without_axes(),
-            GraphTypeEnum.Q_COMPONENT: GraphAttributes.without_axes(),
+            GraphTypeEnum.Q_COMPONENT: GraphAttributes.with_y_axis(),
             GraphTypeEnum.BIT_HEALTH: GraphAttributes.text(background_color="#ffe7a6"),
             GraphTypeEnum.BIT_PHASE: GraphAttributes.text(background_color="#acdffc"),
             GraphTypeEnum.CORRELATION_STRENGTH: GraphAttributes.text(background_color="#ffe7a6"),
