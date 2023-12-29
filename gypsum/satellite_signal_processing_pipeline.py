@@ -108,7 +108,7 @@ class GpsSatelliteSignalProcessingPipeline:
     def _handle_integrator_cannot_determine_bit_phase(self, event: CannotDetermineBitPhaseEvent) -> None:
         satellite_id = self.satellite.satellite_id.id
         _logger.info(
-            f"{self.current_receiver_timestamp}: Integrator for SV({satellite_id}) could not determine bit phase. Confidence: {int(event.confidence*100)}%"
+            f"Integrator for SV({satellite_id}) could not determine bit phase. Confidence: {int(event.confidence*100)}%"
         )
         # Untrack this satellite as the bits are low confidence
         raise LostSatelliteLockError()
@@ -116,7 +116,7 @@ class GpsSatelliteSignalProcessingPipeline:
     def _handle_integrator_lost_bit_coherence(self, event: LostBitCoherenceEvent) -> None:
         satellite_id = self.satellite.satellite_id.id
         _logger.info(
-            f"{self.current_receiver_timestamp}: Integrator for SV({satellite_id}) lost bit coherence. "
+            f"Integrator for SV({satellite_id}) lost bit coherence. "
             f"Confidence for bit {self.pseudosymbol_integrator.history.emitted_bit_count}: {event.confidence}%"
         )
         # Untrack this satellite as our bit quality went too far downhill
@@ -156,3 +156,7 @@ class GpsSatelliteSignalProcessingPipeline:
         _logger.info(f"\tTelemetry word: {event.telemetry_word}")
         _logger.info(f"\tHandover word: {event.handover_word}")
         return [event]
+
+    def handle_satellite_dropped(self) -> None:
+        # Allow the visualizer to clean up
+        self.tracker_visualizer.handle_satellite_dropped()

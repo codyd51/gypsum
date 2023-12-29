@@ -208,8 +208,10 @@ class GpsSatelliteTrackerVisualizer:
         # Unfortunately, I don't know of a good way to do this on a per-figure basis, rather than globally.
         plt.rcParams['toolbar'] = 'None'
         self.visualizer_figure = plt.figure(figsize=(11, 7))
-        self.visualizer_figure.suptitle(f"Satellite #{satellite_id.id} Tracking Dashboard", fontweight="bold")
-        self.grid_spec = plt.GridSpec(nrows=5, ncols=4, figure=self.visualizer_figure)
+        title = f"Satellite #{satellite_id.id} Tracking Dashboard"
+        self.visualizer_figure.suptitle(title, fontweight="bold")
+
+        self.grid_spec = plt.GridSpec(nrows=6, ncols=4, figure=self.visualizer_figure)
 
         grid_spec_idx_iterator = iter(range(len(GraphTypeEnum)))
         # Initialize the graphs in the order specified
@@ -243,9 +245,12 @@ class GpsSatelliteTrackerVisualizer:
 
         # Certain graph types aren't worth showing the axis labels, as the magnitudes aren't too important and they
         # clutter the UI.
-        graphs_without_axes_labels = [x for x in GraphTypeEnum if not x.attributes.display_axes]
-        for graph_type in graphs_without_axes_labels:
+        graph_without_x_axis_labels = [x for x in GraphTypeEnum if not x.attributes.display_x_axis]
+        for graph_type in graph_without_x_axis_labels:
             self.graph_for_type(graph_type).get_xaxis().set_visible(False)
+
+        graph_without_y_axis_labels = [x for x in GraphTypeEnum if not x.attributes.display_y_axis]
+        for graph_type in graph_without_y_axis_labels:
             self.graph_for_type(graph_type).get_yaxis().set_visible(False)
 
     def graph_for_type(self, t: GraphTypeEnum) -> Axes:
@@ -409,3 +414,6 @@ class GpsSatelliteTrackerVisualizer:
         # Update the GUI loop if we're presenting directly from pyplot
         if self.should_present:
             plt.pause(0.001)
+
+    def handle_satellite_dropped(self) -> None:
+        plt.close(self.visualizer_figure)

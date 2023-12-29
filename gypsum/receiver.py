@@ -181,6 +181,9 @@ class GpsReceiver:
         if len(self.rolling_samples_buffer) < ACQUISITION_INTEGRATION_PERIOD_MS:
             return False
 
+        if len(self.satellite_ids_eligible_for_acquisition) == 0:
+            return False
+
         return True
 
     def _perform_acquisition_on_satellite_ids(self, satellite_ids: list[GpsSatelliteId]) -> list[GpsSatelliteId]:
@@ -227,6 +230,7 @@ class GpsReceiver:
                 ):
                     satellite_ids_to_events[satellite_id] = events
             except LostSatelliteLockError:
+                pipeline.handle_satellite_dropped()
                 satellite_ids_to_reacquire.append(satellite_id)
                 # Don't modify the mapping while iterating it
                 satellite_ids_to_drop.append(satellite_id)
@@ -297,14 +301,15 @@ class GpsReceiver:
             return
 
         # Time to scan for the dashboard webserver
-        _logger.info(f'Scanning for dashboard webserver...')
+        #_logger.info(f'Scanning for dashboard webserver...')
         # TODO(PT): seconds_since_start() is currently "recording seconds", but here we actually want "process seconds"
         self._time_since_last_dashboard_server_scan = seconds_since_start
         try:
             resp = requests.get(DASHBOARD_WEBSERVER_URL)
             resp.raise_for_status()
         except (requests.ConnectionError, requests.HTTPError):
-            _logger.info(f'Did not detect the webserver.')
+            # _logger.info(f'Did not detect the webserver.')
+            pass
         else:
             _logger.info(f'Detected that the webserver is now live.')
             self._is_connected_to_dashboard_server = True
