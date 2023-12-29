@@ -204,6 +204,9 @@ class GpsSatelliteTrackerVisualizer:
             if not plt.isinteractive():
                 plt.ion()
 
+        # PT: Disable the matplotlib toolbar.
+        # Unfortunately, I don't know of a good way to do this on a per-figure basis, rather than globally.
+        plt.rcParams['toolbar'] = 'None'
         self.visualizer_figure = plt.figure(figsize=(11, 7))
         self.visualizer_figure.suptitle(f"Satellite #{satellite_id.id} Tracking Dashboard", fontweight="bold")
         self.grid_spec = plt.GridSpec(nrows=5, ncols=4, figure=self.visualizer_figure)
