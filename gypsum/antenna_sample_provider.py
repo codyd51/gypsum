@@ -30,13 +30,20 @@ class SampleProviderAttributes:
     samples_per_prn_transmission: SampleCount
 
 
+@dataclass
+class AntennaSampleChunk:
+    start_time: ReceiverTimestampSeconds
+    end_time: ReceiverTimestampSeconds
+    samples: np.ndarray
+
+
 class AntennaSampleProvider(ABC):
     @abstractmethod
-    def get_samples(self, sample_count: SampleCount) -> Tuple[ReceiverTimestampSeconds, np.ndarray]:
+    def get_samples(self, sample_count: SampleCount) -> AntennaSampleChunk:
         ...
 
     @abstractmethod
-    def peek_samples(self, sample_count: SampleCount) -> Tuple[ReceiverTimestampSeconds, np.ndarray]:
+    def peek_samples(self, sample_count: SampleCount) -> AntennaSampleChunk:
         ...
 
     @abstractmethod
@@ -77,16 +84,18 @@ class AntennaSampleProviderBackedByFile(AntennaSampleProvider):
         self.sample_component_data_type = file_info.sample_component_data_type
         self.file_size_in_bytes = self.path.stat().st_size
 
-    def seconds_since_start(self) -> Seconds:
-        timestamp_in_seconds_since_start = self.cursor / self.sample_rate
-        return timestamp_in_seconds_since_start
+    def _get_elapsed_seconds_at_cursor(self, cursor: int) -> ReceiverTimestampSeconds:
+        return round(cursor / self.sample_rate, 6)
 
-    def peek_samples(self, sample_count: SampleCount) -> Tuple[ReceiverTimestampSeconds, np.ndarray]:
+    def seconds_since_start(self) -> Seconds:
+        return self._get_elapsed_seconds_at_cursor(self.cursor)
+
+    def peek_samples(self, sample_count: SampleCount) -> AntennaSampleChunk:
         # The timestamp is always taken at the start of this set of samples
         # TODO(PT): SAMPLES_PER_SECOND should be an instance attribute
         receiver_utc_timestamp = self.utc_start_time + self.seconds_since_start()
         # GPS differs from UTC by an integer number of leap seconds.
-        receiver_gps_timestamp = receiver_utc_timestamp + UTC_LEAP_SECONDS_COUNT
+        start_timestamp = self.seconds_since_start()
 
         # We have interleaved IQ samples, so the number of words to read will be the sample count * 2
         word_count_to_read = sample_count * 2
@@ -96,7 +105,9 @@ class AntennaSampleProviderBackedByFile(AntennaSampleProvider):
         file_offset_end = file_offset_start + (word_count_to_read * bytes_per_word)
 
         if file_offset_end >= self.file_size_in_bytes:
-            raise NoMoreSamplesError(f'Ran out of samples at {self.file_size_in_bytes/1024/1024:.2f}MB')
+            raise NoMoreSamplesError(
+                f'Ran out of samples at {self.file_size_in_bytes/1024/1024:.2f}MB ({self.seconds_since_start():.2f}s)'
+            )
 
         words = np.fromfile(
             self.path.as_posix(),
@@ -106,12 +117,16 @@ class AntennaSampleProviderBackedByFile(AntennaSampleProvider):
         )
         # Recombine the inline IQ samples into complex values
         iq_samples = (words[0::2]) + (1j * words[1::2])
-        return receiver_gps_timestamp, iq_samples
+        return AntennaSampleChunk(
+            start_time=start_timestamp,
+            end_time=self._get_elapsed_seconds_at_cursor(self.cursor + sample_count),
+            samples=iq_samples,
+        )
 
-    def get_samples(self, sample_count: SampleCount) -> Tuple[ReceiverTimestampSeconds, np.ndarray]:
-        receiver_timestamp, file_data = self.peek_samples(sample_count)
+    def get_samples(self, sample_count: SampleCount) -> AntennaSampleChunk:
+        chunk = self.peek_samples(sample_count)
         self.cursor += sample_count
-        return receiver_timestamp, file_data
+        return chunk
 
     def get_attributes(self) -> SampleProviderAttributes:
         return SampleProviderAttributes(

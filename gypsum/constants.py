@@ -33,3 +33,6 @@ SECONDS_PER_WEEK: Seconds = 60 * 60 * 24 * 7
 
 # WSG84 speed of light in a vacuum, specified by GPS 30.3.4.3.
 SPEED_OF_LIGHT: MetersPerSecond = 2.99792458e8
+
+# For reader clarity and typo prevention
+ONE_MILLISECOND: Seconds = 0.001
