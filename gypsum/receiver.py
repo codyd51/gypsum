@@ -35,8 +35,10 @@ class GpsReceiver:
         self,
         antenna_samples_provider: AntennaSampleProvider,
         only_acquire_satellite_ids: list[GpsSatelliteId] | None = None,
+        present_matplotlib_satellite_tracker: bool = False,
     ) -> None:
         self.antenna_samples_provider = antenna_samples_provider
+        self.should_present_matplotlib_satellite_tracker = present_matplotlib_satellite_tracker
 
         # Generate the replica signals that we'll use to correlate against the received antenna signals upfront
         satellites_to_replica_prn_signals = generate_replica_prn_signals()
@@ -211,6 +213,7 @@ class GpsReceiver:
             satellite = self.satellites_by_id[sat_id]
             self.tracked_satellite_ids_to_processing_pipelines[sat_id] = GpsSatelliteSignalProcessingPipeline(
                 satellite, satellite_acquisition_result, self.antenna_samples_provider.get_attributes()
+                should_present_matplotlib_satellite_tracker=self.should_present_matplotlib_satellite_tracker,
             )
         return [n.satellite_id for n in newly_acquired_satellites]
 

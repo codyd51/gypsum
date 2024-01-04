@@ -49,6 +49,7 @@ class GpsSatelliteSignalProcessingPipeline:
         satellite: GpsSatellite,
         acquisition_result: SatelliteAcquisitionAttemptResult,
         stream_attributes: SampleProviderAttributes,
+        should_present_matplotlib_satellite_tracker: bool = False,
     ) -> None:
         self.satellite = satellite
         self.state = TrackingState.PROVISIONAL_PROBE
@@ -61,10 +62,11 @@ class GpsSatelliteSignalProcessingPipeline:
             navigation_bit_pseudosymbols=[],
         )
         self.tracker = GpsSatelliteTracker(tracking_params, stream_attributes)
+        # TODO(PT): Add another option so that we can render to the dashboard without also presenting the matplotlib window
         self.tracker_visualizer = GpsSatelliteTrackerVisualizer(
             satellite.satellite_id,
-            should_render=True,
-            should_present=False,
+            should_render=should_present_matplotlib_satellite_tracker,
+            should_present=should_present_matplotlib_satellite_tracker,
         )
         self.pseudosymbol_integrator = NavigationBitIntegrator()
         self.navigation_message_decoder = NavigationMessageDecoder()
