@@ -31,7 +31,11 @@ _logger = logging.getLogger(__name__)
 
 
 class GpsReceiver:
-    def __init__(self, antenna_samples_provider: AntennaSampleProvider) -> None:
+    def __init__(
+        self,
+        antenna_samples_provider: AntennaSampleProvider,
+        only_acquire_satellite_ids: list[GpsSatelliteId] | None = None,
+    ) -> None:
         self.antenna_samples_provider = antenna_samples_provider
 
         # Generate the replica signals that we'll use to correlate against the received antenna signals upfront
@@ -51,14 +55,11 @@ class GpsReceiver:
         # Literally they're the same, but the latter makes more sense conceptually in terms of 'measuring the delay' -
         # you look at the timestamp where the PRN starts.
         # Example: timestamped HOW and we receive it 7 milliseconds later (for 20km distance)
-        self.satellite_ids_eligible_for_acquisition = [
-            GpsSatelliteId(id=28),
-            GpsSatelliteId(id=31),
-            GpsSatelliteId(id=25),
-            GpsSatelliteId(id=32),
-            #GpsSatelliteId(id=31),
-        ]
         self.satellite_ids_eligible_for_acquisition = deepcopy(ALL_SATELLITE_IDS)
+        if only_acquire_satellite_ids is not None:
+            _logger.info(f'Only acquiring user-specified satellite IDs: {", ".join([str(x.id) for x in only_acquire_satellite_ids])}')
+            self.satellite_ids_eligible_for_acquisition = only_acquire_satellite_ids
+
         self.satellite_detector = GpsSatelliteDetector(self.satellites_by_id)
         # Used during acquisition to integrate correlation over a longer period than a millisecond.
         self.rolling_samples_buffer: collections.deque = collections.deque(maxlen=ACQUISITION_INTEGRATION_PERIOD_MS)
