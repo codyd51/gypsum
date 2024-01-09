@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from enum import Enum, auto
 
 from gypsum.antenna_sample_provider import ReceiverTimestampSeconds
+from gypsum.constants import ONE_MILLISECOND
 from gypsum.events import Event
 from gypsum.navigation_bit_intergrator import EmitNavigationBitEvent
 from gypsum.navigation_message_parser import (
@@ -59,11 +60,13 @@ class EmitSubframeEvent(Event):
     def __init__(
         self,
         receiver_timestamp: ReceiverTimestampSeconds,
+        trailing_edge_receiver_timestamp: ReceiverTimestampSeconds,
         telemetry_word: TelemetryWord,
         handover_word: HandoverWord,
         subframe: NavigationMessageSubframe,
     ) -> None:
         self.receiver_timestamp = receiver_timestamp
+        self.trailing_edge_receiver_timestamp = trailing_edge_receiver_timestamp
         self.telemetry_word = telemetry_word
         self.handover_word = handover_word
         self.subframe = subframe
@@ -200,8 +203,13 @@ class NavigationMessageDecoder:
 
     def parse_subframe(self) -> EmitSubframeEvent | None:
         subframe_bits = self.queued_bit_events[:BITS_PER_SUBFRAME]
+        # Wait, the start timestamp is 4.09 but the end timestamp is 10.089?
+        # Why aren't they exactly 6 seconds apart?!
         subframe_receiver_timestamp = subframe_bits[0].receiver_timestamp
-        _logger.info(f"Emitting subframe timestamped at receiver at {subframe_receiver_timestamp}")
+        #subframe_trailing_edge_receiver_timestamp = subframe_bits[-1].trailing_edge_receiver_timestamp + ONE_MILLISECOND
+        subframe_trailing_edge_receiver_timestamp = subframe_bits[-1].trailing_edge_receiver_timestamp
+        # TODO(PT): Is it because we're discargin symbols/bits..?
+        _logger.info(f"Emitting subframe timestamped at receiver at {subframe_receiver_timestamp}, trailing edge {subframe_trailing_edge_receiver_timestamp}")
         # Consume these bits by removing them from the queue
         self.queued_bit_events = self.queued_bit_events[BITS_PER_SUBFRAME:]
 
@@ -267,6 +275,7 @@ class NavigationMessageDecoder:
 
         return EmitSubframeEvent(
             receiver_timestamp=subframe_receiver_timestamp,
+            trailing_edge_receiver_timestamp=subframe_trailing_edge_receiver_timestamp,
             telemetry_word=telemetry_word,
             handover_word=handover_word,
             subframe=subframe,
