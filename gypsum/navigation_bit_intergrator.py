@@ -11,8 +11,11 @@ from gypsum.config import (
     RECALCULATE_PSEUDOSYMBOL_PHASE_PERIOD,
 )
 from gypsum.constants import BITS_PER_SECOND, PSEUDOSYMBOLS_PER_NAVIGATION_BIT, PSEUDOSYMBOLS_PER_SECOND
+from gypsum.constants import ONE_MILLISECOND
 from gypsum.events import Event
+from gypsum.gps_ca_prn_codes import GpsSatelliteId
 from gypsum.tracker import BitValue, NavigationBitPseudosymbol
+from gypsum.tracker import EmittedPseudosymbol
 from gypsum.utils import chunks
 
 _logger = logging.getLogger(__name__)
@@ -22,9 +25,17 @@ Percentage = float
 BitPseudosymbolPhase = int
 
 
+# TODO(PT): All the integrator events should subclass a common IntegratorEvent.
+#  This makes typing clearer in the event handlers.
 class EmitNavigationBitEvent(Event):
-    def __init__(self, receiver_timestamp: ReceiverTimestampSeconds, bit_value: BitValue) -> None:
+    def __init__(
+        self,
+        receiver_timestamp: ReceiverTimestampSeconds,
+        trailing_edge_receiver_timestamp: ReceiverTimestampSeconds,
+        bit_value: BitValue
+    ) -> None:
         self.receiver_timestamp = receiver_timestamp
+        self.trailing_edge_receiver_timestamp = trailing_edge_receiver_timestamp
         self.bit_value = bit_value
 
 
@@ -40,12 +51,6 @@ class LostBitCoherenceEvent(Event):
 
 class LostBitPhaseCoherenceError(Exception):
     pass
-
-
-@dataclass
-class EmittedPseudosymbol:
-    receiver_timestamp: ReceiverTimestampSeconds
-    pseudosymbol: NavigationBitPseudosymbol
 
 
 @dataclass
@@ -94,7 +99,8 @@ class NavigationBitIntegratorHistory:
 
 
 class NavigationBitIntegrator:
-    def __init__(self) -> None:
+    def __init__(self, satellite_id: GpsSatelliteId) -> None:
+        self.satellite_id = satellite_id
         self.history = NavigationBitIntegratorHistory()
         self.pseudosymbol_count_to_use_for_bit_phase_selection = PSEUDOSYMBOLS_PER_NAVIGATION_BIT * 4
         self.resynchronize_bit_phase_period = PSEUDOSYMBOLS_PER_SECOND * RECALCULATE_PSEUDOSYMBOL_PHASE_PERIOD
@@ -171,8 +177,21 @@ class NavigationBitIntegrator:
 
         # The timestamp of the bit comes from the receiver timestamp of
         # the first pseudosymbol in the bit.
-        timestamp = pseudosymbols[0].receiver_timestamp
-        return EmitNavigationBitEvent(receiver_timestamp=timestamp, bit_value=bit_value)
+        first_pseudosymbol = pseudosymbols[0]
+        last_pseudosymbol = pseudosymbols[-1]
+        timestamp = first_pseudosymbol.start_of_pseudosymbol
+        trailing_edge_timestamp = last_pseudosymbol.end_of_pseudosymbol
+        #timestamp = first_pseudosymbol.start_of_pseudosymbol + (first_pseudosymbol.cursor_at_emit_time * ONE_MILLISECOND)
+        # PT: Note I'm trying to use the starts only, but then we should consider this when calculating the receiver slide / pseudorange?...
+        #trailing_edge_timestamp = last_pseudosymbol.start_of_pseudosymbol + (last_pseudosymbol.cursor_at_emit_time * ONE_MILLISECOND)
+        #trailing_edge_timestamp = last_pseudosymbol.end_of_pseudosymbol + (last_pseudosymbol.cursor_at_emit_time * ONE_MILLISECOND)
+        #timestamp = receiver_timestamp - (ONE_MILLISECOND * 20)
+        #trailing_edge_timestamp = receiver_timestamp
+        return EmitNavigationBitEvent(
+            receiver_timestamp=timestamp,
+            trailing_edge_receiver_timestamp=trailing_edge_timestamp,
+            bit_value=bit_value,
+        )
 
     def _emit_bits_from_queued_pseudosymbols(self) -> list[Event]:
         if self.history.determined_bit_phase is None:
