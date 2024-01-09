@@ -21,6 +21,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--only_acquire_satellite_ids", nargs="*")
     parser.add_argument("--present_matplotlib_sat_tracker", action=argparse.BooleanOptionalAction)
+    parser.add_argument("--present_web_ui", action=argparse.BooleanOptionalAction)
     args = parser.parse_args()
 
     input_source = INPUT_SOURCES[7]
@@ -34,10 +35,12 @@ def main():
         only_acquire_satellite_ids = None
     # argparse will give us None if the user didn't specify the flag
     present_matplotlib_sat_tracker = args.present_matplotlib_sat_tracker is True
+    present_web_ui = args.present_web_ui is True
     receiver = GpsReceiver(
         antenna_samples_provider,
         only_acquire_satellite_ids=only_acquire_satellite_ids,
         present_matplotlib_satellite_tracker=present_matplotlib_sat_tracker,
+        present_web_ui=present_web_ui,
     )
     while True:
         receiver.step()
