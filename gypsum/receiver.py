@@ -256,6 +256,8 @@ class GpsReceiver:
         del self.tracked_satellite_ids_to_processing_pipelines[satellite_id]
         # Inform the world model that we're no longer reliably counting PRNs for this satellite
         self.world_model.handle_lost_satellite_lock(satellite_id, receiver_timestamp)
+        # TODO(PT): Put the satellite in a cool-off queue
+        self.satellite_ids_eligible_for_acquisition.append(satellite_id)
 
     def _send_receiver_state_to_dashboard_if_necessary(self, receiver_timestamp: ReceiverTimestampSeconds) -> None:
         # Nothing to do if we're not connected to the webserver
