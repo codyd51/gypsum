@@ -7,6 +7,7 @@ import requests
 import numpy as np
 
 from gypsum.acquisition import GpsSatelliteDetector
+from gypsum.antenna_sample_provider import AntennaSampleChunk
 from gypsum.antenna_sample_provider import AntennaSampleProvider, ReceiverTimestampSeconds
 from gypsum.config import ACQUISITION_INTEGRATION_PERIOD_MS
 from gypsum.config import ACQUISITION_SCAN_FREQUENCY
@@ -74,6 +75,7 @@ class GpsReceiver:
         self.subframe_count = 0
 
         self.world_model = GpsWorldModel(self.antenna_samples_provider.get_attributes().samples_per_prn_transmission)
+        #self.world_model.receiver_clock_slide = 1383072498 % (604_800)
 
         self._time_since_last_acquisition_scan: ReceiverDataSeconds | None = None
         self._timestamp_of_last_dashboard_update: ReceiverDataSeconds | None = None
@@ -83,38 +85,37 @@ class GpsReceiver:
 
     def step(self) -> None:
         """Run one 'iteration' of the GPS receiver. This consumes one millisecond of antenna data."""
-        receiver_timestamp: ReceiverTimestampSeconds
-        samples: AntennaSamplesSpanningOneMs
         # TODO(PT): Cache this somewhere?
-        receiver_timestamp, samples = self.antenna_samples_provider.get_samples(
+        receiver_data_chunk = self.antenna_samples_provider.get_samples(
             self.antenna_samples_provider.get_attributes().samples_per_prn_transmission,
         )
-
-        # Inform the world model that another millisecond has elapsed for our receiver, since we just listened
-        # to the antenna for 1ms.
-        self.world_model.handle_processed_1ms_of_antenna_data()
 
         # Hook up to the dashboard webserver. Periodically try to connect to the dashboard, and send our state
         # update if we're connected.
         # Do this before we process the samples. The only reason for this is so that the dashboard can get some
         # initial state to display before we perform the initial acquisition scan.
         self._scan_for_dashboard_webserver_if_necessary()
-        self._send_receiver_state_to_dashboard_if_necessary(receiver_timestamp)
+        self._send_receiver_state_to_dashboard_if_necessary(receiver_data_chunk.start_time)
 
         # Record this sample in our rolling buffer
-        self.rolling_samples_buffer.append(samples)
+        self.rolling_samples_buffer.append(receiver_data_chunk.samples)
 
         # If we need to perform acquisition, do so now
         self._perform_acquisition_if_necessary()
 
         # Continue tracking each acquired satellite
-        satellite_ids_to_tracker_events = self._track_acquired_satellites(receiver_timestamp, samples)
+        satellite_ids_to_tracker_events = self._track_acquired_satellites(receiver_data_chunk)
         # And keep track of updates to our world model
         # Firstly, note that each of these satellites has emitted another PRN.
         # This allows us to keep track of the passage of satellite time with reference to the HOW timestamp.
         for satellite_id in self.tracked_satellite_ids_to_processing_pipelines.keys():
+            # PT: I'm worried that we're not accurately counting how many PRNs have happened since we saw the last HOW
+            # What if there's some queuing and we 'overwrite' some PRNs we saw?
+            # Instead, maybe we could say "HOW timestamp to PRN count" and see if any go over 6000?
             tracker_params = self.tracked_satellite_ids_to_processing_pipelines[satellite_id].tracker.tracking_params
-            self.world_model.handle_prn_observed(satellite_id, tracker_params.current_prn_code_phase_shift)
+            self.world_model.handle_prn_observed(satellite_id, tracker_params.current_prn_code_phase_shift, receiver_data_chunk.start_time, receiver_data_chunk.end_time)
+
+        self.world_model.handle_processed_1ms(receiver_data_chunk.start_time)
 
         satellite_ids_to_world_model_events = {}
         for satellite_id, events in satellite_ids_to_tracker_events.items():
@@ -126,12 +127,16 @@ class GpsReceiver:
                     raise NotImplementedError(f"Unhandled event type: {type(event)}")
 
         # Process updates to our world model
-        for satellite_id, world_model_events in satellite_ids_to_world_model_events.items():
-            for world_model_event in world_model_events:
-                if isinstance(world_model_event, DeterminedSatelliteOrbitEvent):
-                    print(f"Determined the orbit of {satellite_id}! {world_model_event.orbital_parameters}")
-                else:
-                    raise NotImplementedError(f'Unhandled event type: {type(world_model_event)}')
+        if True:
+            for satellite_id, world_model_events in satellite_ids_to_world_model_events.items():
+                for world_model_event in world_model_events:
+                    if isinstance(world_model_event, DeterminedSatelliteOrbitEvent):
+                        print(f"Determined the orbit of {satellite_id}! {world_model_event.orbital_parameters}")
+                    else:
+                        raise NotImplementedError(f'Unhandled event type: {type(world_model_event)}')
+
+        #self.world_model.attempt_position_fix(receiver_data_chunk.end_time, self.tracked_satellite_ids_to_processing_pipelines)
+        self.world_model.attempt_position_fix(receiver_data_chunk.start_time, self.tracked_satellite_ids_to_processing_pipelines)
 
     def _perform_acquisition_if_necessary(self):
         seconds_since_start = self.antenna_samples_provider.seconds_since_start()
@@ -214,7 +219,9 @@ class GpsReceiver:
             sat_id = satellite_acquisition_result.satellite_id
             satellite = self.satellites_by_id[sat_id]
             self.tracked_satellite_ids_to_processing_pipelines[sat_id] = GpsSatelliteSignalProcessingPipeline(
-                satellite, satellite_acquisition_result, self.antenna_samples_provider.get_attributes()
+                satellite,
+                satellite_acquisition_result,
+                self.antenna_samples_provider.get_attributes(),
                 should_present_matplotlib_satellite_tracker=self.should_present_matplotlib_satellite_tracker,
                 should_present_web_ui=self.should_present_web_ui,
             )
@@ -222,19 +229,14 @@ class GpsReceiver:
 
     def _track_acquired_satellites(
         self,
-        receiver_timestamp: ReceiverTimestampSeconds,
-        samples: AntennaSamplesSpanningOneMs,
+        receiver_samples_chunk: AntennaSampleChunk,
     ) -> dict[GpsSatelliteId, list[Event]]:
         satellite_ids_to_events = {}
         satellite_ids_to_reacquire = []
         satellite_ids_to_drop = []
         for satellite_id, pipeline in self.tracked_satellite_ids_to_processing_pipelines.items():
             try:
-                if events := pipeline.process_samples(
-                    receiver_timestamp,
-                    self.antenna_samples_provider.seconds_since_start(),
-                    samples,
-                ):
+                if events := pipeline.process_samples(receiver_samples_chunk):
                     satellite_ids_to_events[satellite_id] = events
             except LostSatelliteLockError:
                 pipeline.handle_satellite_dropped()
@@ -243,17 +245,17 @@ class GpsReceiver:
                 satellite_ids_to_drop.append(satellite_id)
 
         for satellite_id in satellite_ids_to_drop:
-            self._drop_satellite(satellite_id)
+            self._drop_satellite(satellite_id, receiver_samples_chunk.start_time)
 
         return satellite_ids_to_events
 
-    def _drop_satellite(self, satellite_id: GpsSatelliteId) -> None:
+    def _drop_satellite(self, satellite_id: GpsSatelliteId, receiver_timestamp: ReceiverTimestampSeconds) -> None:
         if satellite_id not in self.tracked_satellite_ids_to_processing_pipelines:
             raise ValueError(f'Tried to drop an untracked satellite {satellite_id}')
 
         del self.tracked_satellite_ids_to_processing_pipelines[satellite_id]
         # Inform the world model that we're no longer reliably counting PRNs for this satellite
-        self.world_model.handle_lost_satellite_lock(satellite_id)
+        self.world_model.handle_lost_satellite_lock(satellite_id, receiver_timestamp)
 
     def _send_receiver_state_to_dashboard_if_necessary(self, receiver_timestamp: ReceiverTimestampSeconds) -> None:
         # Nothing to do if we're not connected to the webserver
