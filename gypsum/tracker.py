@@ -8,6 +8,8 @@ from typing import Tuple
 
 import numpy as np
 
+from gypsum.antenna_sample_provider import AntennaSampleChunk
+from gypsum.antenna_sample_provider import ReceiverTimestampSeconds
 from gypsum.antenna_sample_provider import SampleProviderAttributes
 from gypsum.config import (
     CONSTELLATION_BASED_FREQUENCY_ADJUSTMENT_MAGNITUDE,
@@ -16,6 +18,7 @@ from gypsum.config import (
     MAXIMUM_PHASE_ERROR_VARIANCE_FOR_LOCK_STATE,
     MILLISECONDS_TO_CONSIDER_FOR_TRACKER_LOCK_STATE,
 )
+from gypsum.constants import ONE_MILLISECOND
 from gypsum.constants import PRN_CHIP_COUNT
 from gypsum.satellite import GpsSatellite
 from gypsum.units import CarrierWavePhaseInRadians, CoherentCorrelationPeak, PrnCodePhaseInSamples, Seconds
@@ -87,6 +90,14 @@ class NavigationBitPseudosymbol(Enum):
             NavigationBitPseudosymbol.MINUS_ONE: -1,
             NavigationBitPseudosymbol.ONE: 1,
         }[self]
+
+
+@dataclass
+class EmittedPseudosymbol:
+    start_of_pseudosymbol: ReceiverTimestampSeconds
+    end_of_pseudosymbol: ReceiverTimestampSeconds
+    pseudosymbol: NavigationBitPseudosymbol
+    cursor_at_emit_time: int
 
 
 # The tracker runs at 1000Hz by definition, since it always operates on the output of a 1ms-long PRN correlation.
@@ -236,11 +247,13 @@ class GpsSatelliteTracker:
         self.tracking_params.correlation_peak_angles.append(np.angle(correlation_peak))  # type: ignore
 
     def _run_prn_code_tracking_loop_iteration(
-        self, seconds_since_start: Seconds, samples: AntennaSamplesSpanningOneMs
-    ) -> Tuple[CoherentCorrelationPeak, CorrelationStrengthRatio, NavigationBitPseudosymbol]:
+        self,
+        receiver_samples_chunk: AntennaSampleChunk
+    ) -> Tuple[CoherentCorrelationPeak, CorrelationStrengthRatio, EmittedPseudosymbol]:
+        # TODO(PT): Try shifting the samples instead of the replica, to give a real code phase delay measurement
         params = self.tracking_params
         # Adjust the time domain based on our current time
-        time_domain = self.time_domain_for_1ms + seconds_since_start
+        time_domain = self.time_domain_for_1ms + receiver_samples_chunk.start_time
 
         # Generate Doppler-shifted and phase-shifted carrier wave, based on our current carrier wave estimation.
         # (Note that there's a circular dependency between the carrier wave tracker and the PRN code tracker.
@@ -250,7 +263,7 @@ class GpsSatelliteTracker:
         doppler_shift_carrier = np.exp(
             -1j * ((2 * np.pi * params.current_doppler_shift * time_domain) + params.current_carrier_wave_phase_shift)
         )
-        doppler_shifted_samples = samples * doppler_shift_carrier
+        doppler_shifted_samples = receiver_samples_chunk.samples * doppler_shift_carrier
 
         # Correlate early, prompt, and late phase versions of the PRN
         unslid_prn = params.satellite.prn_as_complex
@@ -287,16 +300,19 @@ class GpsSatelliteTracker:
         return coherent_prompt_prn_correlation_peak, correlation_strength, navigation_bit_pseudosymbol
 
     def process_samples(
-        self, seconds_since_start: Seconds, samples: AntennaSamplesSpanningOneMs
-    ) -> NavigationBitPseudosymbol:
+        self, receiver_samples_chunk: AntennaSampleChunk,
+    ) -> EmittedPseudosymbol:
         params = self.tracking_params
 
         # First, run an iteration of the PRN code tracking loop
-        coherent_prompt_prn_correlation_peak, correlation_strength, navigation_bit_pseudosymbol = self._run_prn_code_tracking_loop_iteration(
-            seconds_since_start,
-            samples,
+        coherent_prompt_prn_correlation_peak, correlation_strength, emitted_pseudosymbol = self._run_prn_code_tracking_loop_iteration(
+            receiver_samples_chunk
         )
-        params.navigation_bit_pseudosymbols.append(navigation_bit_pseudosymbol)
+        # We could do a 'receiver timestamp of latest PRN'
+        # And a 'receiver timestamp of trailing edge of last subframe'
+        # Subtract the latter from the former and we get the pseudotransmit time?
+        # Each PRN could automatically get the start time + the phase
+        # If the phase of the 'subframe marker' is included in the timestamp, this accounts for phase changes over the course of the transmit?!
 
         self.tracking_params.correlation_peaks_rolling_buffer.append(coherent_prompt_prn_correlation_peak)
         self.tracking_params.correlation_peak_strengths_rolling_buffer.append(correlation_strength)
@@ -312,10 +328,10 @@ class GpsSatelliteTracker:
         # TODO(PT): Extract the logic to get the rotation of a constellation plot into utils
         correlation_peaks = np.array(self.tracking_params.correlation_peaks_rolling_buffer)
         if (
-            False and seconds_since_start - self._time_since_last_constellation_rotation_induced_adjustment
+            False and receiver_samples_chunk.start_time - self._time_since_last_constellation_rotation_induced_adjustment
             >= CONSTELLATION_BASED_FREQUENCY_ADJUSTMENT_PERIOD
         ):
-            self._time_since_last_constellation_rotation_induced_adjustment = seconds_since_start
+            self._time_since_last_constellation_rotation_induced_adjustment = receiver_samples_chunk.start_time
             # TODO(PT): Could be cached somehow, in case two adjustment techniques both need to read the
             #  current IQ constellation rotation.
             iq_constellation_rotation = get_iq_constellation_rotation(correlation_peaks)
@@ -325,10 +341,10 @@ class GpsSatelliteTracker:
                 self.tracking_params.current_doppler_shift += adjustment
 
         if (
-            seconds_since_start - self._time_since_last_constellation_circularity_induced_adjustment
+            receiver_samples_chunk.start_time - self._time_since_last_constellation_circularity_induced_adjustment
             >= 6
         ):
-            self._time_since_last_constellation_circularity_induced_adjustment = seconds_since_start
+            self._time_since_last_constellation_circularity_induced_adjustment = receiver_samples_chunk.start_time
             iq_constellation_circularity = get_iq_constellation_circularity(correlation_peaks)
             if iq_constellation_circularity is not None:
                 if iq_constellation_circularity < 0.2:
