@@ -82,12 +82,11 @@ class GraphTypeEnum(Enum):
     BIT_PHASE = auto()
     SUBFRAME_PHASE = auto()
 
-    Q_COMPONENT = auto()
     CARRIER_PHASE_ERROR = auto()
     TRACK_DURATION = auto()
     BIT_HEALTH = auto()
 
-    I_COMPONENT = auto()
+    IQ_COMPONENTS = auto()
     IQ_CONSTELLATION = auto()
     EMITTED_SUBFRAMES = auto()
     FAILED_BITS = auto()
@@ -112,9 +111,8 @@ class GraphTypeEnum(Enum):
             GraphTypeEnum.CARRIER_PHASE_ERROR: GraphAttributes.with_y_axis(),
             GraphTypeEnum.IQ_ANGLE: GraphAttributes.without_axes(),
             GraphTypeEnum.IQ_CONSTELLATION: GraphAttributes.without_axes(),
-            GraphTypeEnum.I_COMPONENT: GraphAttributes.with_y_axis(),
+            GraphTypeEnum.IQ_COMPONENTS: GraphAttributes.with_y_axis(),
             GraphTypeEnum.PSEUDOSYMBOLS: GraphAttributes.without_axes(),
-            GraphTypeEnum.Q_COMPONENT: GraphAttributes.with_y_axis(),
             GraphTypeEnum.BIT_HEALTH: GraphAttributes.text(background_color="#ffe7a6"),
             GraphTypeEnum.BIT_PHASE: GraphAttributes.text(background_color="#acdffc"),
             GraphTypeEnum.CORRELATION_STRENGTH: GraphAttributes.text(background_color="#ffe7a6"),
@@ -139,7 +137,7 @@ class GraphTypeEnum(Enum):
                 cls.FAILED_BITS,
             ],
             [
-                cls.I_COMPONENT,
+                cls.IQ_COMPONENTS,
                 cls.IQ_CONSTELLATION,
                 cls.CORRELATION_STRENGTH,
                 cls.IQ_CONSTELLATION_ROTATION,
@@ -157,7 +155,6 @@ class GraphTypeEnum(Enum):
                 cls.PRN_CODE_PHASE,
             ],
             [
-                cls.Q_COMPONENT,
                 cls.CARRIER_PHASE_ERROR,
                 cls.SUBFRAME_PHASE,
                 cls.IQ_CONSTELLATION_CIRCULARITY,
@@ -170,8 +167,7 @@ class GraphTypeEnum(Enum):
             self.DOPPLER_SHIFT: "Beat Frequency (Hz)",
             self.IQ_CONSTELLATION: "IQ Constellation",
             self.CARRIER_PHASE_ERROR: "Carrier Phase Error",
-            self.I_COMPONENT: "I Component",
-            self.Q_COMPONENT: "Q Component",
+            self.IQ_COMPONENTS: "IQ Components",
             self.IQ_ANGLE: "IQ Angle (Rad)",
             self.CARRIER_PHASE: "Carrier Phase (Rad)",
             self.PSEUDOSYMBOLS: "Pseudosymbols",
@@ -324,11 +320,10 @@ class GpsSatelliteTrackerVisualizer:
             self.graph_for_type(GraphTypeEnum.IQ_CONSTELLATION_CIRCULARITY).clear()
             self.draw_text(GraphTypeEnum.IQ_CONSTELLATION_CIRCULARITY, f'{iq_constellation_circularity:.2f}%')
 
-        self.graph_for_type(GraphTypeEnum.I_COMPONENT).clear()
-        self.graph_for_type(GraphTypeEnum.I_COMPONENT).plot(np.real(correlation_peaks))
-
-        self.graph_for_type(GraphTypeEnum.Q_COMPONENT).clear()
-        self.graph_for_type(GraphTypeEnum.Q_COMPONENT).plot(np.imag(correlation_peaks))
+        self.graph_for_type(GraphTypeEnum.IQ_COMPONENTS).clear()
+        # Draw Q first so it stays in the background
+        self.graph_for_type(GraphTypeEnum.IQ_COMPONENTS).plot(np.imag(correlation_peaks), color="#7f7f7f")
+        self.graph_for_type(GraphTypeEnum.IQ_COMPONENTS).plot(np.real(correlation_peaks), color='#1f77b4')
 
         self.graph_for_type(GraphTypeEnum.IQ_ANGLE).clear()
         self.graph_for_type(GraphTypeEnum.IQ_ANGLE).plot(params.correlation_peak_angles)
@@ -404,12 +399,13 @@ class GpsSatelliteTrackerVisualizer:
         self._redraw_subplot_titles()
 
         # Raster the figure to a base64-encoded image, so it can be rendered in the dashboard webserver.
-        pixel_buffer = io.BytesIO()
-        self.visualizer_figure.savefig(pixel_buffer, format="png")
-        pixel_buffer.seek(0)
-        figure_as_png = pixel_buffer.getvalue()
-        pixel_buffer.close()
-        self.rendered_dashboard_png_base64 = base64.b64encode(figure_as_png).decode('utf-8')
+        if self.should_render:
+            pixel_buffer = io.BytesIO()
+            self.visualizer_figure.savefig(pixel_buffer, format="png")
+            pixel_buffer.seek(0)
+            figure_as_png = pixel_buffer.getvalue()
+            pixel_buffer.close()
+            self.rendered_dashboard_png_base64 = base64.b64encode(figure_as_png).decode('utf-8')
 
         # Update the GUI loop if we're presenting directly from pyplot
         if self.should_present:
