@@ -115,13 +115,14 @@ class GpsSatelliteTrackingParameters:
     current_prn_code_phase_shift: PrnCodePhaseInSamples
 
     doppler_shifts: list[DopplerShiftHz]
-    navigation_bit_pseudosymbols: list[NavigationBitPseudosymbol]
 
     # The following arguments are handled automatically by this implementation
     carrier_wave_phases: collections.deque[CarrierWavePhaseInRadians] = None
     carrier_wave_phase_errors: collections.deque[float] = None
     correlation_peaks_rolling_buffer: collections.deque = None
     correlation_peak_angles: collections.deque = None
+    non_coherent_correlation_profiles: collections.deque = None
+    discriminators: collections.deque = None
 
     def __post_init__(self) -> None:
         for field in [
@@ -140,6 +141,8 @@ class GpsSatelliteTrackingParameters:
         self.correlation_peak_angles = collections.deque(maxlen=_TRACKER_ITERATIONS_PER_SECOND)
         self.carrier_wave_phases = collections.deque(maxlen=_TRACKER_ITERATIONS_PER_SECOND * 5)
         self.carrier_wave_phase_errors = collections.deque(maxlen=_TRACKER_ITERATIONS_PER_SECOND * 5)
+        self.non_coherent_correlation_profiles = collections.deque(maxlen=_TRACKER_ITERATIONS_PER_SECOND//4)
+        self.discriminators = collections.deque(maxlen=_TRACKER_ITERATIONS_PER_SECOND)
 
     def is_locked(self) -> bool:
         """Apply heuristics to the recorded tracking metrics history to give an answer whether the tracker is 'locked'.
@@ -271,6 +274,7 @@ class GpsSatelliteTracker:
 
         coherent_prompt_correlation = frequency_domain_correlation(doppler_shifted_samples, prompt_prn)
         non_coherent_prompt_correlation = np.abs(coherent_prompt_correlation)
+        params.non_coherent_correlation_profiles.append(non_coherent_prompt_correlation)
         non_coherent_prompt_peak_offset = np.argmax(non_coherent_prompt_correlation)
         correlation_strength = get_normalized_correlation_peak_strength(non_coherent_prompt_correlation)
 
@@ -297,7 +301,19 @@ class GpsSatelliteTracker:
         navigation_bit_pseudosymbol_value = int(np.sign(coherent_prompt_prn_correlation_peak.real))
         navigation_bit_pseudosymbol = NavigationBitPseudosymbol.from_val(navigation_bit_pseudosymbol_value)
 
-        return coherent_prompt_prn_correlation_peak, correlation_strength, navigation_bit_pseudosymbol
+        delay_from_phase_shift = ((params.current_prn_code_phase_shift / 2046) * ONE_MILLISECOND)
+        return (
+            coherent_prompt_prn_correlation_peak,
+            correlation_strength,
+            EmittedPseudosymbol(
+                start_of_pseudosymbol=receiver_samples_chunk.start_time + delay_from_phase_shift,
+                end_of_pseudosymbol=receiver_samples_chunk.end_time + delay_from_phase_shift,
+                #start_of_pseudosymbol=receiver_samples_chunk.start_time,
+                #end_of_pseudosymbol=receiver_samples_chunk.end_time,
+                pseudosymbol=navigation_bit_pseudosymbol,
+                cursor_at_emit_time=0,
+            )
+        )
 
     def process_samples(
         self, receiver_samples_chunk: AntennaSampleChunk,
@@ -318,9 +334,8 @@ class GpsSatelliteTracker:
         self.tracking_params.correlation_peak_strengths_rolling_buffer.append(correlation_strength)
 
         # Next, run an iteration of the carrier wave tracking loop
-        self._run_carrier_wave_tracking_loop_iteration(
-            coherent_prompt_prn_correlation_peak,
-        )
+        self._run_carrier_wave_tracking_loop_iteration(coherent_prompt_prn_correlation_peak)
+        #self._run_carrier_wave_tracking_loop_iteration2(receiver_samples_chunk)
 
         params.doppler_shifts.append(params.current_doppler_shift)
         params.carrier_wave_phases.append(params.current_carrier_wave_phase_shift)
