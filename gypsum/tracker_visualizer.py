@@ -100,7 +100,8 @@ class GraphTypeEnum(Enum):
     IQ_CONSTELLATION_CIRCULARITY = auto()
     IQ_CONSTELLATION_ROTATION = auto()
 
-    SPACER3 = auto()
+    PRN_CORRELATION = auto()
+    DLL_DISCRIMINATOR = auto()
 
     @property
     def attributes(self) -> GraphAttributes:
@@ -113,6 +114,8 @@ class GraphTypeEnum(Enum):
             GraphTypeEnum.IQ_CONSTELLATION: GraphAttributes.without_axes(),
             GraphTypeEnum.IQ_COMPONENTS: GraphAttributes.with_y_axis(),
             GraphTypeEnum.PSEUDOSYMBOLS: GraphAttributes.without_axes(),
+            GraphTypeEnum.PRN_CORRELATION: GraphAttributes.with_y_axis(),
+            GraphTypeEnum.DLL_DISCRIMINATOR: GraphAttributes.with_y_axis(),
             GraphTypeEnum.BIT_HEALTH: GraphAttributes.text(background_color="#ffe7a6"),
             GraphTypeEnum.BIT_PHASE: GraphAttributes.text(background_color="#acdffc"),
             GraphTypeEnum.CORRELATION_STRENGTH: GraphAttributes.text(background_color="#ffe7a6"),
@@ -123,7 +126,6 @@ class GraphTypeEnum(Enum):
             GraphTypeEnum.TRACK_DURATION: GraphAttributes.text(background_color="#c4fcac"),
             GraphTypeEnum.IQ_CONSTELLATION_CIRCULARITY: GraphAttributes.text(background_color="#c4fcac"),
             GraphTypeEnum.IQ_CONSTELLATION_ROTATION: GraphAttributes.text(background_color="#c4fcac"),
-            GraphTypeEnum.SPACER3: GraphAttributes.spacer(),
         }[self]
 
     @classmethod
@@ -150,7 +152,7 @@ class GraphTypeEnum(Enum):
             ],
             [
                 cls.BITS,
-                cls.SPACER3,
+                cls.PRN_CORRELATION,
                 cls.BIT_PHASE,
                 cls.PRN_CODE_PHASE,
             ],
@@ -158,6 +160,9 @@ class GraphTypeEnum(Enum):
                 cls.CARRIER_PHASE_ERROR,
                 cls.SUBFRAME_PHASE,
                 cls.IQ_CONSTELLATION_CIRCULARITY,
+            ],
+            [
+                cls.DLL_DISCRIMINATOR,
             ],
         ]
 
@@ -182,7 +187,8 @@ class GraphTypeEnum(Enum):
             self.CORRELATION_STRENGTH: "PRN Correlation Strength",
             self.IQ_CONSTELLATION_CIRCULARITY: "IQ Circularity",
             self.IQ_CONSTELLATION_ROTATION: "IQ Rotation",
-            self.SPACER3: "",
+            self.PRN_CORRELATION: "PRN Correlation",
+            self.DLL_DISCRIMINATOR: "DLL Discriminator",
         }[self]
 
 
@@ -389,6 +395,13 @@ class GpsSatelliteTrackerVisualizer:
         self.graph_for_type(GraphTypeEnum.PRN_CODE_PHASE).clear()
         prn_code_phase_text = f"{current_tracking_params.current_prn_code_phase_shift} chips"
         self.draw_text(GraphTypeEnum.PRN_CODE_PHASE, prn_code_phase_text)
+
+        self.graph_for_type(GraphTypeEnum.PRN_CORRELATION).clear()
+        avg = np.sum(current_tracking_params.non_coherent_correlation_profiles, axis=0) / len(current_tracking_params.non_coherent_correlation_profiles)
+        self.graph_for_type(GraphTypeEnum.PRN_CORRELATION).plot(avg)
+
+        self.graph_for_type(GraphTypeEnum.DLL_DISCRIMINATOR).clear()
+        self.graph_for_type(GraphTypeEnum.DLL_DISCRIMINATOR).plot(params.discriminators)
 
         self.graph_for_type(GraphTypeEnum.CORRELATION_STRENGTH).clear()
         mean_correlation_strength = np.mean(np.array(params.correlation_peak_strengths_rolling_buffer))
