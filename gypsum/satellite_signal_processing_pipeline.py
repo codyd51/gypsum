@@ -3,6 +3,7 @@ from enum import Enum, auto
 from typing import Callable, Type
 
 from gypsum.acquisition import SatelliteAcquisitionAttemptResult
+from gypsum.antenna_sample_provider import AntennaSampleChunk
 from gypsum.antenna_sample_provider import ReceiverTimestampSeconds, SampleProviderAttributes
 from gypsum.events import UnknownEventError
 from gypsum.navigation_bit_intergrator import (
@@ -60,7 +61,6 @@ class GpsSatelliteSignalProcessingPipeline:
             current_carrier_wave_phase_shift=acquisition_result.carrier_wave_phase_shift,
             current_prn_code_phase_shift=acquisition_result.prn_phase_shift,
             doppler_shifts=[],
-            navigation_bit_pseudosymbols=[],
         )
         self.tracker = GpsSatelliteTracker(tracking_params, stream_attributes)
         # TODO(PT): Add another option so that we can render to the dashboard without also presenting the matplotlib window
@@ -69,21 +69,16 @@ class GpsSatelliteSignalProcessingPipeline:
             should_render=should_present_matplotlib_satellite_tracker or should_present_web_ui,
             should_present=should_present_matplotlib_satellite_tracker,
         )
-        self.pseudosymbol_integrator = NavigationBitIntegrator()
+        self.pseudosymbol_integrator = NavigationBitIntegrator(satellite.satellite_id)
         self.navigation_message_decoder = NavigationMessageDecoder()
-        self.current_receiver_timestamp = 0.0
 
     def process_samples(
         self,
-        receiver_timestamp: ReceiverTimestampSeconds,
-        seconds_since_start: Seconds,
-        samples: AntennaSamplesSpanningOneMs,
+        receiver_samples_chunk: AntennaSampleChunk,
     ) -> list[Event]:
-        self.current_receiver_timestamp = receiver_timestamp
-        pseudosymbol = self.tracker.process_samples(seconds_since_start, samples)
-        # Now that the tracker has run an iteration, allow the visualizer to display the characteristics
+        pseudosymbol = self.tracker.process_samples(receiver_samples_chunk)
 
-        integrator_events = self.pseudosymbol_integrator.process_pseudosymbol(receiver_timestamp, pseudosymbol)
+        integrator_events = self.pseudosymbol_integrator.process_pseudosymbol(receiver_samples_chunk.start_time, pseudosymbol)
 
         integrator_event_type_to_callback: dict[Type[Event], Callable[[Event], list[Event] | None]] = {  # type: ignore
             CannotDetermineBitPhaseEvent: self._handle_integrator_cannot_determine_bit_phase,  # type: ignore
@@ -100,7 +95,7 @@ class GpsSatelliteSignalProcessingPipeline:
 
         # Pipeline is all done with this chunk of samples, push state updates to the GUI
         self.tracker_visualizer.step(
-            seconds_since_start,
+            receiver_samples_chunk.end_time,
             self.tracker.tracking_params,
             self.pseudosymbol_integrator.history,
             self.navigation_message_decoder.history,
