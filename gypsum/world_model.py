@@ -618,13 +618,13 @@ class GpsWorldModel:
 
     def _process_subframe2(self, orbital_parameters: OrbitalParameters, subframe: NavigationMessageSubframe2) -> None:
         orbital_parameters.set_parameter(
-            OrbitalParameterType.MEAN_ANOMALY_AT_REFERENCE_TIME, subframe.mean_anomaly_at_reference_time
+            OrbitalParameterType.MEAN_ANOMALY_AT_REFERENCE_TIME, subframe.mean_anomaly_at_reference_time * _PI
         )
         orbital_parameters.set_parameter(OrbitalParameterType.ECCENTRICITY, subframe.eccentricity)
         # The satellite transmits the square root of the semi-major axis, so square it now.
         orbital_parameters.set_parameter(OrbitalParameterType.SEMI_MAJOR_AXIS, math.pow(subframe.sqrt_semi_major_axis, 2))
         orbital_parameters.set_parameter(
-            OrbitalParameterType.MEAN_MOTION_DIFFERENCE, subframe.mean_motion_difference_from_computed_value
+            OrbitalParameterType.MEAN_MOTION_DIFFERENCE, subframe.mean_motion_difference_from_computed_value * _PI
         )
         orbital_parameters.set_parameter(
             OrbitalParameterType.EPHEMERIS_REFERENCE_TIME, subframe.reference_time_ephemeris
@@ -640,10 +640,10 @@ class GpsWorldModel:
         )
 
     def _process_subframe3(self, orbital_parameters: OrbitalParameters, subframe: NavigationMessageSubframe3) -> None:
-        orbital_parameters.set_parameter(OrbitalParameterType.INCLINATION, subframe.inclination_angle)
-        orbital_parameters.set_parameter(OrbitalParameterType.ARGUMENT_OF_PERIGEE, subframe.argument_of_perigee)
+        orbital_parameters.set_parameter(OrbitalParameterType.INCLINATION, subframe.inclination_angle * _PI)
+        orbital_parameters.set_parameter(OrbitalParameterType.ARGUMENT_OF_PERIGEE, subframe.argument_of_perigee * _PI)
         orbital_parameters.set_parameter(
-            OrbitalParameterType.LONGITUDE_OF_ASCENDING_NODE, subframe.longitude_of_ascending_node
+            OrbitalParameterType.LONGITUDE_OF_ASCENDING_NODE, subframe.longitude_of_ascending_node * _PI
         )
         orbital_parameters.set_parameter(
             OrbitalParameterType.CORRECTION_TO_INCLINATION_ANGLE_COS, subframe.correction_to_inclination_angle_cos
@@ -652,10 +652,10 @@ class GpsWorldModel:
             OrbitalParameterType.CORRECTION_TO_INCLINATION_ANGLE_SIN, subframe.correction_to_inclination_angle_sin
         )
         orbital_parameters.set_parameter(
-            OrbitalParameterType.RATE_OF_RIGHT_ASCENSION, subframe.rate_of_right_ascension
+            OrbitalParameterType.RATE_OF_RIGHT_ASCENSION, subframe.rate_of_right_ascension * _PI
         )
         orbital_parameters.set_parameter(
-            OrbitalParameterType.RATE_OF_INCLINATION_ANGLE, subframe.rate_of_inclination_angle
+            OrbitalParameterType.RATE_OF_INCLINATION_ANGLE, subframe.rate_of_inclination_angle * _PI
         )
         orbital_parameters.set_parameter(
             OrbitalParameterType.CORRECTION_TO_ORBITAL_RADIUS_COS, subframe.correction_to_orbital_radius_cos
