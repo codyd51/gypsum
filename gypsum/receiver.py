@@ -83,6 +83,8 @@ class GpsReceiver:
         self._time_since_last_dashboard_server_scan = 0.0
         self._is_connected_to_dashboard_server = False
 
+        self.position_fixes: list[str] = []
+
     def step(self) -> None:
         """Run one 'iteration' of the GPS receiver. This consumes one millisecond of antenna data."""
         # Hook up to the dashboard webserver. Periodically try to connect to the dashboard, and send our state
@@ -135,8 +137,15 @@ class GpsReceiver:
                     else:
                         raise NotImplementedError(f'Unhandled event type: {type(world_model_event)}')
 
-        #self.world_model.attempt_position_fix(receiver_data_chunk.end_time, self.tracked_satellite_ids_to_processing_pipelines)
-        self.world_model.attempt_position_fix(receiver_data_chunk.start_time, self.tracked_satellite_ids_to_processing_pipelines)
+        solution = self.world_model.attempt_position_fix(receiver_data_chunk.start_time, self.tracked_satellite_ids_to_processing_pipelines)
+        if solution is not None:
+            s = (
+                f"Clock bias = {solution.clock_bias:.4f}s, "
+                f"ECEF = ({solution.receiver_pos.x:2f}, {solution.receiver_pos.y:.2f}, {solution.receiver_pos.z:.2f}"
+            )
+            self.position_fixes.append(s)
+            # Always push an update to the dashboard when we emit a new position fix
+            self._send_receiver_state_to_dashboard(receiver_data_chunk.start_time)
 
     def _perform_acquisition_if_necessary(self):
         seconds_since_start = self.antenna_samples_provider.seconds_since_start()
@@ -259,17 +268,9 @@ class GpsReceiver:
         # TODO(PT): Put the satellite in a cool-off queue
         self.satellite_ids_eligible_for_acquisition.append(satellite_id)
 
-    def _send_receiver_state_to_dashboard_if_necessary(self, receiver_timestamp: ReceiverTimestampSeconds) -> None:
+    def _send_receiver_state_to_dashboard(self, receiver_timestamp: ReceiverTimestampSeconds) -> None:
         # Nothing to do if we're not connected to the webserver
         if not self._is_connected_to_dashboard_server:
-            return
-
-        # TODO(PT): Promote to config file item?
-        dashboard_refresh_interval = 1
-        if (
-            self._timestamp_of_last_dashboard_update is not None
-            and receiver_timestamp - self._timestamp_of_last_dashboard_update < dashboard_refresh_interval
-        ):
             return
 
         self._timestamp_of_last_dashboard_update = receiver_timestamp
@@ -288,14 +289,31 @@ class GpsReceiver:
                         #satellite_ids_to_orbital_parameters=self.world_model.satellite_ids_to_orbital_parameters,
                         satellite_ids_to_orbital_parameters={},
                         tracked_satellite_ids=[x for x in self.tracked_satellite_ids_to_processing_pipelines.keys()],
-                        satellite_ids_ineligible_for_acquisition=[GpsSatelliteId(id=x) for x in range(0, 33) if x not in [32, 25, 28]]
+                        satellite_ids_ineligible_for_acquisition=[GpsSatelliteId(id=x) for x in range(0, 33) if x not in [32, 25, 28]],
+                        position_fixes=self.position_fixes,
                     )
                 ).model_dump_json()
             )
             resp.raise_for_status()
-        except:
+        except Exception:
             _logger.info('Lost connection to webserver while pushing receiver state update.')
             self._is_connected_to_dashboard_server = False
+
+    def _send_receiver_state_to_dashboard_if_necessary(self, receiver_timestamp: ReceiverTimestampSeconds) -> None:
+        # Nothing to do if we're not connected to the webserver
+        if not self._is_connected_to_dashboard_server:
+            return
+
+        # TODO(PT): Promote to config file item?
+        if False:
+            dashboard_refresh_interval = 1
+            if (
+                self._timestamp_of_last_dashboard_update is not None
+                and receiver_timestamp - self._timestamp_of_last_dashboard_update < dashboard_refresh_interval
+            ):
+                return
+
+        self._send_receiver_state_to_dashboard(receiver_timestamp)
 
     def _scan_for_dashboard_webserver_if_necessary(self):
         # No work to do if we're already connected
@@ -305,8 +323,8 @@ class GpsReceiver:
         # No work to do if we haven't waited long enough since our last scan
         seconds_since_start = self.antenna_samples_provider.seconds_since_start()
         if (
-            seconds_since_start == 0
-            or seconds_since_start - self._time_since_last_dashboard_server_scan
+            seconds_since_start != 0
+            and seconds_since_start - self._time_since_last_dashboard_server_scan
             < DASHBOARD_WEBSERVER_SCAN_PERIOD
         ):
             return
