@@ -114,7 +114,10 @@ INPUT_SOURCES = [
 def get_input_source_by_file_name(name: str) -> InputFileInfo:
     input_files_matching_name = [x for x in INPUT_SOURCES if x.path.name == name]
     if len(input_files_matching_name) == 0:
-        raise FileNotFoundError(f'No input file named "{name}" found.')
+        raise FileNotFoundError(
+            f'No input file named "{name}" found. '
+            f'Make sure you describe this file and its signal structure in radio_input.py::INPUT_SOURCES.'
+        )
 
     if len(input_files_matching_name) > 1:
         raise RuntimeError(f'Found more than one file named "{name}".')

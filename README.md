@@ -32,12 +32,14 @@ $ pip install -r requirements-webapp.txt
 
 # Run gypsum against the cached antenna samples
 # (And limit the satellite search scope for speed) 
-$ python3 gypsum-cli.py --only_acquire_satellite_ids 25 28 31 32 --present_web_ui
+$ python3 gypsum-cli.py --file_name nov_3_time_18_48_st_ives --only_acquire_satellite_ids 25 28 31 32 --present_web_ui
 
 # (In another shell)
 # Launch the webserver to observe gypsum
 $ gunicorn -b :8080 --timeout 0 web_dashboard:application
 ```
+
+The receiver has various behaviors that can be tweaked by modifying [config.py](https://github.com/codyd51/gypsum/blob/release/gypsum/config.py).
 
 ## License
 
