@@ -85,16 +85,16 @@ class GpsReceiver:
 
     def step(self) -> None:
         """Run one 'iteration' of the GPS receiver. This consumes one millisecond of antenna data."""
-        # TODO(PT): Cache this somewhere?
-        receiver_data_chunk = self.antenna_samples_provider.get_samples(
-            self.antenna_samples_provider.get_attributes().samples_per_prn_transmission,
-        )
-
         # Hook up to the dashboard webserver. Periodically try to connect to the dashboard, and send our state
         # update if we're connected.
         # Do this before we process the samples. The only reason for this is so that the dashboard can get some
         # initial state to display before we perform the initial acquisition scan.
         self._scan_for_dashboard_webserver_if_necessary()
+        # TODO(PT): Cache this somewhere?
+        receiver_data_chunk = self.antenna_samples_provider.get_samples(
+            self.antenna_samples_provider.get_attributes().samples_per_prn_transmission,
+        )
+
         self._send_receiver_state_to_dashboard_if_necessary(receiver_data_chunk.start_time)
 
         # Record this sample in our rolling buffer
