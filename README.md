@@ -14,6 +14,10 @@ gypsum turns any commodity SDR into a GPS receiver. I primarily use an [RTL-SDR]
 
 [This project comes with a 4-part writeup](https://axleos.com/building-a-gps-receiver-part-1-hearing-whispers/) on implementing a GPS receiver from scratch.
 
+https://github.com/codyd51/gypsum/assets/4972184/e72151fe-994e-4e5a-95b4-19e5c91d2b20
+
+gypsum ships with a web-based dashboard that allows the user to monitor signal quality, track progress, position fix history, and satellite tracking pipeline state.
+
 ## Video
 
 ## Setup
