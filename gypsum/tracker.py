@@ -35,6 +35,17 @@ class LostSatelliteLockError(Exception):
     pass
 
 
+@dataclass
+class Manuever:
+    time_to_switch: Seconds
+    stage: int
+    time_to_end: Seconds
+    original_doppler_shift: DopplerShiftHz
+    initial_doppler_shift_adjustment: DopplerShiftHz
+    second_doppler_shift_adjustment: DopplerShiftHz
+    rotation_after_first: float | None = None
+
+
 class BitValue(Enum):
     UNKNOWN = auto()
     ZERO = auto()
@@ -210,6 +221,9 @@ class GpsSatelliteTracker:
 
         self._time_since_last_constellation_rotation_induced_adjustment = 0.0
         self._time_since_last_constellation_circularity_induced_adjustment = 0.0
+        self.maneuver: Manuever | None = None
+        self.accumulator = 0
+        self.phase = tracking_params.current_prn_code_phase_shift
 
     # We only have two PLL modes, so an LRU cache with 2 entries should be sufficient.
     @functools.lru_cache(maxsize=2)
@@ -270,30 +284,151 @@ class GpsSatelliteTracker:
 
         # Correlate early, prompt, and late phase versions of the PRN
         unslid_prn = params.satellite.prn_as_complex
-        prompt_prn = np.roll(unslid_prn, params.current_prn_code_phase_shift)  # type: ignore
+        orig_prn_code_phase_shift = params.current_prn_code_phase_shift
+        prompt_prn = np.roll(unslid_prn, orig_prn_code_phase_shift)  # type: ignore
 
+        # Starting point comes 'backward' one chip
+        early = np.roll(unslid_prn, orig_prn_code_phase_shift-1)
+        # Starting point goes 'forward' one chip
+        late = np.roll(unslid_prn, orig_prn_code_phase_shift+1)
+
+        early_corr = np.correlate(doppler_shifted_samples, early)
+        prompt_corr = np.correlate(doppler_shifted_samples, prompt_prn)
+        late_corr = np.correlate(doppler_shifted_samples, late)
+        if False:
+            import matplotlib.pyplot as plt
+            plt.plot(early_corr, label="early")
+            plt.plot(prompt_corr, label="prompt")
+            plt.plot(late_corr, label="late")
+            #plt.legend()
+            plt.ioff()
+            plt.show()
+
+        discriminator = ((math.pow(early_corr.real, 2) + math.pow(early_corr.imag, 2)) - (math.pow(late_corr.real, 2) + math.pow(late_corr.imag, 2))) / 2
+        #discriminator = float((early_corr.real - late_corr.real) / (early_corr.real + late_corr.real))
+        self.phase += discriminator * 0.002
+        params.current_prn_code_phase_shift = int(self.phase)
+        params.discriminators.append(float(discriminator))
+        self.phase %= 2046
+        if self.phase < 0:
+            self.phase += 2046
+        #adjust_code_phase(local_code, adjusted_error)
+        #non_coherent_early_minus_late_power = non_coherent_early_minus_late_power / np.mean(doppler_shifted_samples)
+        #prompt_power = (prompt_corr.real ** 2 + prompt_corr.imag ** 2)
+        #normalized_discriminator_output = float(non_coherent_early_minus_late_power / prompt_power)
+        #print(f'{normalized_discriminator_output=:.4f}, {self.accumulator=:.4f}')
+        #self.accumulator += normalized_discriminator_output * 0.0005
+        # Normalize?
+        #print(f'{non_coherent_early_minus_late_power=}')
+        if False:
+            if abs(self.accumulator) > 4:
+                if self.accumulator < 0:
+                    params.current_prn_code_phase_shift -= 1
+                elif self.accumulator > 0:
+                    params.current_prn_code_phase_shift += 1
+                self.accumulator = 0
+                if params.current_prn_code_phase_shift < 0:
+                    params.current_prn_code_phase_shift = 2046 + params.current_prn_code_phase_shift
+                elif params.current_prn_code_phase_shift >= 2046:
+                    params.current_prn_code_phase_shift %= 2046
+
+
+        params.discriminators.append(self.accumulator)
+
+        #early_corr = frequency_domain_correlation(doppler_shifted_samples, np.roll(unslid_prn, params.current_prn_code_phase_shift-1))
+        #late_corr = frequency_domain_correlation(doppler_shifted_samples, np.roll(unslid_prn, params.current_prn_code_phase_shift+1))
+        #early_corr = frequency_domain_correlation(doppler_shifted_samples, unslid_prn)
+        #early_corr = np.dot(doppler_shifted_samples, np.roll(unslid_prn, params.current_prn_code_phase_shift - 1))
+        #prompt_corr = np.dot(doppler_shifted_samples, )
+        #late_corr = np.dot(doppler_shifted_samples, np.roll(unslid_prn, params.current_prn_code_phase_shift + 1))
+        #early_corr_peak = np.max(early_corr)
+        #late_corr_peak = np.max(late_corr)
+        #discriminator = early_corr_peak - late_corr_peak
+        #spacing = 1
+        #params.current_prn_code_phase_shift += discriminator * spacing
+        #params.discriminators.append(discriminator)
+
+        #coherent_prompt_correlation = frequency_domain_correlation(doppler_shifted_samples, np.roll(unslid_prn, params.current_prn_code_phase_shift))
         coherent_prompt_correlation = frequency_domain_correlation(doppler_shifted_samples, prompt_prn)
         non_coherent_prompt_correlation = np.abs(coherent_prompt_correlation)
         params.non_coherent_correlation_profiles.append(non_coherent_prompt_correlation)
         non_coherent_prompt_peak_offset = np.argmax(non_coherent_prompt_correlation)
         correlation_strength = get_normalized_correlation_peak_strength(non_coherent_prompt_correlation)
 
+        # TODO(PT): Use argmax of noncoherent peak
+        #early_corr_peak = np.max(early_corr)
+        #prompt_corr_peak = np.max(np.abs(coherent_prompt_correlation.real))
+        #late_corr_peak = np.max(late_corr)
+
+        if False:
+            #early_power = math.pow(early_corr_peak.real, 2) + math.pow(early_corr_peak.imag, 2)
+            #late_power = math.pow(late_corr_peak.real, 2) + math.pow(late_corr_peak.imag, 2)
+            #discriminator = (early_power - late_power) / 2
+            #early_power = np.abs(early_corr_peak)
+            #late_power = np.abs(late_corr_peak)
+            #iscriminator = (early_power - late_power) / (early_power + late_power)
+            #spacing = 1
+            #print(discriminator, params.current_prn_code_phase_shift)
+            params.current_prn_code_phase_shift += int(np.sign(non_coherent_prompt_correlation))
+            params.discriminators.append(np.sign(non_coherent_prompt_correlation))
+
+        if False:
+            if early_corr_peak > prompt_corr_peak and early_corr_peak > late_corr_peak:
+                params.current_prn_code_phase_shift += 1
+            elif late_corr_peak > early_corr_peak and late_corr_peak > prompt_corr_peak:
+                params.current_prn_code_phase_shift -= 1
+
+        if False:
+            shift = params.current_prn_code_phase_shift
+            early = np.correlate(np.roll(doppler_shifted_samples, shift-1), unslid_prn, mode='full')
+            prompt = np.correlate(np.roll(doppler_shifted_samples, shift), unslid_prn, mode='full')
+            late = np.correlate(np.roll(doppler_shifted_samples, shift+1), unslid_prn, mode='full')
+            early_corr = np.max(early)
+            prompt_corr = np.max(prompt)
+            late_corr = np.max(late)
+
+            if early_corr > prompt_corr and early_corr > late_corr:
+                shift -= 1
+            elif late_corr > early_corr and late_corr > prompt_corr:
+                shift += 1
+            params.current_prn_code_phase_shift = shift
+            import matplotlib.pyplot as plt
+            if False:
+                plt.plot(early, label="early")
+                plt.plot(prompt, label="prompt")
+                plt.plot(late, label="late")
+                plt.legend()
+                plt.scatter([np.argmax(early)], [early_corr])
+                plt.text(np.argmax(early), early_corr, f"Early {early_corr:.4f}", size=10, zorder=1, color='k')
+                plt.scatter([np.argmax(prompt)], [prompt_corr])
+                plt.text(np.argmax(prompt), prompt_corr - 0.1, f"Prompt {prompt_corr:.4f}", size=10, zorder=1, color='k')
+                plt.scatter([np.argmax(late)], [late_corr])
+                plt.text(np.argmax(late), late_corr -0.2, f"Late {late_corr:.4f}", size=10, zorder=1, color='k')
+                plt.show()
+
         # Recenter the code phase offset so that it looks positive or negative, depending on where the offset sits
         # in the period of the PRN.
         samples_per_prn_transmission = self.stream_attributes.samples_per_prn_transmission
+        #import matplotlib.pyplot as plt
+        #plt.plot(non_coherent_prompt_correlation)
+        #print(non_coherent_prompt_peak_offset)
         if non_coherent_prompt_peak_offset <= samples_per_prn_transmission / 2:
             centered_non_coherent_prompt_peak_offset = non_coherent_prompt_peak_offset
         else:
             centered_non_coherent_prompt_peak_offset = non_coherent_prompt_peak_offset - samples_per_prn_transmission
 
-        spacing = (samples_per_prn_transmission // PRN_CHIP_COUNT) // 2
-        if centered_non_coherent_prompt_peak_offset > 0:
-            params.current_prn_code_phase_shift += spacing
-        elif centered_non_coherent_prompt_peak_offset < 0:
-            params.current_prn_code_phase_shift -= spacing
+        #spacing = (samples_per_prn_transmission // PRN_CHIP_COUNT) * 8
+        #spacing = centered_non_coherent_prompt_peak_offset
+        spacing = 1
+        if False:
+            if centered_non_coherent_prompt_peak_offset > 0:
+                params.current_prn_code_phase_shift += spacing
+            elif centered_non_coherent_prompt_peak_offset < 0:
+                params.current_prn_code_phase_shift -= spacing
+        #params.current_prn_code_phase_shift = non_coherent_prompt_peak_offset
 
         # Finally, ensure we're always sliding within one PRN transmission
-        params.current_prn_code_phase_shift = int(params.current_prn_code_phase_shift) % samples_per_prn_transmission
+        #params.current_prn_code_phase_shift = int(params.current_prn_code_phase_shift) % samples_per_prn_transmission
 
         coherent_prompt_prn_correlation_peak = coherent_prompt_correlation[non_coherent_prompt_peak_offset]
 
@@ -355,6 +490,28 @@ class GpsSatelliteTracker:
                 print(f"** Adjusting by {adjustment}")
                 self.tracking_params.current_doppler_shift += adjustment
 
+        if self.maneuver is not None:
+            if receiver_samples_chunk.start_time >= self.maneuver.time_to_switch and self.maneuver.stage == 1:
+                self.maneuver.stage = 2
+                # PT: Only works if they're equal
+                self.tracking_params.current_doppler_shift += self.maneuver.second_doppler_shift_adjustment * 2
+                self.maneuver.rotation_after_first = get_iq_constellation_circularity(correlation_peaks)
+                _logger.info(f'maneuver move to 2nd stage {self.tracking_params.current_doppler_shift}')
+            elif receiver_samples_chunk.start_time >= self.maneuver.time_to_end and self.maneuver.stage == 2:
+                self.maneuver.stage = 3
+                rotation_after_second = get_iq_constellation_circularity(correlation_peaks)
+                # Evaluate which was better
+                rotation_after_first = self.maneuver.rotation_after_first
+                if rotation_after_first > rotation_after_second:
+                    self.tracking_params.current_doppler_shift -= self.maneuver.second_doppler_shift_adjustment * 2
+                else:
+                    # Leave it w the secon adjustment
+                    pass
+                _logger.info(f'*** maneuver {rotation_after_first=}, {rotation_after_second=}')
+            elif receiver_samples_chunk.start_time >= self.maneuver.time_to_end:
+                self.maneuver = None
+                _logger.info(f'maneuver finish {self.tracking_params.current_doppler_shift}')
+
         if (
             receiver_samples_chunk.start_time - self._time_since_last_constellation_circularity_induced_adjustment
             >= 6
@@ -366,12 +523,28 @@ class GpsSatelliteTracker:
                     raise LostSatelliteLockError()
 
                 if iq_constellation_circularity < 0.93:
-                    print(f'*** Circularity below threshold {self.tracking_params.satellite.satellite_id.id}: {iq_constellation_circularity:.2f}')
-                    # Use the angle of rotation to determine the direction to adjust our Doppler shift estimate
-                    iq_constellation_rotation = get_iq_constellation_rotation(correlation_peaks)
-                    if iq_constellation_rotation is not None:
-                        adjustment = -np.sign(iq_constellation_rotation) * 5
-                        self.tracking_params.current_doppler_shift += adjustment
-                        self.tracking_params.current_carrier_wave_phase_shift += np.sign(iq_constellation_rotation)*(math.pi/2)
+                    _logger.info(f'*** Circularity below threshold {self.tracking_params.satellite.satellite_id.id}: {iq_constellation_circularity:.2f}')
+                    if True:
+                        # Use the angle of rotation to determine the direction to adjust our Doppler shift estimate
+                        iq_constellation_rotation = get_iq_constellation_rotation(correlation_peaks)
+                        if iq_constellation_rotation is not None:
+                            adjustment = -np.sign(iq_constellation_rotation) * 5
+                            self.tracking_params.current_doppler_shift += adjustment
+                            self.tracking_params.current_carrier_wave_phase_shift += np.sign(iq_constellation_rotation)*(math.pi/2)
+                    else:
+                        # Reprocess the last 1 second of data in either direction of adjustment, and pick the one that gives a better result
+                        # Or: Just try one direction
+                        if not self.maneuver:
+                            _logger.info(f"maneuver setup {self.tracking_params.current_doppler_shift}")
+                            self.maneuver = Manuever(
+                                time_to_switch=receiver_samples_chunk.start_time + 0.1,
+                                time_to_end=receiver_samples_chunk.start_time + 0.2,
+                                original_doppler_shift=self.tracking_params.current_doppler_shift,
+                                initial_doppler_shift_adjustment=-2,
+                                second_doppler_shift_adjustment=2,
+                                stage=1,
+                            )
+                            self.tracking_params.current_doppler_shift += self.maneuver.initial_doppler_shift_adjustment
+                            _logger.info(f'new shift {self.tracking_params.current_doppler_shift}')
 
-        return navigation_bit_pseudosymbol
+        return emitted_pseudosymbol
