@@ -29,6 +29,8 @@ class GpsReceiverDashboardStateProvider:
 
     def handle_state_update(self, state: GpsReceiverState) -> None:
         self.last_seen_gps_state = state
+        # Always insert a first entry to the position fixes
+        self.last_seen_gps_state.position_fixes.insert(0, "<Awaiting first position fix>")
 
     def get_state(self) -> GpsReceiverState | None:
         return self.last_seen_gps_state

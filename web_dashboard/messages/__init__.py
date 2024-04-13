@@ -15,6 +15,7 @@ class GpsReceiverState(pydantic.BaseModel):
     tracked_satellite_ids: list[GpsSatelliteId]
     satellite_ids_eligible_for_acquisition: list[GpsSatelliteId]
     satellite_ids_ineligible_for_acquisition: list[GpsSatelliteId]
+    position_fixes: list[str]
 
 
 class SetCurrentReceiverStateRequest(pydantic.BaseModel):
