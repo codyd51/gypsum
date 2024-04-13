@@ -1,3 +1,4 @@
+import logging
 from collections import defaultdict
 from dataclasses import dataclass
 from enum import Enum, auto
@@ -6,11 +7,15 @@ from typing import Callable
 from typing import Generic, Sequence, Type, TypeVar, cast
 from typing import Iterator
 from typing import Self
+from typing import Tuple
 
 import math
+import numpy as np
 
 from gypsum.antenna_sample_provider import ReceiverTimestampSeconds
+from gypsum.constants import ONE_MILLISECOND
 from gypsum.constants import SECONDS_PER_WEEK, UNIX_TIMESTAMP_OF_GPS_EPOCH
+from gypsum.constants import SPEED_OF_LIGHT
 from gypsum.events import Event
 from gypsum.gps_ca_prn_codes import GpsSatelliteId
 from gypsum.navigation_message_decoder import EmitSubframeEvent
@@ -25,10 +30,16 @@ from gypsum.navigation_message_parser import (
     SemiCircles,
     SemiCirclesPerSecond,
 )
+from gypsum.satellite_signal_processing_pipeline import GpsSatelliteSignalProcessingPipeline
 from gypsum.units import GpsSatelliteSeconds
 from gypsum.units import GpsSatelliteSecondsIntoWeek
 from gypsum.units import MetersPerSecond, Seconds
 from gypsum.units import SampleCount
+
+
+_PI = 3.1415926535898
+
+_logger = logging.getLogger(__name__)
 
 _ParameterType = TypeVar("_ParameterType")
 _ParameterValueType = TypeVar("_ParameterValueType")
@@ -100,6 +111,7 @@ class OrbitalParameterType(Enum):
     # Classical Keplerian orbital parameters
     #
     # Also called 'a'
+    SQRT_SEMI_MAJOR_AXIS = auto()
     SEMI_MAJOR_AXIS = auto()
     # Also called 'e'
     ECCENTRICITY = auto()
@@ -141,6 +153,7 @@ class OrbitalParameterType(Enum):
     A_F1 = auto()
     A_F2 = auto()
     T_OC = auto()
+    ESTIMATED_GROUP_DELAY_DIFFERENTIAL = auto()
 
     @property
     def unit(self) -> Type[_OrbitalParameterValueType]:
@@ -218,6 +231,7 @@ class GpsWorldModel:
     """Integrates satellite subframes to maintain a model of satellite orbits around Earth"""
 
     def __init__(self, samples_per_prn_transmission: SampleCount) -> None:
+        self.samples_per_prn_transmission = samples_per_prn_transmission
         self.satellite_ids_to_orbital_parameters: dict[GpsSatelliteId, OrbitalParameters] = defaultdict(
             OrbitalParameters
         )
@@ -615,6 +629,7 @@ class GpsWorldModel:
         orbital_parameters.set_parameter(OrbitalParameterType.A_F1, subframe.a_f1)
         orbital_parameters.set_parameter(OrbitalParameterType.A_F2, subframe.a_f2)
         orbital_parameters.set_parameter(OrbitalParameterType.T_OC, subframe.t_oc)
+        orbital_parameters.set_parameter(OrbitalParameterType.ESTIMATED_GROUP_DELAY_DIFFERENTIAL, subframe.estimated_group_delay_differential)
 
     def _process_subframe2(self, orbital_parameters: OrbitalParameters, subframe: NavigationMessageSubframe2) -> None:
         orbital_parameters.set_parameter(
@@ -622,6 +637,7 @@ class GpsWorldModel:
         )
         orbital_parameters.set_parameter(OrbitalParameterType.ECCENTRICITY, subframe.eccentricity)
         # The satellite transmits the square root of the semi-major axis, so square it now.
+        orbital_parameters.set_parameter(OrbitalParameterType.SQRT_SEMI_MAJOR_AXIS, subframe.sqrt_semi_major_axis)
         orbital_parameters.set_parameter(OrbitalParameterType.SEMI_MAJOR_AXIS, math.pow(subframe.sqrt_semi_major_axis, 2))
         orbital_parameters.set_parameter(
             OrbitalParameterType.MEAN_MOTION_DIFFERENCE, subframe.mean_motion_difference_from_computed_value * _PI
