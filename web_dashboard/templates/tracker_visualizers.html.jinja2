@@ -4,7 +4,10 @@
     <style>
         .grid-container {
             display: grid;
-            grid-template-columns: repeat(3, 1fr);
+            grid-template-columns: repeat(2, 1fr);
+            width: 100%;
+            margin-left: 0;
+            padding-left: 0;
         }
 
         .grid-item {
@@ -12,7 +15,7 @@
         }
 
         .tracker-dashboard {
-            margin: 10px;
+            margin: 1px;
             border-color: black;
             border-width: 1px;
             border-style: solid;
@@ -21,16 +24,53 @@
         .tracker-dashboard-image {
             max-width: 100%;
         }
+
+        .position-fixes-td {
+            width: 24%;
+            height: 100%;
+            padding-top: 1%;
+            overflow: hidden;
+        }
+        .position-fixes-td::-webkit-scrollbar {
+            display: none;
+        }
+
+        .position-fixes-pre {
+            text-align: right;
+            font-family: "Courier New";
+            height: 100%;
+            overflow-y: scroll;
+            padding-right: 2%;
+            box-sizing: content-box;
+        }
     </style>
 
-    <div class="grid-container">
-        <h4>Tracked Satellites at {{ generated_at }}</h4>
-        <br/>
-        <div></div>
-        {% for dashboard_image_base64 in state.dashboard_figures %}
-            <div class="grid-item tracker-dashboard">
-                    <img class="tracker-dashboard-image" src="data:image/png;base64, {{ dashboard_image_base64 }}" alt="matplotlib figure visualizing statistics, metrics, and graphs concerning the process of decoding a particular GPS satellite signal from the incoming antenna data." />
-            </div>
-        {% endfor %}
-    </div>
+    <table>
+        <thead>
+            <tr>
+                <th style="padding-right: 1%; border-right: 2px dashed #aaa"><h4>Satellite Tracking Pipelines</h4></th>
+                <th style="text-align: right;"><h4>Position Fixes</h4></th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td style="width: 65%; margin-left: 0; padding-left: 0; padding-right: 1%; border-right: 2px dashed #aaa;">
+                    <div class="grid-container">
+                        {% for dashboard_image_base64 in state.dashboard_figures %}
+                            <div class="grid-item tracker-dashboard">
+                                <img class="tracker-dashboard-image" src="data:image/png;base64, {{ dashboard_image_base64 }}"/>
+                            </div>
+                        {% endfor %}
+                    </div>
+                </td>
+                <td class="position-fixes-td">
+                    <p class="position-fixes-pre">
+{% for fix in state.position_fixes | reverse %}
+{{ fix }}<br/>
+{% endfor %}
+                    </p>
+                </td>
+            </tr>
+        </tbody>
+    </table>
 {% endblock %}
