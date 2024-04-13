@@ -18,11 +18,26 @@ https://github.com/codyd51/gypsum/assets/4972184/e72151fe-994e-4e5a-95b4-19e5c91
 
 gypsum ships with a web-based dashboard that allows the user to monitor signal quality, track progress, position fix history, and satellite tracking pipeline state.
 
-## Video
+## Using gypsum
 
-## Setup
+The most convenient way to try out gypsum is to use a file containing saved antenna samples. This allows off-the-air development and signal replays.
 
-## Running
+I've uploaded a sample antenna recording to the [Releases section] of the repo. Download [this file] and place it in `./gypsum/vendored_signals/`. gypsum needs information on what these files contain, so currently their info is hard-coded [here](). In the future, we could introduce a bespoke file format that includes the recording parameters and the antenna samples in-band.
+
+```bash
+# Install gypsum's dependencies
+$ pip install -r requirements.txt
+# If you want to use the web-based tracking dashboard
+$ pip install -r requirements-webapp.txt
+
+# Run gypsum against the cached antenna samples
+# (And limit the satellite search scope for speed) 
+$ python3 gypsum-cli.py --only_acquire_satellite_ids 25 28 31 32 --present_web_ui
+
+# (In another shell)
+# Launch the webserver to observe gypsum
+$ gunicorn -b :8080 --timeout 0 web_dashboard:application
+```
 
 ## License
 

@@ -1,0 +1,4 @@
+falcon==3.1
+jinja2==3.1
+gunicorn==21.2
+pydantic==2.5
