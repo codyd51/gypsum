@@ -22,7 +22,7 @@ gypsum ships with a web-based dashboard that allows the user to monitor signal q
 
 The most convenient way to try out gypsum is to use a file containing saved antenna samples. This allows off-the-air development and signal replays.
 
-I've uploaded a sample antenna recording to the [Releases section] of the repo. Download [this file] and place it in `./gypsum/vendored_signals/`. gypsum needs information on what these files contain, so currently their info is hard-coded [here](). In the future, we could introduce a bespoke file format that includes the recording parameters and the antenna samples in-band.
+I've uploaded a sample antenna recording to the [Releases section](https://github.com/codyd51/gypsum/releases) of the repo. Download [this file](https://github.com/codyd51/gypsum/releases/download/1.0/nov_3_time_18_48_st_ives.zip) and place it in `./gypsum/vendored_signals/`. gypsum needs information on what these files contain, so currently their info is hard-coded [here](https://github.com/codyd51/gypsum/blob/release/gypsum/radio_input.py#L101-L111). In the future, we could introduce a bespoke file format that includes the recording parameters and the antenna samples in-band.
 
 ```bash
 # Install gypsum's dependencies
