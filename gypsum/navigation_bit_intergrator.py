@@ -105,6 +105,7 @@ class NavigationBitIntegrator:
         self.pseudosymbol_count_to_use_for_bit_phase_selection = PSEUDOSYMBOLS_PER_NAVIGATION_BIT * 4
         self.resynchronize_bit_phase_period = PSEUDOSYMBOLS_PER_SECOND * RECALCULATE_PSEUDOSYMBOL_PHASE_PERIOD
         self.resynchronize_bit_phase_memory_size = RECALCULATE_PSEUDOSYMBOL_PHASE_BIT_HEALTH_MEMORY_SIZE
+        self.slide = 0
 
     def _reset_selected_bit_phase(self):
         _logger.info(f"Resetting selected bit phase...")
@@ -252,8 +253,9 @@ class NavigationBitIntegrator:
         events = []
         previous_bit_phase_decision = self.history.previous_bit_phase_decision
         new_bit_phase = self._redetermine_bit_phase()
-        self.history.previous_bit_phase_decision = new_bit_phase
+        # _logger.info(f'Resynchronizing bit phase {previous_bit_phase_decision=}, new={new_bit_phase=}...')
 
+        self.history.previous_bit_phase_decision = new_bit_phase
         self.history.determined_bit_phase = new_bit_phase
 
         did_determine_first_bit_phase = previous_bit_phase_decision is None and new_bit_phase is not None
@@ -261,6 +263,7 @@ class NavigationBitIntegrator:
             # print(f"******* FIRST Bit phase! {new_bit_phase}")
             if new_bit_phase > 0:
                 self.history.pseudosymbol_cursor_within_queue = new_bit_phase
+                self.slide = new_bit_phase
         else:
             did_change_bit_phase = (
                 previous_bit_phase_decision is not None
@@ -269,33 +272,41 @@ class NavigationBitIntegrator:
             )
             if did_change_bit_phase:
                 diff = new_bit_phase - previous_bit_phase_decision
+                self.slide += diff
                 # print(f"******* CHANGED bit phase {new_bit_phase}, prev {previous_bit_phase_decision}, diff {diff}!")
                 self.history.pseudosymbol_cursor_within_queue += diff
 
         return events
 
-    def process_pseudosymbol(
-        self, receiver_timestamp: ReceiverTimestampSeconds, pseudosymbol: NavigationBitPseudosymbol
-    ) -> list[Event]:
+    def process_pseudosymbol(self, receiver_timestamp: ReceiverTimestampSeconds, pseudosymbol: EmittedPseudosymbol) -> list[Event]:
         # Smooth out the current pseuodsymbol value over a rolling average of half a bit's worth of pseudosymbols
-        self.history.rolling_average_window.append(pseudosymbol.as_val())
-        if len(self.history.rolling_average_window) < self.history.rolling_average_window_size:
-            # Haven't yet seen enough symbols to start using our rolling average
-            return []
-        averaged_pseudosymbol_value = (
-            sum(self.history.rolling_average_window) // self.history.rolling_average_window_size
-        )
-        rounded_pseudosymbol_value = -1 if averaged_pseudosymbol_value < 0 else 1
+        # PT: This seems like it causes a delay in our pseudosymbol timestamp (by rolling_average_window_size),
+        # but as long as it's constant across all satellites it should get folded into our clock error?
+        #self.history.rolling_average_window.append(pseudosymbol.as_val())
+        #if len(self.history.rolling_average_window) < self.history.rolling_average_window_size:
+        #    # Haven't yet seen enough symbols to start using our rolling average
+        #    return []
+        #averaged_pseudosymbol_value = (
+        #    sum(self.history.rolling_average_window) // self.history.rolling_average_window_size
+        #)
+        #rounded_pseudosymbol_value = -1 if averaged_pseudosymbol_value < 0 else 1
 
         events: list[Event] = []
-        emitted_pseudosymbol = EmittedPseudosymbol(
-            receiver_timestamp=receiver_timestamp,
-            pseudosymbol=NavigationBitPseudosymbol.from_val(rounded_pseudosymbol_value),
-        )
-        self.history.queued_pseudosymbols.append(emitted_pseudosymbol)
-        self.history.last_seen_pseudosymbols.append(emitted_pseudosymbol)
+        #emitted_pseudosymbol = EmittedPseudosymbol(
+        #    start_of_pseudosymbol=start_of_pseudosymbol,
+        #    end_of_pseudosymbol=end_of_pseudosymbol,
+        #    #pseudosymbol=NavigationBitPseudosymbol.from_val(rounded_pseudosymbol_value),
+        #    #cursor_at_emit_time=self.history.pseudosymbol_cursor_within_queue,
+        #    cursor_at_emit_time=self.slide,
+        #    pseudosymbol=pseudosymbol,
+        #)
+        pseudosymbol.cursor_at_emit_time = self.slide
+        self.history.queued_pseudosymbols.append(pseudosymbol)
+        self.history.last_seen_pseudosymbols.append(pseudosymbol)
 
-        self._resynchronize_bit_phase_if_necessary()
+        if receiver_timestamp < 40:
+            self._resynchronize_bit_phase_if_necessary()
+
         events.extend(self._emit_bits_from_queued_pseudosymbols())
 
         self.history.processed_pseudosymbol_count += 1
