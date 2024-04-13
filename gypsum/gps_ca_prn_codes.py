@@ -3,7 +3,6 @@ from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
-from scipy.signal import max_len_seq
 
 _logger = logging.getLogger(__name__)
 
@@ -78,6 +77,10 @@ def _generate_ca_code_rolled_by(delay_ms: int) -> np.ndarray:
     # (Terms 1 and X^n can be omitted as they're implicit.
     # X^n can be omitted because it'll be evaluated as 2^(x-x), which is zero anyway.)
     #
+    try:
+        from scipy.signal import max_len_seq
+    except ImportError:
+        raise RuntimeError("This code path is unused, and if you want to try it you'll need to install scipy.")
     # G1 = X^10 + X^3 + 1
     g1 = max_len_seq(seq_bit_count, taps=[seq_bit_count - 3])[0]
     # G2 = X^10 + X^9 + X^8 + X^6 + X^3 + X^2 + 1

@@ -213,7 +213,7 @@ class GpsSatelliteTrackerVisualizer:
         title = f"Satellite #{satellite_id.id} Tracking Dashboard"
         self.visualizer_figure.suptitle(title, fontweight="bold")
 
-        self.grid_spec = plt.GridSpec(nrows=6, ncols=4, figure=self.visualizer_figure)
+        self.grid_spec = plt.GridSpec(nrows=5, ncols=4, figure=self.visualizer_figure)
 
         grid_spec_idx_iterator = iter(range(len(GraphTypeEnum)))
         # Initialize the graphs in the order specified

@@ -741,7 +741,7 @@ class GpsWorldModel:
             print(f'Altitude: {alt}')
             self.receiver_clock_slide -= clock_bias
 
-        raise NotImplementedError()
+        # raise NotImplementedError()
         return guess
         return ReceiverSolution(
             clock_bias=clock_bias,

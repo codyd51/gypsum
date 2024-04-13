@@ -1,8 +1,6 @@
 numpy==1.26.0
-numpy==1.26.0
 matplotlib==3.8.0
 pyrtlsdr[lib]
-scipy
 # PT: Just for communicating with the web app
 requests==2.31
 invoke==2.2
