@@ -8,10 +8,6 @@ ACQUISITION_INTEGRATED_CORRELATION_STRENGTH_DETECTION_THRESHOLD = 3
 # Controls how often we'll attempt to scan for new satellites, if we need to acquire more.
 ACQUISITION_SCAN_FREQUENCY: Seconds = 10
 
-DOPPLER_SHIFT_FREQUENCY_LOWER_BOUND = -6000
-DOPPLER_SHIFT_FREQUENCY_UPPER_BOUND = 6000
-DOPPLER_SHIFT_SEARCH_INTERVAL = 500
-
 # The 'week number' encoded in subframe #1 is the number of weeks since the GPS epoch, mod 1024.
 # This means that this field rolls over every 19.6 years, and receivers must have prior knowledge to know which
 # base week to add to this value.

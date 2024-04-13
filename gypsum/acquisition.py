@@ -99,7 +99,6 @@ class GpsSatelliteDetector:
                 best_non_coherent_correlation_profile_across_all_search_space = (
                     best_non_coherent_correlation_profile_in_this_search_space
                 )
-                # center_doppler_shift_estimation = best_non_coherent_correlation_profile_across_all_search_space.doppler_shift
                 _logger.info(
                     f"Found a better candidate Doppler for SV({satellite_id}): "
                     f"(Found in [{center_doppler_shift_estimation - doppler_frequency_estimation_spread:.2f} | "
@@ -202,6 +201,7 @@ class GpsSatelliteDetector:
         # antenna_data.sum() will have a higher chance of collisions than .tostring(), but it's faster,
         # and I'm willing to take the chance.
         key = hash((integration_type, hash(antenna_data.sum()), doppler_shift, hash(prn_as_complex.tostring())))  # type: ignore
+        # TODO(PT): Note cache is currently disabled to rule it out as a confounding factor
         if False and key in self._cached_correlation_profiles:
             _logger.debug(f"Did hit cache for PRN correlation result")
             cached_correlation_profile = self._cached_correlation_profiles[key]

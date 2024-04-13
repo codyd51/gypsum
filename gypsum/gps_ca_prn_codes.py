@@ -97,47 +97,38 @@ def _generate_ca_code_rolled_by(delay_ms: int) -> np.ndarray:
     return np.bitwise_xor(g1, np.roll(g2, delay_ms))
 
 
-def shift(register, feedback, output):
-    """GPS Shift Register
-    :param list feedback: which positions to use as feedback (1 indexed)
-    :param list output: which positions are output (1 indexed)
-    :returns output of shift register:
-    """
-    # calculate output
+def _shift_reg(register: list[int], feedback: list[int], output: list[int]) -> int:
+    """Shift register, noting which indexes should be considered feedback, and which as outputs"""
     out = [register[i - 1] for i in output]
     if len(out) > 1:
         out = sum(out) % 2
     else:
         out = out[0]
 
-    # modulo 2 add feedback
+    # Add in feedback, mod2
     fb = sum([register[i - 1] for i in feedback]) % 2
 
     # shift to the right
     for i in reversed(range(len(register[1:]))):
         register[i + 1] = register[i]
 
-    # put feedback in position 1
+    # Return feedback in the first slot
     register[0] = fb
     return out
 
 
 def _generate_ca_code_with_taps(taps: list[int]) -> np.ndarray:
-    # init registers
-    G1 = [1 for _ in range(10)]
-    G2 = [1 for _ in range(10)]
+    g1_reg = [1 for _ in range(10)]
+    g2_reg = [1 for _ in range(10)]
 
-    ca = []
-    # create sequence
+    prn_code = []
     for _ in range(1023):
-        g1 = shift(G1, [3, 10], [10])
-        g2 = shift(G2, [2, 3, 6, 8, 9, 10], taps)
+        g1_val = _shift_reg(g1_reg, [3, 10], [10])
+        g2_val = _shift_reg(g2_reg, [2, 3, 6, 8, 9, 10], taps)
 
-        # modulo 2 add and append to the code
-        ca.append((g1 + g2) % 2)
+        prn_code.append((g1_val + g2_val) % 2)
 
-    # return C/A code!
-    return np.array(ca)
+    return np.array(prn_code)
 
 
 def generate_replica_prn_signals() -> dict[GpsSatelliteId, GpsReplicaPrnSignal]:

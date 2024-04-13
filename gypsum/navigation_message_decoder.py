@@ -3,7 +3,6 @@ from dataclasses import dataclass
 from enum import Enum, auto
 
 from gypsum.antenna_sample_provider import ReceiverTimestampSeconds
-from gypsum.constants import ONE_MILLISECOND
 from gypsum.events import Event
 from gypsum.navigation_bit_intergrator import EmitNavigationBitEvent
 from gypsum.navigation_message_parser import (
@@ -22,7 +21,6 @@ _logger = logging.getLogger(__name__)
 
 
 BITS_PER_SUBFRAME = 300
-# TELEMETRY_WORD_PREAMBLE = [1, 0, 0, 0, 1, 0, 1, 1]
 TELEMETRY_WORD_PREAMBLE = [
     BitValue.ONE,
     BitValue.ZERO,
@@ -92,7 +90,6 @@ class NavigationMessageDecoder:
         preamble: list[BitValue],
     ) -> int | None:
         queued_bits = [e.bit_value for e in self.queued_bit_events]
-        # print(queued_bits)
         preamble_candidates = get_indexes_of_sublist(queued_bits, preamble)
         # We need at least two preambles
         if len(preamble_candidates) < 2:
@@ -191,11 +188,8 @@ class NavigationMessageDecoder:
                         if maybe_subframe:
                             events.append(maybe_subframe)
                             self.history.emitted_subframe_count += 1
-                    except Exception as e:
-                        # TODO(PT): This will probably break everything because we stop parsing in the middle of a frame...
+                    except Exception:
                         raise
-                        # print(f'*** swallowing exception {e}')
-                        # continue
                 else:
                     break
 
@@ -205,17 +199,14 @@ class NavigationMessageDecoder:
         subframe_bits = self.queued_bit_events[:BITS_PER_SUBFRAME]
         # Wait, the start timestamp is 4.09 but the end timestamp is 10.089?
         # Why aren't they exactly 6 seconds apart?!
+        # TODO(PT): Is it because we're discarding symbols/bits..?
         subframe_receiver_timestamp = subframe_bits[0].receiver_timestamp
-        #subframe_trailing_edge_receiver_timestamp = subframe_bits[-1].trailing_edge_receiver_timestamp + ONE_MILLISECOND
         subframe_trailing_edge_receiver_timestamp = subframe_bits[-1].trailing_edge_receiver_timestamp
-        # TODO(PT): Is it because we're discargin symbols/bits..?
         _logger.info(f"Emitting subframe timestamped at receiver at {subframe_receiver_timestamp}, trailing edge {subframe_trailing_edge_receiver_timestamp}")
         # Consume these bits by removing them from the queue
         self.queued_bit_events = self.queued_bit_events[BITS_PER_SUBFRAME:]
 
         # First, discard the subframe entirely if any bits couldn't be resolved
-        # print(subframe_bits)
-
         has_failed_bits = any(bit.bit_value == BitValue.UNKNOWN for bit in subframe_bits)
         if has_failed_bits:
             failed_bit_count = len([b for b in subframe_bits if b.bit_value == BitValue.UNKNOWN])
@@ -227,13 +218,9 @@ class NavigationMessageDecoder:
             )
             # We will need to recalculate our polarity.
             # Currently this also involves re-determining the subframe phase, but doesn't need to
-            # This is because an unknown bit corresponds to a slip - we're no longer tracking the cycle exactly and there may have been an inversion due to the slip
+            # This is because an unknown bit corresponds to a slip - we're no longer tracking the cycle exactly
+            # and there may have been an inversion due to the slip
             self._reset_selected_subframe_phase()
-
-            if failed_bit_count > 150:
-                import gypsum.utils
-
-                gypsum.utils.DEBUG = True
             return None
 
         # Flip the bit polarity so everything looks upright

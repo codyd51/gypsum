@@ -11,7 +11,6 @@ from gypsum.config import (
     RECALCULATE_PSEUDOSYMBOL_PHASE_PERIOD,
 )
 from gypsum.constants import BITS_PER_SECOND, PSEUDOSYMBOLS_PER_NAVIGATION_BIT, PSEUDOSYMBOLS_PER_SECOND
-from gypsum.constants import ONE_MILLISECOND
 from gypsum.events import Event
 from gypsum.gps_ca_prn_codes import GpsSatelliteId
 from gypsum.tracker import BitValue, NavigationBitPseudosymbol
@@ -182,12 +181,6 @@ class NavigationBitIntegrator:
         last_pseudosymbol = pseudosymbols[-1]
         timestamp = first_pseudosymbol.start_of_pseudosymbol
         trailing_edge_timestamp = last_pseudosymbol.end_of_pseudosymbol
-        #timestamp = first_pseudosymbol.start_of_pseudosymbol + (first_pseudosymbol.cursor_at_emit_time * ONE_MILLISECOND)
-        # PT: Note I'm trying to use the starts only, but then we should consider this when calculating the receiver slide / pseudorange?...
-        #trailing_edge_timestamp = last_pseudosymbol.start_of_pseudosymbol + (last_pseudosymbol.cursor_at_emit_time * ONE_MILLISECOND)
-        #trailing_edge_timestamp = last_pseudosymbol.end_of_pseudosymbol + (last_pseudosymbol.cursor_at_emit_time * ONE_MILLISECOND)
-        #timestamp = receiver_timestamp - (ONE_MILLISECOND * 20)
-        #trailing_edge_timestamp = receiver_timestamp
         return EmitNavigationBitEvent(
             receiver_timestamp=timestamp,
             trailing_edge_receiver_timestamp=trailing_edge_timestamp,
@@ -260,7 +253,6 @@ class NavigationBitIntegrator:
 
         did_determine_first_bit_phase = previous_bit_phase_decision is None and new_bit_phase is not None
         if did_determine_first_bit_phase:
-            # print(f"******* FIRST Bit phase! {new_bit_phase}")
             if new_bit_phase > 0:
                 self.history.pseudosymbol_cursor_within_queue = new_bit_phase
                 self.slide = new_bit_phase
@@ -273,37 +265,19 @@ class NavigationBitIntegrator:
             if did_change_bit_phase:
                 diff = new_bit_phase - previous_bit_phase_decision
                 self.slide += diff
-                # print(f"******* CHANGED bit phase {new_bit_phase}, prev {previous_bit_phase_decision}, diff {diff}!")
                 self.history.pseudosymbol_cursor_within_queue += diff
 
         return events
 
     def process_pseudosymbol(self, receiver_timestamp: ReceiverTimestampSeconds, pseudosymbol: EmittedPseudosymbol) -> list[Event]:
-        # Smooth out the current pseuodsymbol value over a rolling average of half a bit's worth of pseudosymbols
-        # PT: This seems like it causes a delay in our pseudosymbol timestamp (by rolling_average_window_size),
-        # but as long as it's constant across all satellites it should get folded into our clock error?
-        #self.history.rolling_average_window.append(pseudosymbol.as_val())
-        #if len(self.history.rolling_average_window) < self.history.rolling_average_window_size:
-        #    # Haven't yet seen enough symbols to start using our rolling average
-        #    return []
-        #averaged_pseudosymbol_value = (
-        #    sum(self.history.rolling_average_window) // self.history.rolling_average_window_size
-        #)
-        #rounded_pseudosymbol_value = -1 if averaged_pseudosymbol_value < 0 else 1
-
         events: list[Event] = []
-        #emitted_pseudosymbol = EmittedPseudosymbol(
-        #    start_of_pseudosymbol=start_of_pseudosymbol,
-        #    end_of_pseudosymbol=end_of_pseudosymbol,
-        #    #pseudosymbol=NavigationBitPseudosymbol.from_val(rounded_pseudosymbol_value),
-        #    #cursor_at_emit_time=self.history.pseudosymbol_cursor_within_queue,
-        #    cursor_at_emit_time=self.slide,
-        #    pseudosymbol=pseudosymbol,
-        #)
         pseudosymbol.cursor_at_emit_time = self.slide
         self.history.queued_pseudosymbols.append(pseudosymbol)
         self.history.last_seen_pseudosymbols.append(pseudosymbol)
 
+        # TODO(PT): Make this more robust...
+        # Currently, it appears as though bit phase realignment is kicking satellite #32 into a bad state,
+        # and this is a bandaid to help us get to a position fix.
         if receiver_timestamp < 40:
             self._resynchronize_bit_phase_if_necessary()
 

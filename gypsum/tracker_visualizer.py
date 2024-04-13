@@ -1,7 +1,6 @@
 import base64
 import io
 import logging
-import math
 from dataclasses import dataclass
 from enum import Enum, auto
 
@@ -291,11 +290,6 @@ class GpsSatelliteTrackerVisualizer:
 
         # Time to update the GUI
         self._timestamp_of_last_dashboard_update = seconds_since_start
-
-        # locked_state = "Locked" if current_tracking_params.is_locked() else "Unlocked"
-        # last_few_phase_errors = list(current_tracking_params.carrier_wave_phase_errors)[-250:]
-        # variance = np.var(last_few_phase_errors) if len(last_few_phase_errors) >= 2 else 0
-        # _logger.info(f'Seconds since start: {seconds_since_start} ({locked_state}), Variance {variance:.2f}')
 
         params = current_tracking_params
         self.graph_for_type(GraphTypeEnum.DOPPLER_SHIFT).clear()

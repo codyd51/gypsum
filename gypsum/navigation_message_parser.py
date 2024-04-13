@@ -183,7 +183,7 @@ class NavigationMessageSubframe5(NavigationMessageSubframe):
     right_ascension_rate: SemiCirclesPerSecond
     sv_health: list[int]
     semi_major_axis_sqrt: Meters
-    # TODO(PT): Typo? Should be ascending_node?
+    # TODO(PT): Typo, should be refactored to ascending_node?
     longitude_of_ascension_mode: SemiCircles
     argument_of_perigree: SemiCircles
     mean_anomaly_at_reference_time: SemiCircles
@@ -207,8 +207,6 @@ class NavigationMessageSubframeParser:
     def peek_bit_count(self, n: int, from_preprocessed_word_bits: bool = True) -> list[int]:
         # Transparently provide decoded bits, post-parity check, unless the caller really wants raw bits
         if from_preprocessed_word_bits:
-            # word_relative_cursor = self.cursor % _DATA_BIT_COUNT_PER_WORD
-            # return self.preprocessed_data_bits_of_current_word[word_relative_cursor: word_relative_cursor + n]
             return self.preprocessed_data_bits_of_current_word[:n]
         return self.bits[self.cursor : self.cursor + n]
 

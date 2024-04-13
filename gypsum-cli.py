@@ -25,7 +25,6 @@ def main():
     args = parser.parse_args()
 
     input_source = INPUT_SOURCES[7]
-    #input_source = get_input_source_by_file_name("nov_30_15_34_10")
     antenna_samples_provider = AntennaSampleProviderBackedByFile(input_source)
     _logger.info(f"Set up antenna sample stream backed by file: {input_source.path.as_posix()}")
 
@@ -44,8 +43,6 @@ def main():
     )
     while True:
         receiver.step()
-
-    # Lock decider: look at the average messiness of the IQ constellation over the last 3 seconds?
 
 
 if __name__ == "__main__":

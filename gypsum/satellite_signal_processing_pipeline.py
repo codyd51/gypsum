@@ -4,7 +4,7 @@ from typing import Callable, Type
 
 from gypsum.acquisition import SatelliteAcquisitionAttemptResult
 from gypsum.antenna_sample_provider import AntennaSampleChunk
-from gypsum.antenna_sample_provider import ReceiverTimestampSeconds, SampleProviderAttributes
+from gypsum.antenna_sample_provider import SampleProviderAttributes
 from gypsum.events import UnknownEventError
 from gypsum.navigation_bit_intergrator import (
     CannotDetermineBitPhaseEvent,
@@ -22,8 +22,6 @@ from gypsum.navigation_message_decoder import (
 from gypsum.satellite import GpsSatellite
 from gypsum.tracker import GpsSatelliteTracker, GpsSatelliteTrackingParameters, LostSatelliteLockError
 from gypsum.tracker_visualizer import GpsSatelliteTrackerVisualizer
-from gypsum.units import Seconds
-from gypsum.utils import AntennaSamplesSpanningOneMs
 
 _logger = logging.getLogger(__name__)
 

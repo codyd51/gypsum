@@ -14,7 +14,6 @@ import numpy as np
 
 from gypsum.antenna_sample_provider import ReceiverTimestampSeconds
 from gypsum.constants import ONE_MILLISECOND
-from gypsum.constants import SECONDS_PER_WEEK, UNIX_TIMESTAMP_OF_GPS_EPOCH
 from gypsum.constants import SPEED_OF_LIGHT
 from gypsum.events import Event
 from gypsum.gps_ca_prn_codes import GpsSatelliteId
@@ -33,7 +32,7 @@ from gypsum.navigation_message_parser import (
 from gypsum.satellite_signal_processing_pipeline import GpsSatelliteSignalProcessingPipeline
 from gypsum.units import GpsSatelliteSeconds
 from gypsum.units import GpsSatelliteSecondsIntoWeek
-from gypsum.units import MetersPerSecond, Seconds
+from gypsum.units import Seconds
 from gypsum.units import SampleCount
 
 
@@ -113,7 +112,6 @@ class ParameterSet(Generic[_ParameterType, _ParameterValueType]):
     @classmethod
     def validate(cls, v: Any, validation_info) -> Self:
         return v
-        raise NotImplementedError(v, x)
 
     def json_dump(self) -> dict[str, Any]:
         return self.parameter_type_to_value
@@ -376,15 +374,6 @@ class GpsWorldModel:
         # I noticed that this says satellite 32 was 3ms ahead or so ahead of satellite 32 at timestamp 499758 or so, which seems like way too much?
         gps_system_time_of_week_for_satellite = self._gps_observed_system_time_of_week_for_satellite(satellite_id, receiver_timestamp, tracker)
         time_for_signal_to_arrive = current_receiver_time - gps_system_time_of_week_for_satellite
-        orbital_params = self.satellite_ids_to_orbital_parameters[satellite_id]
-        #receiver_timestamp_at_latest_pseudosymbol = tracker.pseudosymbol_integrator.history.queued_pseudosymbols[-1].start_of_pseudosymbol
-        #receiver_timestamp_at_how = self.satellite_ids_to_orbital_parameters[satellite_id].get_parameter(OrbitalParameterType.PRN_TIMESTAMP_OF_LEADING_EDGE_OF_TOW)
-        #return receiver_timestamp_at_how - receiver_timestamp_at_latest_pseudosymbol
-
-        #self.history.queued_pseudosymbols.append(pseudosymbol)
-        #tracker.pseudosymbol_integrator
-        #time_for_signal_to_arrive =
-
         return time_for_signal_to_arrive
 
     def get_eccentric_anomaly(
@@ -394,11 +383,8 @@ class GpsWorldModel:
     ) -> float:
         earth_gravitational_constant = 3.986004418e14
         eccentricity = orbital_params.eccentricity
-        #semi_major_axis = orbital_params.semi_major_axis
         semi_major_axis = math.pow(orbital_params.get_parameter(OrbitalParameterType.SQRT_SEMI_MAJOR_AXIS), 2)
 
-        #computed_mean_motion = math.sqrt(earth_gravitational_constant / (math.pow(semi_major_axis, 3)))
-        # GPS spec says above but Navipedia says this
         computed_mean_motion = math.sqrt(earth_gravitational_constant) / math.sqrt(math.pow(semi_major_axis, 3))
         mean_motion_difference = orbital_params.get_parameter(OrbitalParameterType.MEAN_MOTION_DIFFERENCE)
         corrected_mean_motion = computed_mean_motion + mean_motion_difference
@@ -418,15 +404,6 @@ class GpsWorldModel:
         for i in range(7):
             # Kepler's equation
             eccentric_anomaly_now_estimation = mean_anomaly_now + (eccentricity * math.sin(eccentric_anomaly_now_estimation))
-            # Newton's iteration method
-            if False:
-                numerator = (
-                    mean_anomaly_now
-                    - eccentric_anomaly_now_estimation
-                    + (eccentricity * math.sin(eccentric_anomaly_now_estimation))
-                )
-                denominator = 1 - (eccentricity * math.cos(eccentric_anomaly_now_estimation))
-                eccentric_anomaly_now_estimation += numerator / denominator
         eccentric_anomaly_now = eccentric_anomaly_now_estimation
         return eccentric_anomaly_now
 
@@ -452,40 +429,26 @@ class GpsWorldModel:
         rate_of_right_ascension = orbit_params.get_parameter(OrbitalParameterType.RATE_OF_RIGHT_ASCENSION)
 
         earth_rotation_rate = 7.2921151467e-5
-        #time_from_ephemeris_reference_time = satellite_time_of_week - ephemeris_reference_time
-        #time_from_ephemeris_reference_time = ephemeris_reference_time - satellite_time_of_week
         time_from_ephemeris_reference_time = satellite_time_of_week - ephemeris_reference_time
         if time_from_ephemeris_reference_time > 302_400 or time_from_ephemeris_reference_time < -302_400:
-            # That is, if tk is greater than 302,400 seconds, subtract 604,800 seconds from tk. If tk is less than -
+            # > That is, if tk is greater than 302,400 seconds, subtract 604,800 seconds from tk. If tk is less than -
             # 302,400 seconds, add 604,800 seconds to tk.
-            print(f'Time from ephemeris ref time {time_from_ephemeris_reference_time}')
+            logging.debug(f'Time from ephemeris ref time {time_from_ephemeris_reference_time}')
             if time_from_ephemeris_reference_time > 302_400:
                 time_from_ephemeris_reference_time -= 604_800
             elif time_from_ephemeris_reference_time < -302_400:
                 time_from_ephemeris_reference_time += 604_800
-            print(f'Adjusted time from ephemeris ref time {time_from_ephemeris_reference_time}')
-
-        #satellite_time_of_week2 = orbit_params.get_parameter(OrbitalParameterType.GPS_TIME_OF_WEEK_AT_LAST_TIMESTAMP)
-        #satellite_time_of_week = 499758.0
-        #print(f'Sat TOW  {satellite_time_of_week}')
-        #print(f'Sat TOW2 {satellite_time_of_week2}')
+            logging.debug(f'Adjusted time from ephemeris ref time {time_from_ephemeris_reference_time}')
 
         eccentric_anomaly_now = self.get_eccentric_anomaly(orbit_params, time_from_ephemeris_reference_time)
 
         # True anomaly
-        #term1 = math.sqrt((1 + eccentricity) / (1 - eccentricity))
-        #term2 = math.tan(eccentric_anomaly_now / 2)
         # Different equation in doc
-        #true_anomaly = 2 * math.atan(term1 * term2)
         true_anomaly = math.atan2(
             math.sqrt(1 - (eccentricity * eccentricity)) * math.sin(eccentric_anomaly_now),
             math.cos(eccentric_anomaly_now) - eccentricity
         )
         vk = true_anomaly
-        # term1 = math.sqrt(1 - math.pow(eccentricity, 2)) * math.sin(eccentric_anomaly_now)
-        #term2 = math.cos(eccentric_anomaly_now) - eccentricity
-        #true_anomaly = math.atan2(term1, term2)
-        #vk = true_anomaly
 
         argument_of_latitude = vk + w
 
@@ -523,70 +486,69 @@ class GpsWorldModel:
             ecef_z
         )
 
-    def FCreator_old(self, G: ReceiverSolution, A, B, C, t):
-        "A, B, C are XYZ of sat. G is current guess. t is time error."
-        # Speed of light in km/s
-        # computes the difference between the squared distances from the guess to each satellite and the squared distance light would travel in the time error.
+    def _compute_solution_residuals(
+        self,
+        solution: ReceiverSolution,
+        sats_x: list[float],
+        sats_y: list[float],
+        sats_z: list[float],
+        sats_t: list[float],
+    ) -> np.ndarray:
+        # Computes the difference between the squared distances from the guess to each satellites,
+        # and the squared distance that light would travel in the time error.
         return np.array([
-            (G - x) ** 2 + (G[1] - y) ** 2 + (G[2] - z) ** 2 - ((SPEED_OF_LIGHT * (time - G[3])) ** 2)
-            for x, y, z, time in zip(A, B, C, t)
+            (
+                (solution.receiver_pos.x - x) ** 2
+                + (solution.receiver_pos.y - y) ** 2
+                + (solution.receiver_pos.z - z) ** 2
+                - ((SPEED_OF_LIGHT * (time - solution.clock_bias)) ** 2)
+            )
+            for x, y, z, time in zip(sats_x, sats_y, sats_z, sats_t)
         ])
 
-    def DCreator_old(self, G, A, B, C, t):
-        "A, B, C are XYZ of sat. G is current guess. t is time error."
-        # computing the Jacobian matrix of the function get_f, which is necessary for Newton's method.
+    def _compute_jacobian_matrix(
+        self,
+        solution: ReceiverSolution,
+        sats_x: list[float],
+        sats_y: list[float],
+        sats_z: list[float],
+        sats_t: list[float],
+    ) -> np.ndarray:
+        # Computes the Jacobian matrix, necessary for Newton's method.
         return np.array([
-            [2 * (G[0] - x), 2 * (G[1] - y), 2 * (G[2] - z), 2 * (SPEED_OF_LIGHT ** 2 * (time - G[3]))]
-            for x, y, z, time in zip(A, B, C, t)
+            [
+                2 * (solution.receiver_pos.x - x),
+                2 * (solution.receiver_pos.y - y),
+                2 * (solution.receiver_pos.z - z),
+                2 * (math.pow(SPEED_OF_LIGHT, 2) * (time - solution.clock_bias)),
+            ]
+            for x, y, z, time in zip(sats_x, sats_y, sats_z, sats_t)
         ])
 
-    def FCreator(self, G: ReceiverSolution, A, B, C, t):
-        # computes the difference between the squared distances from the guess to each satellite and the squared distance light would travel in the time error.
-        return np.array([
-            (G.receiver_pos.x - x) ** 2 + (G.receiver_pos.y - y) ** 2 + (G.receiver_pos.z - z) ** 2 - (
-                    (SPEED_OF_LIGHT * (time - G.clock_bias)) ** 2)
-            for x, y, z, time in zip(A, B, C, t)
-        ])
+    def _solve_position_via_newtons_method(
+        self,
+        clock_and_ecef: list[Tuple[Seconds, EcefCoordinates]],
+        guess: ReceiverSolution,
+    ) -> ReceiverSolution:
+        sats_x = [tup[1].x for tup in clock_and_ecef]
+        sats_y = [tup[1].y for tup in clock_and_ecef]
+        sats_z = [tup[1].z for tup in clock_and_ecef]
+        sats_t = [tup[0] for tup in clock_and_ecef]
+        residuals = self._compute_solution_residuals(guess, sats_x, sats_y, sats_z, sats_t)
+        jacobian = self._compute_jacobian_matrix(guess, sats_x, sats_y, sats_z, sats_t)
 
-    def DCreator(self, G: ReceiverSolution, A, B, C, t):
-        # computing the Jacobian matrix of the function get_f, which is necessary for Newton's method.
-        return np.array([
-            [2 * (G.receiver_pos.x - x), 2 * (G.receiver_pos.y - y), 2 * (G.receiver_pos.z - z),
-             2 * (math.pow(SPEED_OF_LIGHT, 2) * (time - G.clock_bias))]
-            for x, y, z, time in zip(A, B, C, t)
-        ])
-
-    def _newton(self, clock_and_ecef: list[Tuple[Seconds, EcefCoordinates]], guess: ReceiverSolution) -> ReceiverSolution:
-        A = [tup[1].x for tup in clock_and_ecef]
-        B = [tup[1].y for tup in clock_and_ecef]
-        C = [tup[1].z for tup in clock_and_ecef]
-        t = [tup[0] for tup in clock_and_ecef]
-        F = self.FCreator(guess, A, B, C, t)
-        D = self.DCreator(guess, A, B, C, t)
-        #print(f'{F=}')
-        #print(f'{D=}')
-
-        #error = 1
         for i in range(20):
-            V = np.linalg.solve(D, -F)
+            V = np.linalg.solve(jacobian, -residuals)
 
             guess.receiver_pos.x += V[0]
             guess.receiver_pos.y += V[1]
             guess.receiver_pos.z += V[2]
             guess.clock_bias += V[3]
 
-            F = self.FCreator(guess, A, B, C, t)
-            D = self.DCreator(guess, A, B, C, t)
-            error = np.max(np.abs(F))
-            # print(f'\terror {error}')
+            residuals = self._compute_solution_residuals(guess, sats_x, sats_y, sats_z, sats_t)
+            jacobian = self._compute_jacobian_matrix(guess, sats_x, sats_y, sats_z, sats_t)
 
         return guess
-        #x, y, z, t = guess
-        #return t, EcefCoordinates(x=x, y=y, z=z)
-        return ReceiverSolution(
-            clock_bias=t,
-            receiver_pos=EcefCoordinates(x=x, y=y, z=z)
-        )
 
     def _get_pseudorange_and_satellite_position(
         self,
@@ -598,10 +560,6 @@ class GpsWorldModel:
         observed_satellite_time = self._gps_observed_system_time_of_week_for_satellite(satellite_id, receiver_timestamp, tracker)
 
         # PT: This needs to be **at transmission time**, so subtract the pseudorange (*note* this includes our clock bias!)
-        #satellite_time_at_transmission = observed_satellite_time - pseudo_transmission_time
-        # print(f'Observed satellite {satellite_id} time: {observed_satellite_time}')
-        #print(f'Transmitted time   {satellite_id}     : {satellite_time_at_transmission}')
-        #satellite_pos_now = self._get_satellite_position_at_time_of_week(satellite_id, satellite_time_at_transmission)
         # PT: We actually want the satellite time at transmission time... is this the same thing? I think it is
         satellite_pos_now = self._get_satellite_position_at_time_of_week(satellite_id, observed_satellite_time)
         return pseudo_transmission_time, satellite_pos_now
@@ -620,86 +578,15 @@ class GpsWorldModel:
             return None
 
         # TODO(PT): Improve
+        # TODO(PT): Make sure we have 4 sats with the same HOW timestamp, or is this sufficient?
         sats_ready = {
-            sv_id: op for sv_id, op in satellites_with_complete_orbital_parameters.items() if self.satellite_ids_to_prn_observations_since_last_handover_timestamp[sv_id] <= 6000
+            sv_id: op for sv_id, op in satellites_with_complete_orbital_parameters.items()
+            if self.satellite_ids_to_prn_observations_since_last_handover_timestamp[sv_id] <= 6000
         }
         if len(sats_ready) < 4:
             return None
 
-        #if GpsSatelliteId(id=31) not in satellites_with_complete_orbital_parameters:
-        #    return None
-        #if satellites_with_complete_orbital_parameters[GpsSatelliteId(id=31)].get_parameter(OrbitalParameterType.GPS_TIME_OF_WEEK_AT_LAST_TIMESTAMP) < 499758.0:
-        #    return None
-
-        return self._compute_position(receiver_timestamp, sats_ready, trackers)
-        # Make sure we have 4 sats with the same HOW timestamp
-        if True:
-            timestamps_to_ready_sats = defaultdict(list)
-            for sat, op in sats_ready.items():
-                t = op.get_parameter(OrbitalParameterType.GPS_TIME_OF_WEEK_AT_LAST_TIMESTAMP)
-                timestamps_to_ready_sats[t].append(sat)
-            for timestamp, ready_sats in timestamps_to_ready_sats.items():
-                if len(ready_sats) >= 4:
-                    print(f'Attempting position fix bc we found more than 4 sat swith same timestamp {timestamp}')
-                    return self._compute_position(receiver_timestamp, ready_sats, trackers)
-                    raise NotImplementedError()
-        # return self._compute_position_new(receiver_timestamp, list(sats_ready.keys()), trackers)
-
-    def _compute_position_new(
-        self,
-        receiver_timestamp: ReceiverTimestampSeconds,
-        satellite_ids: list[GpsSatelliteId],
-        trackers: dict[GpsSatelliteId, GpsSatelliteSignalProcessingPipeline],
-    ) -> ReceiverSolution:
-        # Need to identify: observed satellite timestamp, and satellite position at that timestamp
-        # Observed satellite timestamp: Timestamp of last HOW
-        satellite_id_and_observed_tow_and_pos = []
-        for satellite_id in satellite_ids:
-            orbital_params = self.satellite_ids_to_orbital_parameters[satellite_id]
-            tracker = trackers[satellite_id]
-
-            last_how = orbital_params.get_parameter(OrbitalParameterType.GPS_TIME_OF_WEEK_AT_LAST_TIMESTAMP)
-            receiver_timestamp_at_leading_edge_of_how = orbital_params.get_parameter(OrbitalParameterType.PRN_TIMESTAMP_OF_LEADING_EDGE_OF_TOW)
-            receiver_timestamp_at_latest_prn = tracker.pseudosymbol_integrator.history.last_seen_pseudosymbols[-1].end_of_pseudosymbol
-            difference_in_prns = receiver_timestamp_at_latest_prn - receiver_timestamp_at_leading_edge_of_how
-
-            observed_satellite_time_of_week = last_how + difference_in_prns
-            print(f'*** {satellite_id}')
-            print(f'\t{last_how=}')
-            print(f'\t{receiver_timestamp_at_leading_edge_of_how=}')
-            print(f'\t{receiver_timestamp_at_latest_prn=}')
-            print(f'\t{difference_in_prns=}')
-            print(f'\t{observed_satellite_time_of_week=}')
-            satellite_pos_now = self._get_satellite_position_at_time_of_week(satellite_id, observed_satellite_time_of_week)
-            satellite_id_and_observed_tow_and_pos.append((satellite_id, observed_satellite_time_of_week, satellite_pos_now))
-        # Sort the sats from nearest to furthest
-        satellite_id_and_observed_tow_and_pos = sorted(satellite_id_and_observed_tow_and_pos, key=lambda tup: tup[1])
-        reference_sat = satellite_id_and_observed_tow_and_pos[0]
-        reference_sat_delay = reference_sat[1]
-        print(f'reference sat {reference_sat}')
-        delay_and_satellite_pos = []
-        for satellite_id, observed_tow, pos in satellite_id_and_observed_tow_and_pos:
-            delay = (observed_tow - reference_sat_delay) + 0.07
-            delay_and_satellite_pos.append((delay, pos))
-
-        clock_bias, receiver_position = self._newton(delay_and_satellite_pos, [0, 0, 0, 0])
-        x, y, z = receiver_position.x, receiver_position.y, receiver_position.z
-        print(f'\tClock bias: {clock_bias}s')
-        print(f'\tReceiver position: ({int(x)}, {int(y)}, {int(z)})')
-        #Latitude: 52.145039006793475
-        #Longitude: -0.0713242004966478
-        #Altitude: 6358171.861712116
-
-        lat, lon, alt = _get_lat_long(x, y, z)
-        print(f'Latitude: {lat}')
-        print(f'Longitude: {lon}')
-        print(f'{lat}, {lon}')
-        print(f'Altitude: {alt}')
-
-        return ReceiverSolution(
-            clock_bias=clock_bias,
-            receiver_pos=receiver_position,
-        )
+        return self._compute_position(receiver_timestamp, list(sats_ready.keys()), trackers)
 
     def _compute_position(
         self,
@@ -707,17 +594,17 @@ class GpsWorldModel:
         satellite_ids: list[GpsSatelliteId],
         trackers: dict[GpsSatelliteId, GpsSatelliteSignalProcessingPipeline],
     ) -> ReceiverSolution:
-        print('**** _compute_position **** ')
-        print(self.satellite_ids_to_prn_code_phases)
-        print(self.satellite_ids_to_prn_observations_since_last_handover_timestamp)
-        print(self.last_receiver_prn_timestamp_by_satellite_id)
-        print(self.receiver_clock_slide)
+        logging.info('**** _compute_position **** ')
+        logging.info(self.satellite_ids_to_prn_code_phases)
+        logging.info(self.satellite_ids_to_prn_observations_since_last_handover_timestamp)
+        logging.info(self.last_receiver_prn_timestamp_by_satellite_id)
+        logging.info(self.receiver_clock_slide)
         guess = ReceiverSolution(
             clock_bias=0,
             receiver_pos=EcefCoordinates.zero(),
         )
         for i in range(5):
-            print(f'*** Attemping a round {i} {receiver_timestamp=}...')
+            logging.info(f'*** Attemping a round {i} {receiver_timestamp=}...')
             satellite_id_to_pseudoranges_and_satellite_coordinates = {}
             for satellite_id in satellite_ids:
                 satellite_id_to_pseudoranges_and_satellite_coordinates[satellite_id] = self._get_pseudorange_and_satellite_position(
@@ -725,34 +612,25 @@ class GpsWorldModel:
                     receiver_timestamp,
                     None#trackers[satellite_id]
                 )
-            print(f'Iteration {i}: {list(satellite_id_to_pseudoranges_and_satellite_coordinates.values())}')
-            #clock_bias, receiver_position = self._newton(list(satellite_id_to_pseudoranges_and_satellite_coordinates.values()), guess)
-            guess = self._newton(list(satellite_id_to_pseudoranges_and_satellite_coordinates.values()), guess)
+            logging.info(f'Iteration {i}: {list(satellite_id_to_pseudoranges_and_satellite_coordinates.values())}')
+            guess = self._solve_position_via_newtons_method(
+                list(satellite_id_to_pseudoranges_and_satellite_coordinates.values()),
+                guess,
+            )
             clock_bias, receiver_position = guess.clock_bias, guess.receiver_pos
 
             x, y, z = receiver_position.x, receiver_position.y, receiver_position.z
-            print(f'\tClock bias: {clock_bias}s')
-            print(f'\tReceiver position: ({x:.6f}, {y:.6f}, {z:.6f})')
+            logging.info(f'\tClock bias: {clock_bias}s')
+            logging.info(f'\tReceiver position: ({x:.6f}, {y:.6f}, {z:.6f})')
 
             lat, lon, alt = _get_lat_long(x, y, z)
-            print(f'Latitude: {lat}')
-            print(f'Longitude: {lon}')
-            print(f'{lat}, {lon}')
-            print(f'Altitude: {alt}')
+            logging.info(f'Latitude: {lat}')
+            logging.info(f'Longitude: {lon}')
+            logging.info(f'{lat}, {lon}')
+            logging.info(f'Altitude: {alt}')
             self.receiver_clock_slide -= clock_bias
 
-        # raise NotImplementedError()
         return guess
-        return ReceiverSolution(
-            clock_bias=clock_bias,
-            receiver_pos=receiver_position,
-        )
-        # TODO(PT): I think we'll also need to adjust the receiver_timestamp (Unless it's only seconds since startup)?
-        self.receiver_clock_slide -= clock_bias
-        print()
-        print()
-
-        raise NotImplementedError()
 
     def _gps_observed_system_time_of_week_for_satellite(
         self,
@@ -774,64 +652,29 @@ class GpsWorldModel:
             raise RuntimeError(f'Cannot call this now!')
 
         # TODO(PT): Track receiver timestamp : PRN count per satellite?
-        # TODO(PT): Keep debugging here - it looks like there's a slide of 20 seconds or something?!
+        # TODO(PT): Keep debugging here - it looks like there's a slide of 20 seconds?!
 
         # Start with the last timestamped HOW that we saw
         orbital_params = self.satellite_ids_to_orbital_parameters[satellite_id]
         satellite_time_of_week_at_last_subframe = orbital_params.get_parameter(OrbitalParameterType.GPS_TIME_OF_WEEK_AT_LAST_TIMESTAMP)
 
         # Add in the number of (1ms) PRN ticks since the last subframe
-        #prn_observations_since_last_subframe = self.satellite_ids_to_prn_observations_since_last_handover_timestamp[satellite_id]
         # TODO(PT): Shouldn't the PRN observation count be ~60-80 ms different per satellite..?
-        if True:
-            receiver_timestamp_when_subframe_arrived = orbital_params.get_parameter(OrbitalParameterType.RECEIVER_TIMESTAMP_AT_LAST_HOW_TIMESTAMP)
-            #prn_observation_count_when_subframe_arrived = self.receiver_timestamp_to_satellie_prn_counts[receiver_timestamp_when_subframe_arrived][satellite_id]
-            #prn_observation_count_now = self.receiver_timestamp_to_satellite_prn_counts[receiver_timestamp][satellite_id]
-            #prn_observations_since_last_subframe_at_timestamp = prn_observation_count_now - prn_observation_count_when_subframe_arrived
-            #prn_observations_since_last_subframe_at_timestamp = self.satellite_ids_to_receiver_timestamp_and_prn_counts_since_last_how[satellite_id][receiver_timestamp]
-            prn_observations_since_last_subframe_at_timestamp = self.satellite_ids_to_prn_observations_since_last_handover_timestamp[satellite_id]
-            #prn_observations_since_last_subframe_at_timestamp = self.satellite_ids_to_prn_observations_since_last_handover_timestamp[satellite_id]
-            #timestamp_of_last_how = orbital_params.get_parameter(OrbitalParameterType.RECEIVER_TIMESTAMP_AT_LAST_HOW_TIMESTAMP)
-            #prn_observations_since_last_subframe_at_timestamp = (receiver_timestamp - timestamp_of_last_how) * 1000
-            #print(f'{receiver_timestamp=}, {timestamp_of_last_how=}')
-            # TODO(PT): It looks like satellite 32 is in the lead? We're determining everything relative to sat 28, but the RECEIVER_TIMESTAMP_AT_LAST_HOW_TIMESTAMP
-            # is greater at sat 32 than the receiver timestamp at the subframe event - maybe investigate further?
-            #if prn_observations_since_last_subframe_at_timestamp > 6000:
-            #    raise RuntimeError(f'More than 6 seconds since we last saw a subframe, giving up! {prn_observations_since_last_subframe_at_timestamp}')
-            # TODO(PT): We might be computing the TOW relative to a given subframe that's NOT exactly where we are up to in the stream...
-            # I think this needs to take a receiver timestamp or something
+        # TODO(PT): It looks like satellite 32 is in the lead? We're determining everything relative to sat 28, but the RECEIVER_TIMESTAMP_AT_LAST_HOW_TIMESTAMP
+        # is greater at sat 32 than the receiver timestamp at the subframe event - maybe investigate further?
+        # TODO(PT): We might be computing the TOW relative to a given subframe that's NOT exactly where we are up to in the stream...
+        # I think this needs to take a receiver timestamp...
+        # TODO(PT): Can we count the # of PRNs at the sample # of the subframe, and the # of PRNs at the time we're computing the receiver pos? Then just subtract them
+        # PT: Also need to look up the PRN code phase *at the timestamp*!
+        prn_observations_since_last_subframe_at_timestamp = self.satellite_ids_to_prn_observations_since_last_handover_timestamp[satellite_id]
+        # Each PRN observation represents 1ms of elapsed time
+        current_satellite_time_of_week = satellite_time_of_week_at_last_subframe
+        current_satellite_time_of_week += ONE_MILLISECOND * prn_observations_since_last_subframe_at_timestamp
 
-            # TODO(PT): Can we count the # of PRNs at the sample # of the subframe, and the # of PRNs at the time we're computing the receiver pos? Then just subtract them
-            # The difficult part there might just be
-
-            # Each PRN observation represents 1ms of elapsed time
-            current_satellite_time_of_week = satellite_time_of_week_at_last_subframe
-            current_satellite_time_of_week += ONE_MILLISECOND * prn_observations_since_last_subframe_at_timestamp
-
-            prn_code_phase = self.satellite_ids_to_prn_code_phases[satellite_id]
-            # PT: Also need to look up the PRN code phase *at the timestamp*!
-            #print(f'DIFFERENCE BETWEEN TIMESTAMP {receiver_timestamp=}')
-            #time_delay_from_code_phase = ONE_MILLISECOND * (prn_code_phase / self.samples_per_prn_transmission)
-            #current_satellite_time_of_week += (ONE_MILLISECOND - time_delay_from_code_phase)
-            # PT: Also need to look up the PRN code phase *at the timestamp*!
-            time_delay_from_code_phase = ONE_MILLISECOND * (prn_code_phase / self.samples_per_prn_transmission)
-            #time_delay_from_code_phase = ONE_MILLISECOND * (prn_code_phase/self.samples_per_prn_transmission)
-            #time_delay_from_code_phase = ONE_MILLISECOND - (ONE_MILLISECOND * ((self.samples_per_prn_transmission-prn_code_phase)/self.samples_per_prn_transmission))
-            #CHIP_RATE = 2.046e6
-            # Time duration of one chip (in seconds)
-            #chip_duration = 1 / CHIP_RATE
-            # Convert the code phase shift to time
-            #time_delay_from_code_phase = prn_code_phase * chip_duration
-            # PT: This is commented out because the pseudosymbol timestamps themselves now include the PRN code delay
-            #current_satellite_time_of_week += time_delay_from_code_phase
-            #print(f'DIFFERENCE BETWEEN TIMESTAMP {receiver_timestamp=} {current_receiver_time=}')
-        else:
-            current_satellite_time_of_week = satellite_time_of_week_at_last_subframe
-            receiver_timestamp_at_latest_pseudosymbol = tracker.pseudosymbol_integrator.history.queued_pseudosymbols[
-                -1].start_of_pseudosymbol
-            receiver_timestamp_at_how = self.satellite_ids_to_orbital_parameters[satellite_id].get_parameter(
-                OrbitalParameterType.PRN_TIMESTAMP_OF_LEADING_EDGE_OF_TOW)
-            current_satellite_time_of_week += (receiver_timestamp_at_latest_pseudosymbol - receiver_timestamp_at_how)
+        # TODO(PT): This is commented out because the pseudosymbol timestamps themselves now include the PRN code delay
+        # prn_code_phase = self.satellite_ids_to_prn_code_phases[satellite_id]
+        # time_delay_from_code_phase = ONE_MILLISECOND * (prn_code_phase / self.samples_per_prn_transmission)
+        # current_satellite_time_of_week += time_delay_from_code_phase
 
         # Correct the time of last transmission based on the clock correction factors sent by the satellite
         # Algorithm specified by GPS 20.3.3.3.3.1.
@@ -848,7 +691,6 @@ class GpsWorldModel:
             ephemeris_reference_time = orbital_params.get_parameter(OrbitalParameterType.EPHEMERIS_REFERENCE_TIME)
             time_from_ephemeris_reference_time = current_satellite_time_of_week - ephemeris_reference_time
             Ek = self.get_eccentric_anomaly(orbital_params, time_from_ephemeris_reference_time - delta_sv_time)
-            #Ek = self.get_eccentric_anomaly(orbital_params, current_satellite_time_of_week)
             delta_tr = F * e * sqrt_A * math.sin(Ek)
 
             af0 = orbital_params.get_parameter(OrbitalParameterType.A_F0)
@@ -856,13 +698,8 @@ class GpsWorldModel:
             af2 = orbital_params.get_parameter(OrbitalParameterType.A_F2)
             toc = orbital_params.get_parameter(OrbitalParameterType.T_OC)
             tgd = orbital_params.get_parameter(OrbitalParameterType.ESTIMATED_GROUP_DELAY_DIFFERENTIAL)
-            # delta_sv_time = af0 + (af1 * (t - toc)) + ((af2 * math.pow(t - toc, 2)) + delta_tr
-            #delta_sv_time = af0 + (af1 * (t - toc)) + (af2 * math.pow(t - toc, 2)) + delta_tr - tgd
             delta_sv_time = af0 + (af1 * (t - toc)) + (math.pow(af2 * (t - toc), 2)) + delta_tr - tgd
-            #dt = t - toc
-            #delta_sv_time = af0 + (((af2 * dt) + af1) * dt)
 
-            # Want 52.5, 0
         current_satellite_time_of_week -= delta_sv_time
 
         return current_satellite_time_of_week
@@ -894,10 +731,12 @@ class GpsWorldModel:
             OrbitalParameterType.GPS_TIME_OF_WEEK_AT_LAST_TIMESTAMP, satellite_time_of_week_in_seconds
         )
         orbital_params_for_this_satellite.set_parameter(
-            #OrbitalParameterType.RECEIVER_TIMESTAMP_AT_LAST_HOW_TIMESTAMP, round(emit_subframe_event.trailing_edge_receiver_timestamp, 3)
             OrbitalParameterType.RECEIVER_TIMESTAMP_AT_LAST_HOW_TIMESTAMP, emit_subframe_event.trailing_edge_receiver_timestamp
         )
-        print(f'*** Got a subframe from {satellite_id} with a TOW for the next PRN timestamped at {emit_subframe_event.trailing_edge_receiver_timestamp}')
+        logging.info(
+            f'*** Got a subframe from {satellite_id} with a TOW for the '
+            f'next PRN timestamped at {emit_subframe_event.trailing_edge_receiver_timestamp}'
+        )
         orbital_params_for_this_satellite.set_parameter(
             OrbitalParameterType.PRN_TIMESTAMP_OF_LEADING_EDGE_OF_TOW, emit_subframe_event.trailing_edge_receiver_timestamp
         )
@@ -907,18 +746,11 @@ class GpsWorldModel:
         # that's not massively different from reality (as transmission times are in the realm of 60-80ms).
         # This guess will then be refined when we carry out our position fix. The magnitude of error here
         # shouldn't be too bad, as GPS should be able to cope with clock bias upwards of several seconds.
-        receiver_timestamp_at_arrival_time = emit_subframe_event.receiver_timestamp
         if self.receiver_clock_slide is None or True:
-            #receiver_timestamp_now = self.receiver_seconds_since_startup
-            #elapsed_receiver_time = receiver_timestamp_now - receiver_timestamp_at_arrival_time
-            #print(f'*** The receiver has elapsed {elapsed_receiver_time} since this subframe arrived, we did more processing in the BG')
-
             # Account for our delay in processing this subframe
             # TODO(PT): It might be necessary to add 1ms to this, since the trailing edge excludes the next PRN
-            #self.receiver_clock_slide = satellite_time_of_week_in_seconds - emit_subframe_event.receiver_timestamp - 6 + (ONE_MILLISECOND * 70)
-            #self.receiver_clock_slide = satellite_time_of_week_in_seconds - emit_subframe_event.receiver_timestamp - 6
             self.receiver_clock_slide = satellite_time_of_week_in_seconds - emit_subframe_event.trailing_edge_receiver_timestamp
-            # Why is the observed TOW a good half MS behind where it should be? The error shouldn't be that hight
+            # Why is the observed TOW a good half MS behind where it should be? The error shouldn't be that high
             # It seems like this condition should hold:
             # emit_subframe_event.trailing_edge_receiver_timestamp + self.receiver_clock_slide == satellite_time_of_week_in_seconds
             # The trailing edge of a PRN should be exactly equivalent to the leading edge of the next PRN
@@ -927,26 +759,24 @@ class GpsWorldModel:
             # Receiver timestamp: How many seconds of listening it took to find the start of this subframe
             # Slide: How much we add to the receiver timestamp to get to the start of the next subframe
 
-            print('**** Subframe timing!')
-            print(f'\tSat time of week              {satellite_time_of_week_in_seconds}')
-            print(f'\tReceiver time slide           {self.receiver_clock_slide}')
-            # TODO(PT): Also collect a timestamp at the trailing edge?
-            print(f'\tTimestamped subframe          {emit_subframe_event.receiver_timestamp}')
-            print(f'\tTrailing edge                 {emit_subframe_event.trailing_edge_receiver_timestamp}')
+            logging.info('**** Subframe timing!')
+            logging.info(f'\tSat time of week              {satellite_time_of_week_in_seconds}')
+            logging.info(f'\tReceiver time slide           {self.receiver_clock_slide}')
+            logging.info(f'\tTimestamped subframe          {emit_subframe_event.receiver_timestamp}')
+            logging.info(f'\tTrailing edge                 {emit_subframe_event.trailing_edge_receiver_timestamp}')
             # TODO(PT): Debug next, why is the timestamp at 4.09 but the trailing edge is at 10.089!
-            print()
-        print(f'*** Subframe for {satellite_id} at SV time {satellite_time_of_week_in_seconds}, Rx {self.receiver_clock_slide + emit_subframe_event.trailing_edge_receiver_timestamp}')
-        # WAIT A SECOND! Are we emitting subframes at 'random' times unrelated to when the PRNs tick in, due to
+        logging.info(f'*** Subframe for {satellite_id} at SV time {satellite_time_of_week_in_seconds}, Rx {self.receiver_clock_slide + emit_subframe_event.trailing_edge_receiver_timestamp}')
+        # TODO(PT): Are we emitting subframes at 'random' times unrelated to when the PRNs tick in, due to
         # queueing in the subsystems?
-        # Perhaps we need to work with the 'recevire timestamp' stamped in the subframe event.
-        # There can be a 'recevire ticks since startup' that rperesents the receivre true passage of time, and another
+        # Perhaps we need to work with the 'receiver timestamp' stamped in the subframe event.
+        # There can be a 'receivr ticks since startup' that represents the receiver true passage of time, and another
         # 'receiver time slide' that's informed by the message HOW. That way we can compute the receiver time for a
         # given subframe on-the-fly
 
         # If we have enough parameters to know the satellite's time, store it
-        if orbital_params_for_this_satellite.is_parameter_set(OrbitalParameterType.WEEK_NUMBER):
-            gps_week_number = orbital_params_for_this_satellite.week_number
-            # gps_satellite_time = (gps_week_number * SECONDS_PER_WEEK) + satellite_time_of_week_in_seconds
+        # if orbital_params_for_this_satellite.is_parameter_set(OrbitalParameterType.WEEK_NUMBER):
+        #    gps_week_number = orbital_params_for_this_satellite.week_number
+        #    gps_satellite_time = (gps_week_number * SECONDS_PER_WEEK) + satellite_time_of_week_in_seconds
 
         # Extract more orbital parameters, discriminating based on the type of subframe we've just seen
         # Casts because the subframe is currently typed as the subframe base class
@@ -970,30 +800,9 @@ class GpsWorldModel:
                         orbital_parameters=orbital_params_for_this_satellite,
                     )
                 )
-                print(f'Determined the orbit of {satellite_id}')
-                import math
-                gps_week_number = orbital_params_for_this_satellite.week_number
-                ephem_ref_time = orbital_params_for_this_satellite.get_parameter(OrbitalParameterType.EPHEMERIS_REFERENCE_TIME)
-                base_of_week = gps_week_number * SECONDS_PER_WEEK
-                ref_time = base_of_week + ephem_ref_time
-                orbit_params = orbital_params_for_this_satellite
-                print(f"""
-                orbit{satellite_id.id} = KeplerianElements(
-                    a={orbit_params.semi_major_axis},
-                    e={orbit_params.eccentricity},
-                    i={orbit_params.inclination},
-                    raan={orbit_params.longitude_of_ascending_node},
-                    arg_pe={orbit_params.argument_of_perigee},
-                    M0={orbit_params.mean_anomaly_at_reference_time},
-                    body=earth,
-                    ref_epoch=astropy.time.TimeGPS({ref_time}),
-                )
-                orbit{satellite_id.id}.t = {base_of_week + satellite_time_of_week_in_seconds}
-                """)
 
         if self._can_interrogate_precise_timings_for_satellite(satellite_id):
-            print(f'*** Received a subframe at {satellite_time_of_week_in_seconds}')
-            #print(f'*** Observed TOW: {self._gps_observed_system_time_of_week_for_satellite(satellite_id, emit_subframe_event.receiver_timestamp)}')
+            logging.info(f'*** Received a subframe at {satellite_time_of_week_in_seconds}')
 
         return events_to_return
 

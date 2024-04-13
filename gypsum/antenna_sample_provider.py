@@ -1,19 +1,17 @@
-import datetime
 import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Tuple
 
 import numpy as np
 
-from gypsum.config import UTC_LEAP_SECONDS_COUNT
 from gypsum.constants import PRN_REPETITIONS_PER_SECOND
 from gypsum.radio_input import InputFileInfo
 from gypsum.units import ReceiverDataSeconds
 from gypsum.units import SampleCount, Seconds
 
-# Expressed as seconds since the UTC epoch, as measured by the local clock (i.e. including the receiver clock bias)
+# Expressed as seconds since the radio started delivering samples,
+# as measured by the local clock (i.e. including the receiver clock bias)
 ReceiverTimestampSeconds = Seconds
 
 _logger = logging.getLogger(__name__)
@@ -74,6 +72,9 @@ class AntennaSampleProviderBackedByBytes(AntennaSampleProvider):
     def get_attributes(self) -> SampleProviderAttributes:
         raise NotImplementedError()
 
+    def seconds_since_start(self) -> ReceiverDataSeconds:
+        raise NotImplementedError()
+
 
 class AntennaSampleProviderBackedByFile(AntennaSampleProvider):
     def __init__(self, file_info: InputFileInfo) -> None:
@@ -91,10 +92,9 @@ class AntennaSampleProviderBackedByFile(AntennaSampleProvider):
         return self._get_elapsed_seconds_at_cursor(self.cursor)
 
     def peek_samples(self, sample_count: SampleCount) -> AntennaSampleChunk:
+        # receiver_utc_timestamp = self.utc_start_time + self.seconds_since_start()
         # The timestamp is always taken at the start of this set of samples
-        # TODO(PT): SAMPLES_PER_SECOND should be an instance attribute
-        receiver_utc_timestamp = self.utc_start_time + self.seconds_since_start()
-        # GPS differs from UTC by an integer number of leap seconds.
+        # Note GPS differs from UTC by an integer number of leap seconds (and the epoch slide).
         start_timestamp = self.seconds_since_start()
 
         # We have interleaved IQ samples, so the number of words to read will be the sample count * 2
@@ -130,7 +130,7 @@ class AntennaSampleProviderBackedByFile(AntennaSampleProvider):
 
     def get_attributes(self) -> SampleProviderAttributes:
         return SampleProviderAttributes(
-            samples_per_second=self.sample_rate,
+            samples_per_second=int(self.sample_rate),
             # PT: Note this must be an integer factor (though if we resample the PRN this limitation might go away)
-            samples_per_prn_transmission=self.sample_rate // PRN_REPETITIONS_PER_SECOND,
+            samples_per_prn_transmission=int(self.sample_rate // PRN_REPETITIONS_PER_SECOND),
         )

@@ -1,4 +1,5 @@
 import collections
+import dataclasses
 import logging
 from copy import deepcopy
 # PT: requests is just used to communicate with our own dashboard webserver and display the current receiver state.
@@ -13,7 +14,6 @@ from gypsum.config import ACQUISITION_INTEGRATION_PERIOD_MS
 from gypsum.config import ACQUISITION_SCAN_FREQUENCY
 from gypsum.config import DASHBOARD_WEBSERVER_SCAN_PERIOD
 from gypsum.config import DASHBOARD_WEBSERVER_URL
-from gypsum.constants import MINIMUM_TRACKED_SATELLITES_FOR_POSITION_FIX
 from gypsum.constants import PRN_CHIP_COUNT
 from gypsum.gps_ca_prn_codes import GpsSatelliteId, generate_replica_prn_signals
 from gypsum.navigation_bit_intergrator import Event
@@ -22,8 +22,6 @@ from gypsum.satellite import ALL_SATELLITE_IDS, GpsSatellite
 from gypsum.tracker import LostSatelliteLockError
 from gypsum.satellite_signal_processing_pipeline import GpsSatelliteSignalProcessingPipeline
 from gypsum.units import ReceiverDataSeconds
-from gypsum.units import Seconds
-from gypsum.utils import AntennaSamplesSpanningOneMs
 from gypsum.world_model import DeterminedSatelliteOrbitEvent, GpsWorldModel
 from web_dashboard.messages import GpsReceiverState
 from web_dashboard.messages import SetCurrentReceiverStateRequest
@@ -75,7 +73,6 @@ class GpsReceiver:
         self.subframe_count = 0
 
         self.world_model = GpsWorldModel(self.antenna_samples_provider.get_attributes().samples_per_prn_transmission)
-        #self.world_model.receiver_clock_slide = 1383072498 % (604_800)
 
         self._time_since_last_acquisition_scan: ReceiverDataSeconds | None = None
         self._timestamp_of_last_dashboard_update: ReceiverDataSeconds | None = None
@@ -139,11 +136,12 @@ class GpsReceiver:
 
         solution = self.world_model.attempt_position_fix(receiver_data_chunk.start_time, self.tracked_satellite_ids_to_processing_pipelines)
         if solution is not None:
-            s = (
+            # TODO(PT): Persist and transmit the ReceiverSolution directly, instead of serializing
+            position_fix_as_str = (
                 f"Clock bias = {solution.clock_bias:.4f}s, "
                 f"ECEF = ({solution.receiver_pos.x:2f}, {solution.receiver_pos.y:.2f}, {solution.receiver_pos.z:.2f}"
             )
-            self.position_fixes.append(s)
+            self.position_fixes.append(position_fix_as_str)
             # Always push an update to the dashboard when we emit a new position fix
             self._send_receiver_state_to_dashboard(receiver_data_chunk.start_time)
 
@@ -164,9 +162,10 @@ class GpsReceiver:
         self._time_since_last_acquisition_scan = seconds_since_start
 
         # TODO(PT): We could introduce a 'channel count' config parameter that controls how many satellites we'll
-        # simultaneously track
-        #if len(self.tracked_satellite_ids_to_processing_pipelines) >= MINIMUM_TRACKED_SATELLITES_FOR_POSITION_FIX:
-        #    return
+        # simultaneously track.
+        # For now, allow ourselves to track all eligible satellites
+        # if len(self.tracked_satellite_ids_to_processing_pipelines) >= MINIMUM_TRACKED_SATELLITES_FOR_POSITION_FIX:
+        #     return
 
         _logger.info(
             f"Will perform acquisition search because we're only "
@@ -178,11 +177,10 @@ class GpsReceiver:
         self.subframe_count += 1
         emit_subframe_event: EmitSubframeEvent = event
         subframe = emit_subframe_event.subframe
-        print(f"*** Subframe {subframe.subframe_id.name} from {satellite_id}:")
-        from dataclasses import fields
 
-        for field in fields(subframe):
-            print(f"\t{field.name}: {getattr(subframe, field.name)}")
+        logging.info(f"{satellite_id} emitted a subframe: {subframe.subframe_id.name}")
+        for field in dataclasses.fields(subframe):
+            logging.debug(f"\t{field.name}: {getattr(subframe, field.name)}")
 
         world_model_events_from_this_satellite = self.world_model.handle_subframe_emitted(
             satellite_id, emit_subframe_event
@@ -305,13 +303,12 @@ class GpsReceiver:
             return
 
         # TODO(PT): Promote to config file item?
-        if False:
-            dashboard_refresh_interval = 1
-            if (
-                self._timestamp_of_last_dashboard_update is not None
-                and receiver_timestamp - self._timestamp_of_last_dashboard_update < dashboard_refresh_interval
-            ):
-                return
+        dashboard_refresh_interval = 1
+        if (
+            self._timestamp_of_last_dashboard_update is not None
+            and receiver_timestamp - self._timestamp_of_last_dashboard_update < dashboard_refresh_interval
+        ):
+            return
 
         self._send_receiver_state_to_dashboard(receiver_timestamp)
 
