@@ -2,7 +2,7 @@
   <img src="./readme_images/gypsum_logo_header.png" width="800">
 </p>
 
-gypsum is a homebrew GPS receiver, written in Python. gypsum can carry out a position fix in less than 1 minute of antenna readings from cold start. 
+gypsum is a homebrew GPS receiver written in Python. gypsum can carry out a position fix in less than 60 seconds of antenna readings from a cold start. 
 
 gypsum implements a GPS signal processing stack with no dependencies aside from `numpy`. 
 
