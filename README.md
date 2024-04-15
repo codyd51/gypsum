@@ -10,7 +10,7 @@ gypsum implements a GPS signal processing stack with no dependencies aside from 
   <img src="./readme_images/sat_tracker.png" width="600">
 </p>
 
-gypsum turns any commodity SDR into a GPS receiver. I primarily use an [RTL-SDR](https://www.rtl-sdr.com/buy-rtl-sdr-dvb-t-dongles/), and have had success with a [HackRF](https://greatscottgadgets.com/hackrf/one/) as well. Either of these can be paired with any patch antenna sensitive to 1.57542MHz.
+gypsum turns any commodity SDR into a GPS receiver. I primarily use an [RTL-SDR](https://www.rtl-sdr.com/buy-rtl-sdr-dvb-t-dongles/), and have had success with a [HackRF](https://greatscottgadgets.com/hackrf/one/) as well. Either of these can be paired with any patch antenna sensitive to 1.57542GHz.
 
 [This project comes with a 4-part writeup](https://axleos.com/building-a-gps-receiver-part-1-hearing-whispers/) on implementing a GPS receiver from scratch.
 
